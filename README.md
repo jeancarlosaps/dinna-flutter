@@ -151,8 +151,8 @@ Dependências diretas: `http` e `cupertino_icons`, que veio no template do Flutt
 
 ```mermaid
 flowchart LR
-  V["View<br/>HomeView"] -- "ações do usuário" --> VM["ViewModel<br/>HomeViewModel"]
-  VM -- "notifyListeners()" --> V
+  V["View<br/>HomeView"] -- "ação" --> VM["ViewModel<br/>HomeViewModel"]
+  VM -. "estado" .-> V
   VM --> R["Repository<br/>ApiStatusRepository"]
   R --> S["Service<br/>ApiClient (http)"]
   S -- "GET /health" --> API[["dinna-api"]]
@@ -253,7 +253,7 @@ Sem configuração, o app escolhe a URL pela plataforma ([`app_config.dart`](lib
 
 Para mudar, passe `--dart-define=API_BASE_URL=<url>` no `flutter run`. Nenhuma credencial vai no código nem no `--dart-define`.
 
-> **HTTP sem TLS.** O Android 9+ e o iOS podem bloquear tráfego `http://` para hosts que não sejam `localhost`. A liberação para desenvolvimento ainda não foi configurada e entra com a integração real (SCRUM-26). Até lá, o caminho mais simples é o iOS Simulator.
+> **HTTP sem TLS.** O app usa `package:http`, que abre sockets do próprio Dart (`dart:io`). Desde o Flutter 2.2, esses sockets não seguem a política de cleartext da plataforma ([documentação](https://docs.flutter.dev/release/breaking-changes/network-policy-ios-android)), por isso `http://` para a API local não precisa de `networkSecurityConfig` (Android) nem de exceção ATS (iOS). Se algum dia o app passar a usar um cliente HTTP nativo da plataforma, essas configurações passam a ser necessárias. Até agora, a chamada só foi exercitada em testes; ainda não foi executada em emulador nem em dispositivo.
 
 ### 6. Execute no iOS
 
