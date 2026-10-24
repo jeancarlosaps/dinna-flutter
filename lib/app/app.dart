@@ -15,7 +15,7 @@ class DinnaApp extends StatelessWidget {
       title: 'dinna',
       debugShowCheckedModeBanner: false,
       theme: DinnaTheme.light(),
-      initialRoute: AppRoutes.home,
+      initialRoute: AppRoutes.table,
       onGenerateRoute: AppRouter(apiStatusRepository: apiStatusRepository).onGenerateRoute,
     );
   }

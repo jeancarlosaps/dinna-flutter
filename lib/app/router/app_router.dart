@@ -1,3 +1,4 @@
+import 'package:dinna/features/client/table/table_view.dart';
 import 'package:flutter/material.dart';
 
 import '../../features/home/api_status_repository.dart';
@@ -8,6 +9,7 @@ import '../../features/home/home_view_model.dart';
 /// entram aqui na Task de navegação base (SCRUM-23).
 abstract final class AppRoutes {
   static const home = '/';
+  static const table = '/table';
 }
 
 class AppRouter {
@@ -17,6 +19,7 @@ class AppRouter {
 
   Route<dynamic> onGenerateRoute(RouteSettings settings) {
     return switch (settings.name) {
+      AppRoutes.table => MaterialPageRoute(settings: settings, builder: (_) => const TableView()),
       AppRoutes.home => MaterialPageRoute(
         settings: settings,
         builder: (_) => HomeView(createViewModel: () => HomeViewModel(apiStatusRepository)),
