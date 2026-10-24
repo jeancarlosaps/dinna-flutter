@@ -1,4 +1,6 @@
-import 'package:dinna/core/network/api_exception.dart';
+import 'dart:async';
+
+import 'package:dinna/features/home/api_status_repository.dart';
 import 'package:dinna/features/home/home_view_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -6,32 +8,61 @@ import 'fake_api_status_repository.dart';
 
 void main() {
   test('começa sem verificação', () {
-    final viewModel = HomeViewModel(FakeApiStatusRepository(() async => true));
+    final viewModel = HomeViewModel(
+      FakeApiStatusRepository(() async => const ApiAvailability.online()),
+    );
 
     expect(viewModel.status, ApiStatus.unknown);
     expect(viewModel.errorMessage, isNull);
   });
 
-  test('fica online quando a API responde ok', () async {
-    final viewModel = HomeViewModel(FakeApiStatusRepository(() async => true));
+  test('fica em checking até a resposta e online quando a API está ok', () async {
+    final completer = Completer<ApiAvailability>();
+    final viewModel = HomeViewModel(FakeApiStatusRepository(() => completer.future));
+    final states = <ApiStatus>[];
+    viewModel.addListener(() => states.add(viewModel.status));
+
+    final pending = viewModel.checkApi();
+
+    expect(viewModel.status, ApiStatus.checking);
+    expect(viewModel.errorMessage, isNull);
+
+    completer.complete(const ApiAvailability.online());
+    await pending;
+
+    expect(viewModel.status, ApiStatus.online);
+    expect(viewModel.errorMessage, isNull);
+    expect(states, [ApiStatus.checking, ApiStatus.online]);
+  });
+
+  test('fica offline e expõe a mensagem quando a verificação falha', () async {
+    final viewModel = HomeViewModel(
+      FakeApiStatusRepository(
+        () async => const ApiAvailability.offline('Não foi possível conectar à API'),
+      ),
+    );
     final states = <ApiStatus>[];
     viewModel.addListener(() => states.add(viewModel.status));
 
     await viewModel.checkApi();
 
-    expect(states, [ApiStatus.checking, ApiStatus.online]);
+    expect(states, [ApiStatus.checking, ApiStatus.offline]);
+    expect(viewModel.errorMessage, 'Não foi possível conectar à API');
   });
 
-  test('fica offline e expõe a mensagem quando a API falha', () async {
-    final viewModel = HomeViewModel(
-      FakeApiStatusRepository(
-        () async => throw const ApiException('Não foi possível conectar à API'),
-      ),
-    );
+  test('não notifica de novo se a tela for descartada durante a verificação', () async {
+    final completer = Completer<ApiAvailability>();
+    final viewModel = HomeViewModel(FakeApiStatusRepository(() => completer.future));
+    var notifications = 0;
+    viewModel.addListener(() => notifications++);
 
-    await viewModel.checkApi();
+    final pending = viewModel.checkApi();
+    expect(notifications, 1);
 
-    expect(viewModel.status, ApiStatus.offline);
-    expect(viewModel.errorMessage, 'Não foi possível conectar à API');
+    viewModel.dispose();
+    completer.complete(const ApiAvailability.online());
+    await pending;
+
+    expect(notifications, 1);
   });
 }

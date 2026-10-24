@@ -1,11 +1,12 @@
 import 'package:flutter/foundation.dart';
 
-import '../../core/network/api_exception.dart';
 import 'api_status_repository.dart';
 
 enum ApiStatus { unknown, checking, online, offline }
 
-/// Fluxo de referência MVVM: View → ViewModel → Repository → ApiClient.
+/// Fluxo de referência MVVM: View → ViewModel → Repository → Service.
+///
+/// Depende só de [ApiStatusRepository]. Não conhece HTTP.
 class HomeViewModel extends ChangeNotifier {
   HomeViewModel(this._repository);
 
@@ -26,12 +27,9 @@ class HomeViewModel extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
 
-    try {
-      _status = await _repository.isApiOnline() ? ApiStatus.online : ApiStatus.offline;
-    } on ApiException catch (error) {
-      _status = ApiStatus.offline;
-      _errorMessage = error.message;
-    }
+    final availability = await _repository.checkHealth();
+    _status = availability.isOnline ? ApiStatus.online : ApiStatus.offline;
+    _errorMessage = availability.message;
     // A tela pode ter sido fechada enquanto a requisição estava em andamento.
     if (!_disposed) notifyListeners();
   }
