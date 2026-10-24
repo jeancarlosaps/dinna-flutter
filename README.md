@@ -88,11 +88,11 @@ Fundação (R0) **em andamento**. Nenhuma tela de produto foi implementada ainda
 | Item | Situação | Onde |
 |---|---|---|
 | Projeto Flutter (Android + iOS) | ✅ Executa no **Android Emulator** (API 36) e no **iOS Simulator** (iPhone 17) | `android/`, `ios/` |
-| MVVM com fluxo de referência | ✅ Home → ViewModel → Repository → ApiClient → `GET /health` | `lib/features/home/` |
+| MVVM com fluxo de referência | ✅ View → ViewModel → Repository → Service (`ApiClient`) → `GET /health` | `lib/features/home/`, [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Tema Dinna (Material 3) | ✅ Paleta e componentes base do tema | `lib/app/theme/` |
 | URL da API por ambiente | ✅ `--dart-define=API_BASE_URL` com padrão por plataforma | `lib/core/config/` |
 | Cliente HTTP + erro uniforme | ✅ `ApiClient` + `ApiException` | `lib/core/network/` |
-| Testes, lint, format, CI | ✅ 11 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
+| Testes, lint, format, CI | ✅ 17 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
 | Models (`Product`, `CartItem`, `Order`, `Preference`) | ⬜ Não implementado (SCRUM-22) | — |
 | Rotas do cliente e do restaurante | ⬜ Não implementado (SCRUM-23) | — |
 | Persistência local | ⬜ Mecanismo a definir (SCRUM-27) | — |
@@ -165,15 +165,18 @@ flowchart LR
 | Camada | Responsabilidade | Não pode |
 |---|---|---|
 | **View** | Desenhar o estado e repassar ações do usuário | Ter regra de negócio ou chamar HTTP |
-| **ViewModel** | Guardar o estado da tela, orquestrar ações e chamar `notifyListeners()` | Conhecer `BuildContext` ou widgets |
-| **Repository** | Ser a fonte de dados do domínio e converter JSON em model | Conhecer UI |
-| **ApiClient** | Cuidar de HTTP, URL base e timeout, e converter falhas em `ApiException` | Conhecer regra de negócio |
+| **ViewModel** | Guardar loading, success e error e orquestrar a ação | Conhecer widget, `http` ou `ApiException` |
+| **Repository** | Entregar dados ao ViewModel e traduzir payload e falhas do Service | Conhecer UI ou estado visual |
+| **Service (`ApiClient`)** | HTTP, serialização, timeout e status code; falhas viram `ApiException` | Conhecer regra de negócio ou estado de tela |
+
+O contrato completo, as dependências permitidas, o passo a passo do `GET /health` e como criar a próxima feature estão em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 Regras que o código já segue:
 
 - As dependências são montadas em [`lib/main.dart`](lib/main.dart) e passadas por construtor. Não há service locator.
 - O ViewModel nasce no `State` da tela (`createViewModel`) e é descartado no `dispose`.
-- O `ApiClient` lê o formato de erro da API (`{ "error": { "code", "message" } }`) e converte falhas de rede, timeout e HTTP em `ApiException`.
+- O Repository traduz `ApiException` em `ApiAvailability`. O ViewModel só vê online, offline e a mensagem.
+- O `ApiClient` lê o formato de erro da API (`{ "error": { "code", "message" } }`) e converte falhas de rede, timeout, HTTP e corpo que não é JSON em `ApiException`.
 
 ### Estrutura real
 
@@ -189,14 +192,16 @@ lib/
 ├── core/
 │   ├── config/app_config.dart        # API_BASE_URL por ambiente
 │   └── network/
-│       ├── api_client.dart           # HTTP centralizado
+│       ├── api_client.dart           # Service HTTP
 │       └── api_exception.dart        # erro uniforme
 └── features/
     └── home/                         # fluxo de referência (tela provisória)
         ├── api_status_repository.dart
+        ├── http_api_status_repository.dart
         ├── home_view.dart
         └── home_view_model.dart
-test/                                 # espelha lib/ (11 testes)
+test/                                 # espelha lib/ (17 testes)
+docs/ARCHITECTURE.md                  # contrato das camadas MVVM
 docs/assets/readme/                   # ilustrações deste README
 ```
 
@@ -293,14 +298,15 @@ Na tela inicial, toque em **“Verificar conexão com a API”**: com a API no a
 | `dart format .` | Formata o código (largura 100) |
 | `dart format --output=none --set-exit-if-changed .` | Só verifica a formatação, como na CI |
 
-O que os 11 testes cobrem hoje:
+O que os 17 testes cobrem hoje:
 
 | Arquivo | Cobre |
 |---|---|
 | `test/app_test.dart` | O app inicia com o tema Dinna; o fluxo View → ViewModel → Repository |
 | `test/core/app_config_test.dart` | URL padrão por plataforma e prioridade do `API_BASE_URL` |
-| `test/core/api_client_test.dart` | Montagem da URL, leitura do erro da API e falha de rede |
-| `test/features/home/home_view_model_test.dart` | Estados `unknown → checking → online/offline` |
+| `test/core/api_client_test.dart` | Montagem da URL, erro da API, falha de rede e corpo que não é JSON |
+| `test/features/home/api_status_repository_test.dart` | Tradução de `/health`: ok, payload inesperado, rede e HTTP inválido |
+| `test/features/home/home_view_model_test.dart` | `checking` antes da resposta, success, error e `dispose` |
 
 ### `flutter analyze` em pastas com acento
 
@@ -352,7 +358,7 @@ Situação das tasks R0 que tocam este repositório. A coluna **Jira** é o stat
 | Issue | Task | Jira | Código |
 |---|---|---|---|
 | SCRUM-16 | Criar e configurar o projeto Flutter | A fazer | Executa no Android e no iOS; estrutura de pastas definida. O `http` já está no `pubspec`. O armazenamento local continua na SCRUM-27 |
-| SCRUM-19 | Estruturar a arquitetura MVVM | A fazer | Camadas definidas e fluxo de referência implementado |
+| SCRUM-19 | Estruturar a arquitetura MVVM | A fazer | Contrato em `docs/ARCHITECTURE.md`; `GET /health` é o fluxo de referência |
 | SCRUM-22 | Definir os models principais | A fazer | Não iniciado |
 | SCRUM-23 | Configurar a navegação base | A fazer | Não iniciado (só existe a estrutura de rotas) |
 | SCRUM-26 | Configurar o cliente HTTP | A fazer | `ApiClient` centralizado com erro uniforme; falta revisão |
