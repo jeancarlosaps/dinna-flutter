@@ -1,6 +1,6 @@
-import 'package:dinna/features/client/table/table_view.dart';
 import 'package:flutter/material.dart';
 
+import '../../features/client/table/table_view.dart';
 import '../../features/home/api_status_repository.dart';
 import '../../features/home/home_view.dart';
 import '../../features/home/home_view_model.dart';
