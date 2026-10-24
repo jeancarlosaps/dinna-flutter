@@ -87,7 +87,7 @@ Fundação (R0) **em andamento**. Nenhuma tela de produto foi implementada ainda
 
 | Item | Situação | Onde |
 |---|---|---|
-| Projeto Flutter (Android + iOS) | ✅ Criado. Build de **iOS Simulator** validado; **build Android ainda não executado** | `android/`, `ios/` |
+| Projeto Flutter (Android + iOS) | ✅ Executa no **Android Emulator** (API 36) e no **iOS Simulator** (iPhone 17) | `android/`, `ios/` |
 | MVVM com fluxo de referência | ✅ Home → ViewModel → Repository → ApiClient → `GET /health` | `lib/features/home/` |
 | Tema Dinna (Material 3) | ✅ Paleta e componentes base do tema | `lib/app/theme/` |
 | URL da API por ambiente | ✅ `--dart-define=API_BASE_URL` com padrão por plataforma | `lib/core/config/` |
@@ -253,7 +253,7 @@ Sem configuração, o app escolhe a URL pela plataforma ([`app_config.dart`](lib
 
 Para mudar, passe `--dart-define=API_BASE_URL=<url>` no `flutter run`. Nenhuma credencial vai no código nem no `--dart-define`.
 
-> **HTTP sem TLS.** O app usa `package:http`, que abre sockets do próprio Dart (`dart:io`). Desde o Flutter 2.2, esses sockets não seguem a política de cleartext da plataforma ([documentação](https://docs.flutter.dev/release/breaking-changes/network-policy-ios-android)), por isso `http://` para a API local não precisa de `networkSecurityConfig` (Android) nem de exceção ATS (iOS). Se algum dia o app passar a usar um cliente HTTP nativo da plataforma, essas configurações passam a ser necessárias. Até agora, a chamada só foi exercitada em testes; ainda não foi executada em emulador nem em dispositivo.
+> **HTTP sem TLS.** O app usa `package:http`, que abre sockets do próprio Dart (`dart:io`). Desde o Flutter 2.2, esses sockets não seguem a política de cleartext da plataforma ([documentação](https://docs.flutter.dev/release/breaking-changes/network-policy-ios-android)), por isso `http://` para a API local não precisa de `networkSecurityConfig` (Android) nem de exceção ATS (iOS). Se algum dia o app passar a usar um cliente HTTP nativo da plataforma, essas configurações passam a ser necessárias. O manifesto principal do Android declara `INTERNET`, porque o release não herda a permissão que o Flutter coloca só em debug e profile. No Android Emulator, com a API fora do ar, o botão “Verificar conexão com a API” mostrou “Não foi possível conectar à API”. Dispositivo físico ainda não foi testado.
 
 ### 6. Execute no iOS
 
@@ -270,7 +270,7 @@ flutter emulators --launch <id>
 flutter run
 ```
 
-> **Android ainda não validado.** O projeto Android existe, mas nenhum build Android foi executado até agora: a máquina usada na fundação não tem `cmdline-tools` instalado nem as licenças aceitas. A CI também não compila Android.
+> **Android validado em debug.** Em 24/10/2026 o app foi instalado e aberto no emulador `Dinna_Phone_API_36.1` (API 36, arm64). O `flutter doctor` desta máquina ainda aponta `cmdline-tools` ausente; o Gradle aceitou a licença do NDK que já estava no SDK e concluiu o `assembleDebug`. A CI continua sem compilar Android nem iOS.
 
 ### 8. Dispositivo físico
 
@@ -351,7 +351,7 @@ Situação das tasks R0 que tocam este repositório. A coluna **Jira** é o stat
 
 | Issue | Task | Jira | Código |
 |---|---|---|---|
-| SCRUM-16 | Criar e configurar o projeto Flutter | A fazer | Parcial: projeto e estrutura prontos; falta validar no Android e definir o armazenamento local |
+| SCRUM-16 | Criar e configurar o projeto Flutter | A fazer | Executa no Android e no iOS; estrutura de pastas definida. O `http` já está no `pubspec`. O armazenamento local continua na SCRUM-27 |
 | SCRUM-19 | Estruturar a arquitetura MVVM | A fazer | Camadas definidas e fluxo de referência implementado |
 | SCRUM-22 | Definir os models principais | A fazer | Não iniciado |
 | SCRUM-23 | Configurar a navegação base | A fazer | Não iniciado (só existe a estrutura de rotas) |
@@ -359,7 +359,7 @@ Situação das tasks R0 que tocam este repositório. A coluna **Jira** é o stat
 | SCRUM-27 | Definir a persistência local | A fazer | Não iniciado |
 | SCRUM-28 | Estrutura visual base | Em andamento | Tema pronto; faltam os componentes reutilizáveis |
 
-As releases seguintes (R1 MVP Operacional, R2 Dinna, R3 Evoluções) estão no Jira, sem datas definidas.
+As releases seguintes (R1 MVP Operacional, R2 Dinna, R3 Evoluções) estão no Jira, sem datas definidas. Em 24/10/2026 a SCRUM-16 está *Em andamento*.
 
 ---
 
@@ -389,7 +389,7 @@ Os focos vêm da distribuição de issues no backlog (Atividade 2) e não são c
 2. **SCRUM-23:** definir as rotas do cliente e do restaurante.
 3. **SCRUM-27:** escolher o armazenamento local (carrinho, preferências, último pedido).
 4. **SCRUM-28:** criar os componentes Dinna reutilizáveis em cima do tema.
-5. **Ambiente:** validar o build Android (`cmdline-tools` + licenças) em uma máquina com espaço livre.
+5. **Ambiente:** instalar `cmdline-tools` para o `flutter doctor` ficar verde. O debug Android já executa sem esse componente.
 
 ## 14 · Links
 
