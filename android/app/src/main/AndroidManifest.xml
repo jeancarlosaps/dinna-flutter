@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- O app consulta a dinna-api. Debug e profile já declaram INTERNET
+         para o tooling do Flutter; o manifesto principal cobre o release. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="dinna"
         android:name="${applicationName}"
