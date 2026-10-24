@@ -27,6 +27,7 @@ class TableView extends StatelessWidget {
                               text: 'dinna',
                               style: TextStyle(
                                 fontSize: 56,
+                                height: 1.0,
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: -2,
                                 color: theme.colorScheme.onSurface,
@@ -39,6 +40,7 @@ class TableView extends StatelessWidget {
                               ],
                             ),
                           ),
+                          const SizedBox(height: 4),
                           Container(
                             width: 20,
                             height: 4,
