@@ -94,7 +94,7 @@ Fundação (R0) **em andamento**. Nenhuma tela de produto foi implementada ainda
 | Cliente HTTP + erro uniforme | ✅ `ApiClient` + `ApiException` | `lib/core/network/` |
 | Testes, lint, format, CI | ✅ 19 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
 | Models (`Product`, `CartItem`, `Order`, `Preference`) | ⬜ Não implementado (SCRUM-22) | — |
-| Rotas do cliente e do restaurante | ⬜ Não implementado (SCRUM-23) | — |
+| Rotas do cliente e do restaurante | ✅ Nomes da R1 em `AppRoutes`; as telas de produto ainda são placeholder | [`lib/app/router/`](lib/app/router/), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Persistência local | ⬜ Mecanismo a definir (SCRUM-27) | — |
 | Componentes visuais reutilizáveis | ⬜ Não implementado (parte da SCRUM-28) | — |
 | Telas de R1, R2 e R3 | ⬜ Planejado | — |
@@ -140,7 +140,7 @@ Tudo nesta seção é **planejado para a R1** e ainda não existe no código.
 | Linguagem | Dart 3.13.5, null safety | Padrão do Flutter stable |
 | Estado | `ChangeNotifier` + `ListenableBuilder` | Nativos do Flutter e suficientes para MVVM; sem dependência extra |
 | HTTP | [`http`](https://pub.dev/packages/http) 1.6.0 | Pacote oficial do time Dart, testável com `MockClient` |
-| Navegação | `onGenerateRoute` nativo | Poucas rotas por enquanto; `go_router` pode entrar na SCRUM-23 se fizer falta |
+| Navegação | `onGenerateRoute` nativo | A SCRUM-23 manteve o `Navigator` do Flutter. O mapa está em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Lint | `flutter_lints` 6.0.0 + regras em `analysis_options.yaml` | Análise estrita (`strict-casts`, `strict-raw-types`) |
 
 Dependências diretas: `http` e `cupertino_icons`, que veio no template do Flutter. Nenhuma biblioteca de estado, injeção de dependência ou armazenamento foi adicionada.
@@ -360,7 +360,7 @@ Situação das tasks R0 que tocam este repositório. A coluna **Jira** é o stat
 | SCRUM-16 | Criar e configurar o projeto Flutter | A fazer | Executa no Android e no iOS; estrutura de pastas definida. O `http` já está no `pubspec`. O armazenamento local continua na SCRUM-27 |
 | SCRUM-19 | Estruturar a arquitetura MVVM | A fazer | Contrato em `docs/ARCHITECTURE.md`; `GET /health` é o fluxo de referência |
 | SCRUM-22 | Definir os models principais | A fazer | Não iniciado |
-| SCRUM-23 | Configurar a navegação base | A fazer | Não iniciado (só existe a estrutura de rotas) |
+| SCRUM-23 | Configurar a navegação base | A fazer | Mapa do cliente e do restaurante em `AppRoutes`; a home segue em `/` |
 | SCRUM-26 | Configurar o cliente HTTP | A fazer | `ApiClient` centralizado com erro uniforme; falta revisão |
 | SCRUM-27 | Definir a persistência local | A fazer | Não iniciado |
 | SCRUM-28 | Estrutura visual base | Em andamento | Tema pronto; faltam os componentes reutilizáveis |
@@ -392,7 +392,7 @@ Os focos vêm da distribuição de issues no backlog (Atividade 2) e não são c
 ## 13 · Próximos passos
 
 1. **SCRUM-22 / SCRUM-24:** fechar o contrato REST e criar os models a partir dele.
-2. **SCRUM-23:** definir as rotas do cliente e do restaurante.
+2. **Navegação das telas:** ligar a `TableView` (`/table`, PR da `feature/client-ui`) e as próximas Views ao mapa, sem renomear as rotas.
 3. **SCRUM-27:** escolher o armazenamento local (carrinho, preferências, último pedido).
 4. **SCRUM-28:** criar os componentes Dinna reutilizáveis em cima do tema.
 5. **Ambiente:** instalar `cmdline-tools` para o `flutter doctor` ficar verde. O debug Android já executa sem esse componente.

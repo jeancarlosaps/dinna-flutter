@@ -13,6 +13,8 @@ flowchart LR
 
 A composição fica em [`lib/main.dart`](../lib/main.dart): `AppConfig` → `ApiClient` → `HttpApiStatusRepository` → `DinnaApp`. O router só repassa o repository. O `HomeViewModel` nasce no `State` da `HomeView` e é descartado no `dispose`.
 
+O mapa de rotas, o nome desconhecido e a integração com a tela de mesa estão em [Navegação](#navegação).
+
 ## Responsabilidades
 
 | Camada | Faz | Não faz |
@@ -54,13 +56,102 @@ O contrato `ApiStatusRepository` não importa o Service. Quem implementa (`HttpA
 9. O ViewModel publica o estado e notifica de novo. Se a tela já foi descartada, não altera o estado nem notifica.
 10. Uma falha que o repository não traduziu tira o ViewModel de `checking` e o leva a `offline`, com a mensagem "Não foi possível verificar a API". O texto da exceção não entra na tela. Em debug, o console do Flutter mostra a falha para diagnóstico; em release, esse registro não acontece.
 
+## Navegação
+
+O app usa um único `Navigator`, o do `MaterialApp`. [`lib/app/app.dart`](../lib/app/app.dart) define `initialRoute: AppRoutes.home` e `onGenerateRoute`. O mapa fica em [`lib/app/router/app_router.dart`](../lib/app/router/app_router.dart). A SCRUM-23 mantém o `onGenerateRoute` nativo. Os nomes da R1 ficam em `AppRoutes.clientFlow` e `AppRoutes.restaurantFlow`; o `switch` escolhe a página a partir dessas listas. A dependência continua entrando pelo construtor.
+
+### Responsabilidades
+
+| Peça | Faz | Não faz |
+|---|---|---|
+| `AppRoutes` | Guarda os nomes estáveis e a ordem de cada fluxo. | Construir widget, ler argumento ou escolher a rota inicial. |
+| `AppRouter` | Escolhe a página em `onGenerateRoute` e repassa o `RouteSettings`. Entrega o `ApiStatusRepository` à home pelo construtor do `HomeViewModel`. | Chamar HTTP, autenticar, persistir ou desenhar tela de produto. |
+| `RoutePlaceholder` | Ocupa a rota cuja View ainda não existe, para o teste conseguir entrar, seguir e voltar. | Substituir a tela da story. |
+| `UnknownRouteView` | Responde a qualquer nome fora do mapa com o texto "Página não encontrada". | Lançar exceção ou redirecionar para a home. |
+| `DinnaApp` | Liga a rota inicial, o tema e o repository ao router. | Escolher a página. |
+
+`onGenerateRoute` sempre devolve um `MaterialPageRoute`. O nome desconhecido é o ramo final do `switch`, então `onUnknownRoute` fica sem uso. O `AppRouter` nasce no `build` do `DinnaApp` e recebe `apiStatusRepository` pelo construtor. A home é a única rota desta task com dependência. As demais não recebem repository.
+
+### Mapa
+
+Os nomes são correspondência exata: sem barra no fim e sem parâmetro no caminho. O id de um detalhe viaja em `RouteSettings.arguments` como `AppRouteId`.
+
+| Fluxo | Constante | Nome | Argumento | Tela nesta task |
+|---|---|---|---|---|
+| Fundação | `home` | `/` | — | `HomeView`, com `GET /health` |
+| Cliente | `table` | `/table` | — | Placeholder. A `TableView` de `feature/client-ui` ocupa este nome na integração |
+| Cliente | `menu` | `/menu` | — | Placeholder |
+| Cliente | `product` | `/product` | `AppRouteId` | Placeholder |
+| Cliente | `cart` | `/cart` | — | Placeholder |
+| Cliente | `order` | `/order` | — | Placeholder |
+| Cliente | `orderTracking` | `/order/tracking` | `AppRouteId` | Placeholder |
+| Restaurante | `restaurant` | `/restaurant` | — | Placeholder. Entrada do painel, na fila de pedidos |
+| Restaurante | `restaurantOrder` | `/restaurant/order` | `AppRouteId` | Placeholder |
+| Restaurante | `restaurantMenu` | `/restaurant/menu` | — | Placeholder |
+
+`AppRoutes.clientFlow` e `AppRoutes.restaurantFlow` registram essa ordem. A ordem é a jornada da R1, não uma pilha obrigatória: qualquer nome do mapa abre com `Navigator.pushNamed`.
+
+```mermaid
+flowchart TD
+  home["/ · home"]
+  table["/table · mesa"]
+  menu["/menu · cardápio"]
+  product["/product · produto"]
+  cart["/cart · carrinho"]
+  order["/order · pedido"]
+  tracking["/order/tracking · acompanhamento"]
+  restaurant["/restaurant · fila"]
+  rorder["/restaurant/order · detalhe"]
+  rmenu["/restaurant/menu · cardápio"]
+
+  home --> table
+  home --> restaurant
+  table --> menu
+  menu --> product
+  product --> cart
+  cart --> order
+  order --> tracking
+  restaurant --> rorder
+  restaurant --> rmenu
+```
+
+A home de fundação permanece como está e não ganha botão de produto. Quem entra nos fluxos nesta task é o teste, por `pushNamed`. O retorno é `Navigator.pop`. O placeholder usa `AppBar`, então o botão de voltar desempilha a mesma rota.
+
+### Argumentos
+
+`AppRouteId` carrega o id do produto ou do pedido. O router não lê nem valida o argumento: o `MaterialPageRoute` recebe o `RouteSettings` inteiro. A View da story lê `ModalRoute.of(context)!.settings.arguments`. As rotas de detalhe são `product`, `orderTracking` e `restaurantOrder` (`AppRoutes.detailRoutes`).
+
+### Integração com a UI do Gabriel
+
+O PR [#3](https://github.com/jeancarlosaps/dinna-flutter/pull/3) (`feature/client-ui`, rascunho, base `dev`) já definiu a entrada do cliente:
+
+- a constante `AppRoutes.table`;
+- o nome `/table`;
+- a `TableView` em `lib/features/client/table/table_view.dart`;
+- `initialRoute` apontando para `AppRoutes.table`.
+
+Esta branch adota o nome e a constante. A `TableView` continua só no PR dele. O placeholder de `/table` existe para o teste de roteamento. No merge, `/table` ganha um case próprio antes do ramo do placeholder, devolvendo `const TableView()`. O nome permanece em `AppRoutes.table` e em `clientFlow`.
+
+`lib/app/app.dart` não muda aqui. A rota inicial segue `AppRoutes.home`, a home e o `GET /health` continuam no lugar, e [`test/app_test.dart`](../test/app_test.dart) segue válido. A troca de `initialRoute` para `/table` permanece no PR #3. Na hora de integrar, essa linha fica em aberto: `/` enquanto a home de fundação for a entrada, ou `/table` quando a mesa for a entrada de produto. O restante do mapa entra nos dois desfechos.
+
+Os botões da `TableView` ainda não navegam (`onPressed` vazio). Quando a tela for ligada ao mapa:
+
+- "Ver cardápio" chama `Navigator.pushNamed(context, AppRoutes.menu)`;
+- "Acessar o painel" chama `Navigator.pushNamed(context, AppRoutes.restaurant)`.
+
+A branch `feature/client-ui` divergiu em `b6b132c`. Desde esse commit, `app_router.dart` e `app.dart` não mudaram na `dev`. O conflito previsto no merge é o `switch` de `app_router.dart`, porque os dois PRs declaram `AppRoutes.table`. A resolução fica com a `TableView` no case `/table` e com as outras rotas deste mapa. Os PDFs que o PR #3 versiona em `lib/` ficam fora desta branch.
+
+### Troca do placeholder pela View
+
+Quando a story da tela entrar, a rota ganha um case próprio no `switch`, antes do ramo que devolve `RoutePlaceholder`. O nome em `AppRoutes` permanece na lista do fluxo. Dependência nova segue o caminho da home: `main` → `DinnaApp` → `AppRouter` → construtor da View ou do ViewModel. A View da feature continua criando o ViewModel no `State`.
+
 ## Como adicionar uma feature
 
 1. Criar `lib/features/<feature>/` com View, ViewModel e o contrato do Repository.
 2. A implementação que chama a API fica em outra classe e usa `ApiClient.getJson` (ou o método HTTP que o Service passar a expor). Ela traduz `ApiException` antes de devolver o resultado ao ViewModel.
 3. O ViewModel recebe o contrato pelo construtor, expõe loading, success e error, e depois do `dispose` não altera estado nem chama `notifyListeners`. Uma exceção que o repository não traduziu vira erro de tela genérico, para a UI não permanecer em loading.
 4. A View cria o ViewModel no `State`, observa com `ListenableBuilder` e descarta no `dispose`.
-5. Montar a implementação concreta em `lib/main.dart` e passar o contrato pelo construtor até a tela. Registrar a rota em `app_router.dart` só quando a navegação dessa feature entrar no escopo.
+5. Montar a implementação concreta em `lib/main.dart` e passar o contrato pelo construtor até o `AppRouter`. No `onGenerateRoute`, a rota ganha um case próprio antes do `RoutePlaceholder`. O nome já está em `AppRoutes`; a story não cria um nome paralelo.
 6. Não adicionar `provider`, `get_it`, UseCase ou outra camada sem uma necessidade que este fluxo não cubra.
 
 A persistência local (SCRUM-27) ainda não existe. Quando entrar, será outra fonte atrás de um Repository, não um atalho da View para o disco.
@@ -89,5 +180,6 @@ Os testes de unidade não chamam a API real.
 | Repository | `HttpApiStatusRepository` com `ApiClient` e `MockClient` | `{ "status": "ok" }`, JSON inesperado, erro de rede e status HTTP inválido |
 | Service | `ApiClient` com `MockClient` | URL, corpo de erro da API, falha de rede e corpo que não é JSON |
 | Model | `fromJson` e `toJson` | obrigatório ausente, tipo incompatível, `CartItem` → `OrderItem`, preferência vazia, status desconhecido e centavos não inteiros |
+| Router | `DinnaApp` com o fake de `ApiStatusRepository` | rota inicial `/`, entrada em `/table` e `/restaurant`, ida e volta, nome desconhecido, `AppRouteId` preservado, home e `GET /health` depois do retorno |
 
 O fake do fluxo de referência está em [`test/features/home/fake_api_status_repository.dart`](../test/features/home/fake_api_status_repository.dart).
