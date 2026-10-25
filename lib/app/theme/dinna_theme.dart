@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import 'dinna_colors.dart';
 
 abstract final class DinnaTheme {
-  static const radius = 16.0;
+  static const radius = 12.0;
 
   static const fontFamily = 'Inter';
   static const serifFamily = 'Source Serif 4';
-  
+
   static const taglineStyle = TextStyle(
     fontFamily: serifFamily,
     fontStyle: FontStyle.italic,
@@ -68,13 +68,22 @@ abstract final class DinnaTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(52),
+          minimumSize: const Size.fromHeight(48),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           shape: shape,
           textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52), shape: shape),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(48),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          shape: shape,
+          backgroundColor: colorScheme.surfaceContainerLowest,
+          foregroundColor: colorScheme.onSurface,
+          side: BorderSide(color: colorScheme.outlineVariant),
+          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
