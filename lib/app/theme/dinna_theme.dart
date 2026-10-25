@@ -5,6 +5,9 @@ import 'dinna_colors.dart';
 abstract final class DinnaTheme {
   static const radius = 16.0;
 
+  static const fontFamily = 'Inter';
+  static const serifFamily = 'Source Serif 4';
+
   static ThemeData light() {
     final colorScheme =
         ColorScheme.fromSeed(
@@ -37,6 +40,7 @@ abstract final class DinnaTheme {
 
     return ThemeData(
       useMaterial3: true,
+      fontFamily: fontFamily,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: colorScheme.surface,
       appBarTheme: AppBarTheme(
