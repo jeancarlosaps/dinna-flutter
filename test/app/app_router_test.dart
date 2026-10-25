@@ -1,5 +1,6 @@
 import 'package:dinna/app/app.dart';
 import 'package:dinna/app/router/app_router.dart';
+import 'package:dinna/features/client/table/table_view.dart';
 import 'package:dinna/features/home/api_status_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -37,11 +38,11 @@ void main() {
     await _pumpApp(tester);
     await _push(tester, AppRoutes.table);
 
-    expect(find.text(AppRoutes.table), findsOneWidget);
-    expect(find.text('Tela ainda não implementada.'), findsOneWidget);
+    expect(find.byType(TableView), findsOneWidget);
+    expect(find.text('Tela ainda não implementada.'), findsNothing);
     expect(find.text('dinna'), findsNothing);
 
-    final context = tester.element(find.text(AppRoutes.table));
+    final context = tester.element(find.byType(TableView));
     expect(ModalRoute.of(context)!.settings.name, AppRoutes.table);
   });
 
@@ -64,15 +65,15 @@ void main() {
     final openedTable = Navigator.of(homeContext).pushNamed(AppRoutes.table);
     await tester.pumpAndSettle();
 
-    await _push(tester, AppRoutes.menu, from: AppRoutes.table);
+    await _push(tester, AppRoutes.menu, from: _tableTitle);
     expect(find.text(AppRoutes.menu), findsOneWidget);
-    expect(find.text(AppRoutes.table), findsNothing);
+    expect(find.byType(TableView), findsNothing);
 
     await tester.tap(find.byType(BackButton));
     await tester.pumpAndSettle();
-    expect(find.text(AppRoutes.table), findsOneWidget);
+    expect(find.byType(TableView), findsOneWidget);
 
-    await tester.tap(find.byType(BackButton));
+    Navigator.of(tester.element(find.byType(TableView))).pop();
     await tester.pumpAndSettle();
 
     expect(find.text('dinna'), findsOneWidget);
@@ -134,7 +135,10 @@ void main() {
   });
 
   testWidgets('cada rota de cliente e restaurante abre o próprio placeholder', (tester) async {
-    final routes = [...AppRoutes.clientFlow, ...AppRoutes.restaurantFlow];
+    final routes = [
+      ...AppRoutes.clientFlow,
+      ...AppRoutes.restaurantFlow,
+    ].where((route) => route != AppRoutes.table);
 
     for (final route in routes) {
       await _pumpApp(tester);
@@ -162,7 +166,7 @@ void main() {
   testWidgets('a home e o GET /health continuam válidos depois de ir e voltar', (tester) async {
     await _pumpApp(tester);
     await _push(tester, AppRoutes.table);
-    await _push(tester, AppRoutes.home, from: AppRoutes.table);
+    await _push(tester, AppRoutes.home, from: _tableTitle);
 
     expect(find.text('API não verificada'), findsOneWidget);
 
@@ -173,15 +177,18 @@ void main() {
 
     Navigator.of(tester.element(find.text('API online'))).pop();
     await tester.pumpAndSettle();
-    expect(find.text(AppRoutes.table), findsOneWidget);
+    expect(find.byType(TableView), findsOneWidget);
 
-    await tester.tap(find.byType(BackButton));
+    Navigator.of(tester.element(find.byType(TableView))).pop();
     await tester.pumpAndSettle();
 
     expect(find.text('dinna'), findsOneWidget);
     expect(find.text('API não verificada'), findsOneWidget);
   });
 }
+
+/// Texto da `TableView`, usado como ponto de partida para navegar a partir dela.
+const _tableTitle = 'Qual é a sua mesa?';
 
 Future<void> _pumpApp(WidgetTester tester) {
   return tester.pumpWidget(

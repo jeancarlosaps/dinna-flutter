@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../features/client/table/table_view.dart';
 import '../../features/home/api_status_repository.dart';
 import '../../features/home/home_view.dart';
 import '../../features/home/home_view_model.dart';
@@ -85,6 +86,7 @@ class AppRouter {
   Widget _pageFor(String? name) {
     return switch (name) {
       AppRoutes.home => HomeView(createViewModel: () => HomeViewModel(apiStatusRepository)),
+      AppRoutes.table => const TableView(),
       _ when name != null && _isFlowRoute(name) => RoutePlaceholder(routeName: name),
       _ => UnknownRouteView(routeName: name),
     };
