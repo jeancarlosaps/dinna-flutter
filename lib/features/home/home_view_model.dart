@@ -1,11 +1,12 @@
 import 'package:flutter/foundation.dart';
 
-import '../../core/network/api_exception.dart';
 import 'api_status_repository.dart';
 
 enum ApiStatus { unknown, checking, online, offline }
 
-/// Fluxo de referência MVVM: View → ViewModel → Repository → ApiClient.
+/// Fluxo de referência MVVM: View → ViewModel → Repository → Service.
+///
+/// Depende só de [ApiStatusRepository]. Não conhece HTTP.
 class HomeViewModel extends ChangeNotifier {
   HomeViewModel(this._repository);
 
@@ -19,6 +20,9 @@ class HomeViewModel extends ChangeNotifier {
 
   bool _disposed = false;
 
+  /// Mensagem de tela quando o repository deixa escapar uma falha que não traduziu.
+  static const unexpectedFailureMessage = 'Não foi possível verificar a API';
+
   Future<void> checkApi() async {
     if (_status == ApiStatus.checking) return;
 
@@ -27,13 +31,35 @@ class HomeViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _status = await _repository.isApiOnline() ? ApiStatus.online : ApiStatus.offline;
-    } on ApiException catch (error) {
-      _status = ApiStatus.offline;
-      _errorMessage = error.message;
+      final availability = await _repository.checkHealth();
+      _publish(
+        status: availability.isOnline ? ApiStatus.online : ApiStatus.offline,
+        message: availability.message,
+      );
+    } catch (error, stackTrace) {
+      // ApiException já foi traduzida no repository. O que chega aqui é falha
+      // inesperada: a tela sai de checking, sem o texto interno da exceção.
+      _publish(status: ApiStatus.offline, message: unexpectedFailureMessage);
+      // Debug apenas: em release o presentError imprime exception.toString(),
+      // que pode incluir a URL. A tela continua só com a mensagem genérica.
+      if (kDebugMode && !_disposed) {
+        FlutterError.presentError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'home view model',
+            context: ErrorDescription('ao verificar a API'),
+          ),
+        );
+      }
     }
-    // A tela pode ter sido fechada enquanto a requisição estava em andamento.
-    if (!_disposed) notifyListeners();
+  }
+
+  void _publish({required ApiStatus status, required String? message}) {
+    if (_disposed) return;
+    _status = status;
+    _errorMessage = message;
+    notifyListeners();
   }
 
   @override

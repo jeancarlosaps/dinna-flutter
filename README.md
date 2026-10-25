@@ -61,7 +61,7 @@ flowchart LR
   class API api
 ```
 
-Hoje o único contrato implementado entre os dois é `GET /health`. Os demais estão no [contrato REST da API](https://github.com/jeancarlosaps/dinna-api/blob/main/docs/api-contract.md), em rascunho.
+Hoje o único endpoint integrado entre os dois é `GET /health`. Os models do app já seguem o [contrato inicial da API](https://github.com/jeancarlosaps/dinna-api/blob/main/docs/api-contract.md). A SCRUM-24, que define esse contrato, está concluída no Jira. Os demais endpoints ainda não são chamados pelo app.
 
 ---
 
@@ -83,18 +83,18 @@ O Dinna encurta esse intervalo **sem substituir o atendimento humano**:
 
 ## 02 · Estado atual
 
-Fundação (R0) **em andamento**. Nenhuma tela de produto foi implementada ainda.
+Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas já estão no código. Nenhuma tela de produto foi implementada ainda.
 
 | Item | Situação | Onde |
 |---|---|---|
-| Projeto Flutter (Android + iOS) | ✅ Criado. Build de **iOS Simulator** validado; **build Android ainda não executado** | `android/`, `ios/` |
-| MVVM com fluxo de referência | ✅ Home → ViewModel → Repository → ApiClient → `GET /health` | `lib/features/home/` |
+| Projeto Flutter (Android + iOS) | ✅ Executa no **Android Emulator** (API 36) e no **iOS Simulator** (iPhone 17) | `android/`, `ios/` |
+| MVVM com fluxo de referência | ✅ View → ViewModel → Repository → Service (`ApiClient`) → `GET /health` | `lib/features/home/`, [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Tema Dinna (Material 3) | ✅ Paleta e componentes base do tema | `lib/app/theme/` |
 | URL da API por ambiente | ✅ `--dart-define=API_BASE_URL` com padrão por plataforma | `lib/core/config/` |
 | Cliente HTTP + erro uniforme | ✅ `ApiClient` + `ApiException` | `lib/core/network/` |
-| Testes, lint, format, CI | ✅ 11 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
-| Models (`Product`, `CartItem`, `Order`, `Preference`) | ⬜ Não implementado (SCRUM-22) | — |
-| Rotas do cliente e do restaurante | ⬜ Não implementado (SCRUM-23) | — |
+| Testes, lint, format, CI | ✅ 72 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
+| Models (`Product`, `CartItem`, `Order`, `OrderItem`, `OrderStatus`, `Preference`) | ✅ Implementados em `lib/core/domain/` (SCRUM-22, PR #5 na `dev`) | [`lib/core/domain/`](lib/core/domain/) |
+| Rotas do cliente e do restaurante | ✅ Mapa da R1 em `AppRoutes` (PR #6, aguardando merge). As telas de produto ainda são placeholder e a home segue em `/` | [`lib/app/router/`](lib/app/router/), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Persistência local | ⬜ Mecanismo a definir (SCRUM-27) | — |
 | Componentes visuais reutilizáveis | ⬜ Não implementado (parte da SCRUM-28) | — |
 | Telas de R1, R2 e R3 | ⬜ Planejado | — |
@@ -107,7 +107,7 @@ Fundação (R0) **em andamento**. Nenhuma tela de produto foi implementada ainda
   <img src="docs/assets/readme/flow.svg" alt="Jornada planejada para R1. Cliente: mesa, cardápio, produto, carrinho, pedido e acompanhamento. O pedido vai para a fila do restaurante, que vê detalhes, atualiza o preparo e finaliza; o status volta para o cliente. O restaurante também mantém o cardápio." width="1600" loading="lazy" />
 </p>
 
-Tudo nesta seção é **planejado para a R1** e ainda não existe no código.
+As telas desta seção são **planejadas para a R1** e ainda não existem no código. Os nomes de rota da jornada já estão no mapa da SCRUM-23.
 
 **Cliente (Marina)**
 
@@ -140,7 +140,7 @@ Tudo nesta seção é **planejado para a R1** e ainda não existe no código.
 | Linguagem | Dart 3.13.5, null safety | Padrão do Flutter stable |
 | Estado | `ChangeNotifier` + `ListenableBuilder` | Nativos do Flutter e suficientes para MVVM; sem dependência extra |
 | HTTP | [`http`](https://pub.dev/packages/http) 1.6.0 | Pacote oficial do time Dart, testável com `MockClient` |
-| Navegação | `onGenerateRoute` nativo | Poucas rotas por enquanto; `go_router` pode entrar na SCRUM-23 se fizer falta |
+| Navegação | `onGenerateRoute` nativo | A SCRUM-23 manteve o `Navigator` do Flutter. O mapa está em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Lint | `flutter_lints` 6.0.0 + regras em `analysis_options.yaml` | Análise estrita (`strict-casts`, `strict-raw-types`) |
 
 Dependências diretas: `http` e `cupertino_icons`, que veio no template do Flutter. Nenhuma biblioteca de estado, injeção de dependência ou armazenamento foi adicionada.
@@ -165,15 +165,18 @@ flowchart LR
 | Camada | Responsabilidade | Não pode |
 |---|---|---|
 | **View** | Desenhar o estado e repassar ações do usuário | Ter regra de negócio ou chamar HTTP |
-| **ViewModel** | Guardar o estado da tela, orquestrar ações e chamar `notifyListeners()` | Conhecer `BuildContext` ou widgets |
-| **Repository** | Ser a fonte de dados do domínio e converter JSON em model | Conhecer UI |
-| **ApiClient** | Cuidar de HTTP, URL base e timeout, e converter falhas em `ApiException` | Conhecer regra de negócio |
+| **ViewModel** | Guardar loading, success e error e orquestrar a ação | Conhecer widget, `http` ou `ApiException` |
+| **Repository** | Entregar dados ao ViewModel e traduzir payload e falhas do Service | Conhecer UI ou estado visual |
+| **Service (`ApiClient`)** | HTTP, serialização, timeout e status code; falhas viram `ApiException` | Conhecer regra de negócio ou estado de tela |
+
+O contrato completo, as dependências permitidas, o passo a passo do `GET /health` e como criar a próxima feature estão em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 Regras que o código já segue:
 
 - As dependências são montadas em [`lib/main.dart`](lib/main.dart) e passadas por construtor. Não há service locator.
 - O ViewModel nasce no `State` da tela (`createViewModel`) e é descartado no `dispose`.
-- O `ApiClient` lê o formato de erro da API (`{ "error": { "code", "message" } }`) e converte falhas de rede, timeout e HTTP em `ApiException`.
+- O Repository traduz `ApiException` em `ApiAvailability`. O ViewModel só vê online, offline e a mensagem. Outra falha tira a tela de `checking` e a leva a `offline` com um texto genérico, sem o detalhe interno. Depois do `dispose`, o ViewModel não altera estado nem notifica.
+- O `ApiClient` lê o formato de erro da API (`{ "error": { "code", "message" } }`) e converte falhas de rede, timeout, HTTP e corpo que não é JSON em `ApiException`.
 
 ### Estrutura real
 
@@ -182,25 +185,30 @@ lib/
 ├── main.dart                         # composição: AppConfig, ApiClient, repositories
 ├── app/
 │   ├── app.dart                      # MaterialApp + tema + rotas
-│   ├── router/app_router.dart        # nomes de rota e onGenerateRoute
+│   ├── router/
+│   │   ├── app_router.dart           # nomes de rota e onGenerateRoute
+│   │   └── route_placeholder.dart    # página mínima até a View da story
 │   └── theme/
 │       ├── dinna_colors.dart         # paleta Dinna
 │       └── dinna_theme.dart          # ThemeData Material 3
 ├── core/
 │   ├── config/app_config.dart        # API_BASE_URL por ambiente
+│   ├── domain/                       # models da SCRUM-22
 │   └── network/
-│       ├── api_client.dart           # HTTP centralizado
+│       ├── api_client.dart           # Service HTTP
 │       └── api_exception.dart        # erro uniforme
 └── features/
     └── home/                         # fluxo de referência (tela provisória)
         ├── api_status_repository.dart
+        ├── http_api_status_repository.dart
         ├── home_view.dart
         └── home_view_model.dart
-test/                                 # espelha lib/ (11 testes)
+test/                                 # espelha lib/ (72 testes)
+docs/ARCHITECTURE.md                  # contrato das camadas MVVM
 docs/assets/readme/                   # ilustrações deste README
 ```
 
-Novas features entram em `lib/features/<feature>/` (`table`, `menu`, `product`, `cart`, `orders`, `restaurant`, `recommendation`). Models compartilhados vão em `lib/shared/models/` e widgets reutilizáveis em `lib/shared/widgets/`. Essas pastas são criadas junto com o primeiro arquivo.
+Novas features entram em `lib/features/<feature>/` (`table`, `menu`, `product`, `cart`, `orders`, `restaurant`, `recommendation`). Os models compartilhados ficam em `lib/core/domain/`. Os widgets reutilizáveis ainda não existem; entram com a SCRUM-28.
 
 <a id="comece-aqui"></a>
 
@@ -253,7 +261,7 @@ Sem configuração, o app escolhe a URL pela plataforma ([`app_config.dart`](lib
 
 Para mudar, passe `--dart-define=API_BASE_URL=<url>` no `flutter run`. Nenhuma credencial vai no código nem no `--dart-define`.
 
-> **HTTP sem TLS.** O app usa `package:http`, que abre sockets do próprio Dart (`dart:io`). Desde o Flutter 2.2, esses sockets não seguem a política de cleartext da plataforma ([documentação](https://docs.flutter.dev/release/breaking-changes/network-policy-ios-android)), por isso `http://` para a API local não precisa de `networkSecurityConfig` (Android) nem de exceção ATS (iOS). Se algum dia o app passar a usar um cliente HTTP nativo da plataforma, essas configurações passam a ser necessárias. Até agora, a chamada só foi exercitada em testes; ainda não foi executada em emulador nem em dispositivo.
+> **HTTP sem TLS.** O app usa `package:http`, que abre sockets do próprio Dart (`dart:io`). Desde o Flutter 2.2, esses sockets não seguem a política de cleartext da plataforma ([documentação](https://docs.flutter.dev/release/breaking-changes/network-policy-ios-android)), por isso `http://` para a API local não precisa de `networkSecurityConfig` (Android) nem de exceção ATS (iOS). Se algum dia o app passar a usar um cliente HTTP nativo da plataforma, essas configurações passam a ser necessárias. O manifesto principal do Android declara `INTERNET`, porque o release não herda a permissão que o Flutter coloca só em debug e profile. No Android Emulator, com a API fora do ar, o botão “Verificar conexão com a API” mostrou “Não foi possível conectar à API”. Dispositivo físico ainda não foi testado.
 
 ### 6. Execute no iOS
 
@@ -270,7 +278,7 @@ flutter emulators --launch <id>
 flutter run
 ```
 
-> **Android ainda não validado.** O projeto Android existe, mas nenhum build Android foi executado até agora: a máquina usada na fundação não tem `cmdline-tools` instalado nem as licenças aceitas. A CI também não compila Android.
+> **Android validado em debug.** Em 24/10/2026 o app foi instalado e aberto no emulador `Dinna_Phone_API_36.1` (API 36, arm64). O `flutter doctor` desta máquina ainda aponta `cmdline-tools` ausente; o Gradle aceitou a licença do NDK que já estava no SDK e concluiu o `assembleDebug`. A CI continua sem compilar Android nem iOS.
 
 ### 8. Dispositivo físico
 
@@ -293,14 +301,17 @@ Na tela inicial, toque em **“Verificar conexão com a API”**: com a API no a
 | `dart format .` | Formata o código (largura 100) |
 | `dart format --output=none --set-exit-if-changed .` | Só verifica a formatação, como na CI |
 
-O que os 11 testes cobrem hoje:
+O que os 72 testes cobrem hoje (`flutter test` nesta branch):
 
 | Arquivo | Cobre |
 |---|---|
 | `test/app_test.dart` | O app inicia com o tema Dinna; o fluxo View → ViewModel → Repository |
+| `test/app/app_router_test.dart` | Rota inicial `/`, entrada nos fluxos, ida e volta, rota desconhecida e `GET /health` depois do retorno |
+| `test/core/domain/` | `fromJson` e `toJson` de `Product`, `Order`, `OrderItem`, `CartItem` e `Preference` |
 | `test/core/app_config_test.dart` | URL padrão por plataforma e prioridade do `API_BASE_URL` |
-| `test/core/api_client_test.dart` | Montagem da URL, leitura do erro da API e falha de rede |
-| `test/features/home/home_view_model_test.dart` | Estados `unknown → checking → online/offline` |
+| `test/core/api_client_test.dart` | Montagem da URL, erro da API, falha de rede e corpo que não é JSON |
+| `test/features/home/api_status_repository_test.dart` | Tradução de `/health`: ok, payload inesperado, rede e HTTP inválido |
+| `test/features/home/home_view_model_test.dart` | `checking` antes da resposta, success, error, exceção inesperada e `dispose` |
 
 ### `flutter analyze` em pastas com acento
 
@@ -334,32 +345,34 @@ Não há deploy, assinatura nem publicação em loja, e a CI não compila Androi
 |---|---|---|
 | `GET /health` → `{ "status": "ok" }` | **Implementado** nos dois lados | `ApiStatusRepository` |
 | Formato de erro `{ "error": { "code", "message" } }` | **Implementado** nos dois lados | `ApiClient` |
-| `/products`, `/orders`, `/orders/:id/status` | **Planejado** (R1), contrato em rascunho | — |
+| `/products`, `/orders`, `/orders/:id/status` | **Planejado no app** (R1). O contrato inicial está concluído no Jira (SCRUM-24); o app ainda não chama esses endpoints | — |
 | `/ai/recommendation` | **Planejado** (R2) | — |
 
-Fonte do contrato: [`dinna-api/docs/api-contract.md`](https://github.com/jeancarlosaps/dinna-api/blob/main/docs/api-contract.md). Ele vira definitivo com o aceite da SCRUM-24.
+Fonte do contrato: [`dinna-api/docs/api-contract.md`](https://github.com/jeancarlosaps/dinna-api/blob/main/docs/api-contract.md). A SCRUM-24 está concluída no Jira.
 
 <a id="roadmap"></a>
 
 ## 10 · Roadmap
 
 <p align="center">
-  <img src="docs/assets/readme/roadmap.svg" alt="Roadmap. R0 Fundação, em andamento: app Flutter com MVVM base, API Fastify com /health e CI existem; models, rotas e contrato ainda não. R1 MVP Operacional, planejado. R2 Dinna, Me ajuda a escolher, planejado. R3 Evoluções, icebox." width="1600" loading="lazy" />
+  <img src="docs/assets/readme/roadmap.svg" alt="Roadmap ilustrado da R0 à R3. A figura ainda marca models, rotas e contrato como pendentes; a tabela abaixo é o estado em 24/10/2026. R1, R2 e R3 seguem planejados." width="1600" loading="lazy" />
 </p>
 
-Situação das tasks R0 que tocam este repositório. A coluna **Jira** é o status no board em 16/10/2026; a coluna **Código** é o que existe nesta branch.
+A ilustração acima é o desenho inicial da fundação e ainda mostra models, rotas e contrato em aberto. A tabela abaixo é o estado consultado em 24/10/2026.
+
+Situação das tasks R0 que tocam este repositório. A coluna **Jira** é o status no board em 24/10/2026; a coluna **Código** é o que existe nesta branch.
 
 | Issue | Task | Jira | Código |
 |---|---|---|---|
-| SCRUM-16 | Criar e configurar o projeto Flutter | A fazer | Parcial: projeto e estrutura prontos; falta validar no Android e definir o armazenamento local |
-| SCRUM-19 | Estruturar a arquitetura MVVM | A fazer | Camadas definidas e fluxo de referência implementado |
-| SCRUM-22 | Definir os models principais | A fazer | Não iniciado |
-| SCRUM-23 | Configurar a navegação base | A fazer | Não iniciado (só existe a estrutura de rotas) |
-| SCRUM-26 | Configurar o cliente HTTP | A fazer | `ApiClient` centralizado com erro uniforme; falta revisão |
-| SCRUM-27 | Definir a persistência local | A fazer | Não iniciado |
-| SCRUM-28 | Estrutura visual base | Em andamento | Tema pronto; faltam os componentes reutilizáveis |
+| SCRUM-16 | Criar e configurar o projeto Flutter | Concluído | Executa no Android e no iOS; estrutura de pastas definida. O `http` já está no `pubspec`. O armazenamento local continua na SCRUM-27 |
+| SCRUM-19 | Estruturar a arquitetura MVVM | Concluído | Implementada. Contrato em `docs/ARCHITECTURE.md`; `GET /health` é o fluxo de referência |
+| SCRUM-22 | Definir os models principais | Concluído | Implementados em `lib/core/domain/` e mergeados na `dev` pelo PR #5 |
+| SCRUM-23 | Configurar a navegação base | A fazer | Implementada nesta branch, no PR #6, aguardando merge. O mapa está em `AppRoutes` e a rota inicial da fundação segue `/` |
+| SCRUM-26 | Configurar o cliente HTTP | Concluído | `ApiClient` centralizado com erro uniforme, revisado e concluído |
+| SCRUM-27 | Definir a persistência local | Em andamento | Ainda sem código de persistência neste repositório |
+| SCRUM-28 | Estrutura visual base | Em análise | Tema pronto; os componentes reutilizáveis ainda não existem |
 
-As releases seguintes (R1 MVP Operacional, R2 Dinna, R3 Evoluções) estão no Jira, sem datas definidas.
+As releases seguintes (R1 MVP Operacional, R2 Dinna, R3 Evoluções) estão no Jira, sem datas definidas. A SCRUM-23 está no código deste PR e segue *A fazer* no Jira. A SCRUM-27 está *Em andamento* no Jira e ainda não tem persistência neste repositório.
 
 ---
 
@@ -385,11 +398,10 @@ Os focos vêm da distribuição de issues no backlog (Atividade 2) e não são c
 
 ## 13 · Próximos passos
 
-1. **SCRUM-22 / SCRUM-24:** fechar o contrato REST e criar os models a partir dele.
-2. **SCRUM-23:** definir as rotas do cliente e do restaurante.
-3. **SCRUM-27:** escolher o armazenamento local (carrinho, preferências, último pedido).
-4. **SCRUM-28:** criar os componentes Dinna reutilizáveis em cima do tema.
-5. **Ambiente:** validar o build Android (`cmdline-tools` + licenças) em uma máquina com espaço livre.
+1. **Integração da navegação:** ligar a `TableView` do PR #3 (`/table`) ao mapa, preservando as rotas da SCRUM-23. A decisão de abrir o app em `/table` acontece nessa integração. Se a rota inicial mudar, os testes que esperam a home em `/` serão adaptados.
+2. **SCRUM-27:** implementar a persistência local (carrinho, preferências, último pedido). No Jira está *Em andamento*; neste repositório ainda não há código de persistência.
+3. **SCRUM-28:** criar os componentes Dinna reutilizáveis em cima do tema. No Jira está *Em análise*; o tema já existe.
+4. **Ambiente:** instalar `cmdline-tools` para o `flutter doctor` ficar verde. O debug Android já executa sem esse componente.
 
 ## 14 · Links
 
