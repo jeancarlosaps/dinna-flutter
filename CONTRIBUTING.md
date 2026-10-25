@@ -77,7 +77,7 @@ Mudou tela ou fluxo? Anexe um print ou vídeo curto no PR e diga em qual platafo
 Quem revisa verifica:
 
 - se o escopo bate com a issue;
-- se o MVVM foi respeitado: View sem regra de negócio e HTTP só no `ApiClient` (veja o README);
+- se o MVVM foi respeitado: View sem regra de negócio, ViewModel sem HTTP e HTTP só no `ApiClient` (veja [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md));
 - se há testes para o comportamento novo ou alterado;
 - se não há segredos, logs temporários ou código morto;
 - se o README foi atualizado quando o comportamento mudou.

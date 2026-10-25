@@ -50,6 +50,19 @@ void main() {
     );
   });
 
+  test('rejeita corpo que não é JSON em resposta de sucesso', () async {
+    final client = clientReturning(http.Response('not-json', 200));
+
+    await expectLater(
+      client.getJson('/health'),
+      throwsA(
+        isA<ApiException>()
+            .having((e) => e.statusCode, 'statusCode', 200)
+            .having((e) => e.message, 'message', 'Resposta inválida da API'),
+      ),
+    );
+  });
+
   test('converte falha de rede em ApiException sem statusCode', () async {
     final client = ApiClient(
       baseUrl: baseUrl,
