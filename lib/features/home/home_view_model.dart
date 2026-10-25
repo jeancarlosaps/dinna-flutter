@@ -40,7 +40,9 @@ class HomeViewModel extends ChangeNotifier {
       // ApiException já foi traduzida no repository. O que chega aqui é falha
       // inesperada: a tela sai de checking, sem o texto interno da exceção.
       _publish(status: ApiStatus.offline, message: unexpectedFailureMessage);
-      if (!_disposed) {
+      // Debug apenas: em release o presentError imprime exception.toString(),
+      // que pode incluir a URL. A tela continua só com a mensagem genérica.
+      if (kDebugMode && !_disposed) {
         FlutterError.presentError(
           FlutterErrorDetails(
             exception: error,

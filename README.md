@@ -175,7 +175,7 @@ Regras que o código já segue:
 
 - As dependências são montadas em [`lib/main.dart`](lib/main.dart) e passadas por construtor. Não há service locator.
 - O ViewModel nasce no `State` da tela (`createViewModel`) e é descartado no `dispose`.
-- O Repository traduz `ApiException` em `ApiAvailability`. O ViewModel só vê online, offline e a mensagem.
+- O Repository traduz `ApiException` em `ApiAvailability`. O ViewModel só vê online, offline e a mensagem. Outra falha tira a tela de `checking` e a leva a `offline` com um texto genérico, sem o detalhe interno. Depois do `dispose`, o ViewModel não altera estado nem notifica.
 - O `ApiClient` lê o formato de erro da API (`{ "error": { "code", "message" } }`) e converte falhas de rede, timeout, HTTP e corpo que não é JSON em `ApiException`.
 
 ### Estrutura real
