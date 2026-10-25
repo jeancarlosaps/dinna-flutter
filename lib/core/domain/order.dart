@@ -59,7 +59,7 @@ final class Order {
   /// Centavos calculados pela API. Este model não soma preços.
   final int totalCents;
 
-  /// Instante UTC de criação.
+  /// Instante UTC. O contrato usa sufixo `Z` maiúsculo, como em `"2026-10-16T18:00:00Z"`.
   final DateTime createdAt;
 
   Map<String, Object?> toJson() => {

@@ -128,13 +128,28 @@ void main() {
         'totalCents fracionário': _orderMap()..['totalCents'] = 65.80,
         'totalCents negativo': _orderMap()..['totalCents'] = -1,
         'createdAt ausente': _orderMap()..remove('createdAt'),
+        'createdAt inválida': _orderMap()..['createdAt'] = '2026-10-16T18:00:00.Z',
         'createdAt sem fuso': _orderMap()..['createdAt'] = '2026-10-16T18:00:00',
         'createdAt com offset': _orderMap()..['createdAt'] = '2026-10-16T15:00:00-03:00',
+        'createdAt com z minúsculo': _orderMap()..['createdAt'] = '2026-10-16T18:00:00z',
       };
 
       for (final entry in cases.entries) {
         expect(() => Order.fromJson(entry.value), throwsFormatException, reason: entry.key);
       }
+    });
+
+    test('rejeita createdAt com z minúsculo', () {
+      expect(
+        () => Order.fromJson(_orderMap()..['createdAt'] = '2026-10-16T18:00:00z'),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('ISO-8601 UTC'),
+          ),
+        ),
+      );
     });
 
     test('nomeia status desconhecido', () {

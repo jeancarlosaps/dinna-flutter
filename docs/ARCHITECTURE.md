@@ -69,9 +69,11 @@ A persistência local (SCRUM-27) ainda não existe. Quando entrar, será outra f
 
 Os models compartilhados ficam em [`lib/core/domain/`](../lib/core/domain/): `Product`, `OrderItem`, `Order` e `OrderStatus`.
 
-Eles seguem o JSON de `docs/api-contract.md` na dinna-api. São imutáveis. `fromJson` rejeita campo obrigatório ausente, tipo incompatível e status fora do ciclo. Dinheiro fica em centavos inteiros (`priceCents`, `totalCents`).
+A SCRUM-22, no texto original, pede Product, CartItem, Order e Preference. O contrato aceito na SCRUM-24 (`docs/api-contract.md` da dinna-api) define Product, OrderItem e Order. Este código segue o contrato. `CartItem` e `Preference` não têm schema e não existem como model. Enquanto a issue não for reescrita, os critérios originais do card não estão integralmente atendidos.
 
-`OrderItem` é o item do pedido (`productId`, `quantity`, `note` opcional). O contrato não define `CartItem` nem `Preference`; esses nomes não viraram model. Em `POST /ai/recommendation` (R2), `preferences` é texto livre, não um objeto.
+São imutáveis. `fromJson` rejeita campo obrigatório ausente, tipo incompatível e status fora do ciclo. Dinheiro fica em centavos inteiros (`priceCents`, `totalCents`). `createdAt` só entra com sufixo `Z` maiúsculo, como em `"2026-10-16T18:00:00Z"`.
+
+`OrderItem` é o item do pedido (`productId`, `quantity`, `note` opcional). Em `POST /ai/recommendation` (R2), `preferences` é texto livre, não um objeto.
 
 O model não busca dados e não conhece ViewModel. O Repository chama o `ApiClient` e traduz o JSON.
 

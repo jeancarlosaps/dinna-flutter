@@ -88,10 +88,13 @@ bool readRequiredBool(Map<String, Object?> json, String key) {
   return value;
 }
 
-/// ISO-8601 com sufixo `Z`, como em `"2026-10-16T18:00:00Z"`.
+/// ISO-8601 UTC no formato do contrato: sufixo `Z` maiúsculo.
+///
+/// O exemplo aceito é `"2026-10-16T18:00:00Z"`. `z` minúsculo, offset e
+/// horário sem fuso não entram.
 DateTime readRequiredUtc(Map<String, Object?> json, String key) {
   final raw = readRequiredString(json, key);
-  if (!raw.contains('T') || !(raw.endsWith('Z') || raw.endsWith('z'))) {
+  if (!raw.contains('T') || !raw.endsWith('Z')) {
     throw FormatException('Campo $key deve ser ISO-8601 UTC');
   }
 
