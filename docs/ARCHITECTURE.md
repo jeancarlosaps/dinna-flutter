@@ -34,6 +34,7 @@ O dado segue uma direção: View → ViewModel → Repository → Service → AP
 | ViewModel | Contrato do Repository e `ChangeNotifier` | `material.dart`, `ApiClient`, `ApiException`, `package:http` |
 | Repository concreto | `ApiClient` e `ApiException` | View, ViewModel, widgets |
 | `ApiClient` | `package:http` e `ApiException` | `lib/features/`, widgets, ViewModels |
+| Model (`lib/core/domain/`) | `dart:core` e outros models do domínio | Widget, View, ViewModel, Repository, `ApiClient`, `package:http` |
 
 O contrato `ApiStatusRepository` não importa o Service. Quem implementa (`HttpApiStatusRepository`) é montado no `main`. Testes substituem o contrato por um fake; não há singleton global.
 
@@ -62,7 +63,21 @@ O contrato `ApiStatusRepository` não importa o Service. Quem implementa (`HttpA
 5. Montar a implementação concreta em `lib/main.dart` e passar o contrato pelo construtor até a tela. Registrar a rota em `app_router.dart` só quando a navegação dessa feature entrar no escopo.
 6. Não adicionar `provider`, `get_it`, UseCase ou outra camada sem uma necessidade que este fluxo não cubra.
 
-Models compartilhados (SCRUM-22) e persistência local (SCRUM-27) ainda não existem. Quando a persistência entrar, ela será outra fonte atrás de um Repository, não um atalho da View para o disco.
+A persistência local (SCRUM-27) ainda não existe. Quando entrar, será outra fonte atrás de um Repository, não um atalho da View para o disco.
+
+## Models de domínio
+
+Os models compartilhados ficam em [`lib/core/domain/`](../lib/core/domain/). São imutáveis, não chamam HTTP e não conhecem ViewModel. O Repository traduz o JSON da API; o carrinho e a preferência nascem no app.
+
+**Models REST**, alinhados a `docs/api-contract.md` da dinna-api: `Product`, `OrderItem`, `Order` e `OrderStatus`.
+
+**Models locais**, sem recurso nem endpoint novo: `CartItem` e `Preference`.
+
+`CartItem` guarda `productId`, `quantity` e `note` opcional. Antes de `POST /orders`, `CartItem.toOrderItem()` produz o `OrderItem` do contrato. O carrinho não copia nome, preço ou imagem e não calcula `totalCents`.
+
+`Preference` guarda o texto livre do cliente em `{ "text": "..." }`. Não é um recurso REST, e esse JSON não é o body de `POST /ai/recommendation`. O texto preenchido alimenta o campo opcional `preferences` desse endpoint (R2). Texto vazio não envia o campo.
+
+`fromJson` rejeita campo obrigatório ausente e tipo incompatível. Dinheiro do contrato fica em centavos inteiros (`priceCents`, `totalCents`). `createdAt` só entra com sufixo `Z` maiúsculo, como em `"2026-10-16T18:00:00Z"`.
 
 ## Como testar
 
@@ -73,5 +88,6 @@ Os testes de unidade não chamam a API real.
 | ViewModel | Fake que implementa `ApiStatusRepository` e devolve um `Completer`, um `ApiAvailability` ou uma exceção | `checking` antes da resposta, success, error, exceção inesperada e a ausência de atualização depois do `dispose` |
 | Repository | `HttpApiStatusRepository` com `ApiClient` e `MockClient` | `{ "status": "ok" }`, JSON inesperado, erro de rede e status HTTP inválido |
 | Service | `ApiClient` com `MockClient` | URL, corpo de erro da API, falha de rede e corpo que não é JSON |
+| Model | `fromJson` e `toJson` | obrigatório ausente, tipo incompatível, `CartItem` → `OrderItem`, preferência vazia, status desconhecido e centavos não inteiros |
 
 O fake do fluxo de referência está em [`test/features/home/fake_api_status_repository.dart`](../test/features/home/fake_api_status_repository.dart).
