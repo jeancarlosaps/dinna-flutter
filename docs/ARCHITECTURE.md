@@ -34,7 +34,7 @@ O dado segue uma direção: View → ViewModel → Repository → Service → AP
 | ViewModel | Contrato do Repository e `ChangeNotifier` | `material.dart`, `ApiClient`, `ApiException`, `package:http` |
 | Repository concreto | `ApiClient` e `ApiException` | View, ViewModel, widgets |
 | `ApiClient` | `package:http` e `ApiException` | `lib/features/`, widgets, ViewModels |
-| Model (`lib/core/domain/`) | `dart:core` | Widget, View, ViewModel, Repository, `ApiClient`, `package:http` |
+| Model (`lib/core/domain/`) | `dart:core` e outros models do domínio | Widget, View, ViewModel, Repository, `ApiClient`, `package:http` |
 
 O contrato `ApiStatusRepository` não importa o Service. Quem implementa (`HttpApiStatusRepository`) é montado no `main`. Testes substituem o contrato por um fake; não há singleton global.
 
@@ -67,15 +67,17 @@ A persistência local (SCRUM-27) ainda não existe. Quando entrar, será outra f
 
 ## Models de domínio
 
-Os models compartilhados ficam em [`lib/core/domain/`](../lib/core/domain/): `Product`, `OrderItem`, `Order` e `OrderStatus`.
+Os models compartilhados ficam em [`lib/core/domain/`](../lib/core/domain/). São imutáveis, não chamam HTTP e não conhecem ViewModel. O Repository traduz o JSON da API; o carrinho e a preferência nascem no app.
 
-A SCRUM-22, no texto original, pede Product, CartItem, Order e Preference. O contrato aceito na SCRUM-24 (`docs/api-contract.md` da dinna-api) define Product, OrderItem e Order. Este código segue o contrato. `CartItem` e `Preference` não têm schema e não existem como model. Enquanto a issue não for reescrita, os critérios originais do card não estão integralmente atendidos.
+**Models REST**, alinhados a `docs/api-contract.md` da dinna-api: `Product`, `OrderItem`, `Order` e `OrderStatus`.
 
-São imutáveis. `fromJson` rejeita campo obrigatório ausente, tipo incompatível e status fora do ciclo. Dinheiro fica em centavos inteiros (`priceCents`, `totalCents`). `createdAt` só entra com sufixo `Z` maiúsculo, como em `"2026-10-16T18:00:00Z"`.
+**Models locais**, sem recurso nem endpoint novo: `CartItem` e `Preference`.
 
-`OrderItem` é o item do pedido (`productId`, `quantity`, `note` opcional). Em `POST /ai/recommendation` (R2), `preferences` é texto livre, não um objeto.
+`CartItem` guarda `productId`, `quantity` e `note` opcional. Antes de `POST /orders`, `CartItem.toOrderItem()` produz o `OrderItem` do contrato. O carrinho não copia nome, preço ou imagem e não calcula `totalCents`.
 
-O model não busca dados e não conhece ViewModel. O Repository chama o `ApiClient` e traduz o JSON.
+`Preference` guarda o texto livre do cliente em `{ "text": "..." }`. Não é um recurso REST, e esse JSON não é o body de `POST /ai/recommendation`. O texto preenchido alimenta o campo opcional `preferences` desse endpoint (R2). Texto vazio não envia o campo.
+
+`fromJson` rejeita campo obrigatório ausente e tipo incompatível. Dinheiro do contrato fica em centavos inteiros (`priceCents`, `totalCents`). `createdAt` só entra com sufixo `Z` maiúsculo, como em `"2026-10-16T18:00:00Z"`.
 
 ## Como testar
 
@@ -86,6 +88,6 @@ Os testes de unidade não chamam a API real.
 | ViewModel | Fake que implementa `ApiStatusRepository` e devolve um `Completer`, um `ApiAvailability` ou uma exceção | `checking` antes da resposta, success, error, exceção inesperada e a ausência de atualização depois do `dispose` |
 | Repository | `HttpApiStatusRepository` com `ApiClient` e `MockClient` | `{ "status": "ok" }`, JSON inesperado, erro de rede e status HTTP inválido |
 | Service | `ApiClient` com `MockClient` | URL, corpo de erro da API, falha de rede e corpo que não é JSON |
-| Model | `fromJson` e `toJson` com o JSON do contrato | obrigatório ausente, tipo incompatível, item sem `note`, status desconhecido e centavos não inteiros |
+| Model | `fromJson` e `toJson` | obrigatório ausente, tipo incompatível, `CartItem` → `OrderItem`, preferência vazia, status desconhecido e centavos não inteiros |
 
 O fake do fluxo de referência está em [`test/features/home/fake_api_status_repository.dart`](../test/features/home/fake_api_status_repository.dart).

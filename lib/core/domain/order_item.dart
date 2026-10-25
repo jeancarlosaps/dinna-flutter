@@ -2,11 +2,11 @@ import 'json_values.dart';
 
 const _noteMaxLength = 200;
 
-/// Item de um pedido (`OrderItem` no contrato).
+/// Item de um pedido (`OrderItem` no contrato REST).
 ///
-/// O card SCRUM-22 cita CartItem. O contrato aceito não define esse recurso:
-/// o item enviado em `POST /orders` tem `productId`, `quantity` e `note`
-/// opcional. Não há preço neste objeto; o total do pedido vem em `totalCents`.
+/// O carrinho local é outro tipo e só chega aqui pela conversão explícita
+/// antes de `POST /orders`. Não há preço neste objeto; o total do pedido
+/// vem em `totalCents`.
 final class OrderItem {
   OrderItem({required this.productId, required this.quantity, required this.note}) {
     if (productId.isEmpty) {
