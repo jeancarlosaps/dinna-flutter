@@ -7,6 +7,13 @@ abstract final class DinnaTheme {
 
   static const fontFamily = 'Inter';
   static const serifFamily = 'Source Serif 4';
+  
+  static const taglineStyle = TextStyle(
+    fontFamily: serifFamily,
+    fontStyle: FontStyle.italic,
+    fontSize: 22,
+    height: 1.4,
+  );
 
   static ThemeData light() {
     final colorScheme =
@@ -41,6 +48,11 @@ abstract final class DinnaTheme {
     return ThemeData(
       useMaterial3: true,
       fontFamily: fontFamily,
+      textTheme: const TextTheme(
+        titleMedium: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, height: 1.4),
+        bodySmall: TextStyle(fontSize: 13, height: 1.4),
+        labelLarge: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, height: 1.4),
+      ),
       colorScheme: colorScheme,
       scaffoldBackgroundColor: colorScheme.surface,
       appBarTheme: AppBarTheme(
@@ -58,7 +70,7 @@ abstract final class DinnaTheme {
         style: FilledButton.styleFrom(
           minimumSize: const Size.fromHeight(52),
           shape: shape,
-          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
