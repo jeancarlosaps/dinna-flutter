@@ -65,4 +65,38 @@ void main() {
 
     expect(notifications, 1);
   });
+
+  test('exceção inesperada sai de checking e fica offline sem detalhe interno', () async {
+    const detalheInterno = 'falha interna do repository';
+    final viewModel = HomeViewModel(
+      FakeApiStatusRepository(() async => throw StateError(detalheInterno)),
+    );
+    final states = <ApiStatus>[];
+    viewModel.addListener(() => states.add(viewModel.status));
+
+    await viewModel.checkApi();
+
+    expect(states, [ApiStatus.checking, ApiStatus.offline]);
+    expect(viewModel.errorMessage, HomeViewModel.unexpectedFailureMessage);
+    expect(viewModel.errorMessage, isNot(contains(detalheInterno)));
+  });
+
+  test('exceção inesperada depois do dispose termina sem atualizar nem notificar', () async {
+    final completer = Completer<ApiAvailability>();
+    final viewModel = HomeViewModel(FakeApiStatusRepository(() => completer.future));
+    var notifications = 0;
+    viewModel.addListener(() => notifications++);
+
+    final pending = viewModel.checkApi();
+    expect(viewModel.status, ApiStatus.checking);
+    expect(notifications, 1);
+
+    viewModel.dispose();
+    completer.completeError(StateError('falha interna do repository'));
+    await pending;
+
+    expect(notifications, 1);
+    expect(viewModel.status, ApiStatus.checking);
+    expect(viewModel.errorMessage, isNull);
+  });
 }

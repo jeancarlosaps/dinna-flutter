@@ -50,13 +50,14 @@ O contrato `ApiStatusRepository` não importa o Service. Quem implementa (`HttpA
    - `{ "status": "ok" }` vira `ApiAvailability.online`. O ViewModel vai para `online` e a View mostra "API online".
    - JSON diferente vira `ApiAvailability.offline('Resposta inesperada da API')`. A View mostra "API indisponível" e a mensagem.
    - Rede, timeout, status fora de 2xx ou corpo que não é JSON viram `ApiException` no Service. O Repository converte em `ApiAvailability.offline` com `error.message`. O ViewModel não vê status code.
-9. O ViewModel notifica de novo. Se a tela já foi descartada, não notifica.
+9. O ViewModel publica o estado e notifica de novo. Se a tela já foi descartada, não altera o estado nem notifica.
+10. Uma falha que o repository não traduziu tira o ViewModel de `checking` e o leva a `offline`, com a mensagem "Não foi possível verificar a API". O texto da exceção não entra na tela.
 
 ## Como adicionar uma feature
 
 1. Criar `lib/features/<feature>/` com View, ViewModel e o contrato do Repository.
 2. A implementação que chama a API fica em outra classe e usa `ApiClient.getJson` (ou o método HTTP que o Service passar a expor). Ela traduz `ApiException` antes de devolver o resultado ao ViewModel.
-3. O ViewModel recebe o contrato pelo construtor, expõe loading, success e error, e ignora `notifyListeners` depois do `dispose`.
+3. O ViewModel recebe o contrato pelo construtor, expõe loading, success e error, e depois do `dispose` não altera estado nem chama `notifyListeners`. Uma exceção que o repository não traduziu vira erro de tela genérico, para a UI não permanecer em loading.
 4. A View cria o ViewModel no `State`, observa com `ListenableBuilder` e descarta no `dispose`.
 5. Montar a implementação concreta em `lib/main.dart` e passar o contrato pelo construtor até a tela. Registrar a rota em `app_router.dart` só quando a navegação dessa feature entrar no escopo.
 6. Não adicionar `provider`, `get_it`, UseCase ou outra camada sem uma necessidade que este fluxo não cubra.
@@ -69,7 +70,7 @@ Os testes de unidade não chamam a API real.
 
 | Alvo | Como | O que travar |
 |---|---|---|
-| ViewModel | Fake que implementa `ApiStatusRepository` e devolve um `Completer` ou um `ApiAvailability` pronto | `checking` antes da resposta, success, error, a ordem das notificações e a ausência de notificação depois do `dispose` |
+| ViewModel | Fake que implementa `ApiStatusRepository` e devolve um `Completer`, um `ApiAvailability` ou uma exceção | `checking` antes da resposta, success, error, exceção inesperada e a ausência de atualização depois do `dispose` |
 | Repository | `HttpApiStatusRepository` com `ApiClient` e `MockClient` | `{ "status": "ok" }`, JSON inesperado, erro de rede e status HTTP inválido |
 | Service | `ApiClient` com `MockClient` | URL, corpo de erro da API, falha de rede e corpo que não é JSON |
 

@@ -92,7 +92,7 @@ Fundação (R0) **em andamento**. Nenhuma tela de produto foi implementada ainda
 | Tema Dinna (Material 3) | ✅ Paleta e componentes base do tema | `lib/app/theme/` |
 | URL da API por ambiente | ✅ `--dart-define=API_BASE_URL` com padrão por plataforma | `lib/core/config/` |
 | Cliente HTTP + erro uniforme | ✅ `ApiClient` + `ApiException` | `lib/core/network/` |
-| Testes, lint, format, CI | ✅ 17 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
+| Testes, lint, format, CI | ✅ 19 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
 | Models (`Product`, `CartItem`, `Order`, `Preference`) | ⬜ Não implementado (SCRUM-22) | — |
 | Rotas do cliente e do restaurante | ⬜ Não implementado (SCRUM-23) | — |
 | Persistência local | ⬜ Mecanismo a definir (SCRUM-27) | — |
@@ -200,7 +200,7 @@ lib/
         ├── http_api_status_repository.dart
         ├── home_view.dart
         └── home_view_model.dart
-test/                                 # espelha lib/ (17 testes)
+test/                                 # espelha lib/ (19 testes)
 docs/ARCHITECTURE.md                  # contrato das camadas MVVM
 docs/assets/readme/                   # ilustrações deste README
 ```
@@ -298,7 +298,7 @@ Na tela inicial, toque em **“Verificar conexão com a API”**: com a API no a
 | `dart format .` | Formata o código (largura 100) |
 | `dart format --output=none --set-exit-if-changed .` | Só verifica a formatação, como na CI |
 
-O que os 17 testes cobrem hoje:
+O que os 19 testes cobrem hoje:
 
 | Arquivo | Cobre |
 |---|---|
@@ -306,7 +306,7 @@ O que os 17 testes cobrem hoje:
 | `test/core/app_config_test.dart` | URL padrão por plataforma e prioridade do `API_BASE_URL` |
 | `test/core/api_client_test.dart` | Montagem da URL, erro da API, falha de rede e corpo que não é JSON |
 | `test/features/home/api_status_repository_test.dart` | Tradução de `/health`: ok, payload inesperado, rede e HTTP inválido |
-| `test/features/home/home_view_model_test.dart` | `checking` antes da resposta, success, error e `dispose` |
+| `test/features/home/home_view_model_test.dart` | `checking` antes da resposta, success, error, exceção inesperada e `dispose` |
 
 ### `flutter analyze` em pastas com acento
 
