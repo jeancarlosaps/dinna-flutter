@@ -132,7 +132,7 @@ O PR [#3](https://github.com/jeancarlosaps/dinna-flutter/pull/3) (`feature/clien
 
 Esta branch adota o nome e a constante. A `TableView` continua só no PR dele. O placeholder de `/table` existe para o teste de roteamento. No merge, `/table` ganha um case próprio antes do ramo do placeholder, devolvendo `const TableView()`. O nome permanece em `AppRoutes.table` e em `clientFlow`.
 
-`lib/app/app.dart` não muda aqui. A rota inicial segue `AppRoutes.home`, a home e o `GET /health` continuam no lugar, e [`test/app_test.dart`](../test/app_test.dart) segue válido. A troca de `initialRoute` para `/table` permanece no PR #3. Na hora de integrar, essa linha fica em aberto: `/` enquanto a home de fundação for a entrada, ou `/table` quando a mesa for a entrada de produto. O restante do mapa entra nos dois desfechos.
+`lib/app/app.dart` não muda aqui. A SCRUM-23 mantém `/` (`AppRoutes.home`) como rota inicial da fundação, com a home e o `GET /health`. [`test/app_test.dart`](../test/app_test.dart) segue válido enquanto essa rota inicial permanecer. A decisão de usar `/table` como rota inicial de produto será tomada na integração com o PR #3. Essa integração preserva o mapa de rotas da SCRUM-23 e usa a `TableView` no lugar do placeholder. Se a rota inicial passar a ser `/table`, os testes que esperam a home em `/` precisam ser adaptados.
 
 Os botões da `TableView` ainda não navegam (`onPressed` vazio). Quando a tela for ligada ao mapa:
 
