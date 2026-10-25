@@ -73,9 +73,18 @@ class TableView extends StatelessWidget {
                                     ),
                                   ),
                                   const SizedBox(height: 16),
-                                  TextField(
-                                    keyboardType: TextInputType.number,
-                                    decoration: const InputDecoration(prefixText: 'Mesa '),
+                                  Semantics(
+                                    label: 'Número da mesa',
+                                    child: TextField(
+                                      keyboardType: TextInputType.number,
+                                      decoration: const InputDecoration(
+                                        prefixIcon: Padding(
+                                          padding: EdgeInsets.only(left: 16, right: 8),
+                                          child: Text('Mesa'),
+                                        ),
+                                        prefixIconConstraints: BoxConstraints(),
+                                      ),
+                                    ),
                                   ),
                                   const SizedBox(height: 16),
                                   FilledButton(onPressed: () {}, child: const Text('Ver cardápio')),
