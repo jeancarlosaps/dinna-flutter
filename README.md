@@ -83,7 +83,7 @@ O Dinna encurta esse intervalo **sem substituir o atendimento humano**:
 
 ## 02 · Estado atual
 
-Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas já estão no código. Nenhuma tela de produto foi implementada ainda.
+Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas da SCRUM-23 já estão na `dev`. A home em `/` continua o fluxo `GET /health`. A `TableView` do PR #3 está em `/table`: o layout e o campo da mesa aparecem, e os botões ainda não navegam. Cardápio, produto, carrinho, pedido e o painel do restaurante seguem como `RoutePlaceholder`.
 
 | Item | Situação | Onde |
 |---|---|---|
@@ -94,10 +94,12 @@ Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas j
 | Cliente HTTP + erro uniforme | ✅ `ApiClient` + `ApiException` | `lib/core/network/` |
 | Testes, lint, format, CI | ✅ 72 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
 | Models (`Product`, `CartItem`, `Order`, `OrderItem`, `OrderStatus`, `Preference`) | ✅ Implementados em `lib/core/domain/` (SCRUM-22, PR #5 na `dev`) | [`lib/core/domain/`](lib/core/domain/) |
-| Rotas do cliente e do restaurante | ✅ Mapa da R1 em `AppRoutes` (PR #6, aguardando merge). As telas de produto ainda são placeholder e a home segue em `/` | [`lib/app/router/`](lib/app/router/), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
-| Persistência local | ⬜ Mecanismo a definir (SCRUM-27) | — |
-| Componentes visuais reutilizáveis | ⬜ Não implementado (parte da SCRUM-28) | — |
-| Telas de R1, R2 e R3 | ⬜ Planejado | — |
+| Rotas do cliente e do restaurante | ✅ SCRUM-23 concluída e mergeada pelo PR #6. Mapa em `AppRoutes`. Rota inicial `/`. `/table` abre `TableView`; as outras rotas da jornada são placeholder | [`lib/app/router/`](lib/app/router/), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
+| Layout da mesa (`/table`) | Layout mergeado pelo PR #3. O campo da mesa é só visual: nada lê o valor. “Ver cardápio” e “Acessar o painel” usam `onPressed` vazio | [`lib/features/client/table/table_view.dart`](lib/features/client/table/table_view.dart) |
+| Dependências base (SCRUM-18) | Em andamento. HTTP pronto (`http` 1.6.0 e `ApiClient`). Armazenamento local ainda sem pacote no `pubspec` | `pubspec.yaml`, [`lib/core/network/`](lib/core/network/) |
+| Persistência local | ⬜ SCRUM-27 em andamento com João. A proposta no Jira é `sqflite`; o pacote ainda não entrou neste repositório | — |
+| Componentes visuais reutilizáveis | ⬜ SCRUM-28 em análise. O tema já está na `dev`; os componentes seguem na branch `feature/SCRUM-28-tipografia-componentes`, sem merge | `lib/app/theme/` |
+| Telas de R1, R2 e R3 | ⬜ Jornada planejada. Na `dev` só o layout da mesa está em `/table`; as outras telas seguem placeholder ou ainda não existem | — |
 
 ---
 
@@ -107,7 +109,7 @@ Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas j
   <img src="docs/assets/readme/flow.svg" alt="Jornada planejada para R1. Cliente: mesa, cardápio, produto, carrinho, pedido e acompanhamento. O pedido vai para a fila do restaurante, que vê detalhes, atualiza o preparo e finaliza; o status volta para o cliente. O restaurante também mantém o cardápio." width="1600" loading="lazy" />
 </p>
 
-As telas desta seção são **planejadas para a R1** e ainda não existem no código. Os nomes de rota da jornada já estão no mapa da SCRUM-23.
+A jornada abaixo é a **R1 planejada**. Na `dev`, a etapa Mesa tem layout em `/table` (`TableView`, PR #3). Esse layout não guarda o número da mesa e os botões não navegam, então a story de informar a mesa continua pendente. Cardápio, produto, carrinho, pedido, acompanhamento e o painel do restaurante ainda não têm View: o router mostra `RoutePlaceholder`. Os nomes de rota já estão no mapa da SCRUM-23, mergeado pelo PR #6.
 
 **Cliente (Marina)**
 
@@ -140,10 +142,10 @@ As telas desta seção são **planejadas para a R1** e ainda não existem no có
 | Linguagem | Dart 3.13.5, null safety | Padrão do Flutter stable |
 | Estado | `ChangeNotifier` + `ListenableBuilder` | Nativos do Flutter e suficientes para MVVM; sem dependência extra |
 | HTTP | [`http`](https://pub.dev/packages/http) 1.6.0 | Pacote oficial do time Dart, testável com `MockClient` |
-| Navegação | `onGenerateRoute` nativo | A SCRUM-23 manteve o `Navigator` do Flutter. O mapa está em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
+| Navegação | `onGenerateRoute` nativo | A SCRUM-23, concluída no PR #6, manteve o `Navigator` do Flutter. O mapa está em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Lint | `flutter_lints` 6.0.0 + regras em `analysis_options.yaml` | Análise estrita (`strict-casts`, `strict-raw-types`) |
 
-Dependências diretas: `http` e `cupertino_icons`, que veio no template do Flutter. Nenhuma biblioteca de estado, injeção de dependência ou armazenamento foi adicionada.
+Dependências diretas: `http` 1.6.0 e `cupertino_icons`, que veio no template do Flutter. Nenhuma biblioteca de estado, injeção de dependência ou armazenamento foi adicionada. A SCRUM-18 segue em andamento por causa do armazenamento local. A SCRUM-27 propõe `sqflite` no Jira; essa escolha ainda não está no `pubspec`.
 
 <a id="arquitetura"></a>
 
@@ -198,6 +200,9 @@ lib/
 │       ├── api_client.dart           # Service HTTP
 │       └── api_exception.dart        # erro uniforme
 └── features/
+    ├── client/
+    │   └── table/
+    │       └── table_view.dart       # layout da mesa em /table; botões sem navegação
     └── home/                         # fluxo de referência (tela provisória)
         ├── api_status_repository.dart
         ├── http_api_status_repository.dart
@@ -208,7 +213,9 @@ docs/ARCHITECTURE.md                  # contrato das camadas MVVM
 docs/assets/readme/                   # ilustrações deste README
 ```
 
-Novas features entram em `lib/features/<feature>/` (`table`, `menu`, `product`, `cart`, `orders`, `restaurant`, `recommendation`). Os models compartilhados ficam em `lib/core/domain/`. Os widgets reutilizáveis ainda não existem; entram com a SCRUM-28.
+A pasta `table` já existe com o layout da mesa. `menu`, `product`, `cart`, `orders`, `restaurant` e `recommendation` ainda não. Os models compartilhados ficam em `lib/core/domain/`. Os widgets reutilizáveis entram com a SCRUM-28, ainda sem merge, na branch `feature/SCRUM-28-tipografia-componentes`.
+
+O PR #3 também versionou dois PDFs em `lib/`: `Dinna · App Cliente Marina.pdf` (5,5 MB) e `Dinna · App Restaurante Ricardo.pdf` (8,6 MB). Eles não estão declarados como asset no `pubspec` e não são código da feature. Ficam no clone, ao lado dos fontes, e aumentam o repositório. A retirada fica para outro PR.
 
 <a id="comece-aqui"></a>
 
@@ -306,7 +313,7 @@ O que os 72 testes cobrem hoje (`flutter test` nesta branch):
 | Arquivo | Cobre |
 |---|---|
 | `test/app_test.dart` | O app inicia com o tema Dinna; o fluxo View → ViewModel → Repository |
-| `test/app/app_router_test.dart` | Rota inicial `/`, entrada nos fluxos, ida e volta, rota desconhecida e `GET /health` depois do retorno |
+| `test/app/app_router_test.dart` | Rota inicial `/`, `/table` com `TableView`, placeholder nas outras rotas do mapa, ida e volta, rota desconhecida e `GET /health` depois do retorno |
 | `test/core/domain/` | `fromJson` e `toJson` de `Product`, `Order`, `OrderItem`, `CartItem` e `Preference` |
 | `test/core/app_config_test.dart` | URL padrão por plataforma e prioridade do `API_BASE_URL` |
 | `test/core/api_client_test.dart` | Montagem da URL, erro da API, falha de rede e corpo que não é JSON |
@@ -355,24 +362,26 @@ Fonte do contrato: [`dinna-api/docs/api-contract.md`](https://github.com/jeancar
 ## 10 · Roadmap
 
 <p align="center">
-  <img src="docs/assets/readme/roadmap.svg" alt="Roadmap ilustrado da R0 à R3. A figura ainda marca models, rotas e contrato como pendentes; a tabela abaixo é o estado em 24/10/2026. R1, R2 e R3 seguem planejados." width="1600" loading="lazy" />
+  <img src="docs/assets/readme/roadmap.svg" alt="Roadmap ilustrado da R0 à R3. A figura ainda marca models, rotas e contrato como pendentes; a tabela abaixo é o estado em 25/10/2026. R1, R2 e R3 seguem planejados." width="1600" loading="lazy" />
 </p>
 
-A ilustração acima é o desenho inicial da fundação e ainda mostra models, rotas e contrato em aberto. A tabela abaixo é o estado consultado em 24/10/2026.
+A ilustração acima é o desenho inicial da fundação e ainda mostra models, rotas e contrato em aberto. O arquivo SVG não foi alterado. A tabela abaixo é o estado consultado em 25/10/2026 na `dev` (`79b8156`).
 
-Situação das tasks R0 que tocam este repositório. A coluna **Jira** é o status no board em 24/10/2026; a coluna **Código** é o que existe nesta branch.
+Situação das tasks R0 que tocam este repositório. A coluna **Jira** é o status no board em 25/10/2026; a coluna **Código** é o que existe nesta branch.
 
 | Issue | Task | Jira | Código |
 |---|---|---|---|
-| SCRUM-16 | Criar e configurar o projeto Flutter | Concluído | Executa no Android e no iOS; estrutura de pastas definida. O `http` já está no `pubspec`. O armazenamento local continua na SCRUM-27 |
+| SCRUM-16 | Criar e configurar o projeto Flutter | Concluído | Executa no Android e no iOS; estrutura de pastas definida |
+| SCRUM-18 | Configurar dependências base (HTTP e armazenamento local) | Em andamento | HTTP pronto: `http` 1.6.0 e `ApiClient` em `lib/core/network/`. Armazenamento local ainda sem dependência |
 | SCRUM-19 | Estruturar a arquitetura MVVM | Concluído | Implementada. Contrato em `docs/ARCHITECTURE.md`; `GET /health` é o fluxo de referência |
 | SCRUM-22 | Definir os models principais | Concluído | Implementados em `lib/core/domain/` e mergeados na `dev` pelo PR #5 |
-| SCRUM-23 | Configurar a navegação base | A fazer | Implementada nesta branch, no PR #6, aguardando merge. O mapa está em `AppRoutes` e a rota inicial da fundação segue `/` |
+| SCRUM-23 | Configurar a navegação base | Concluído | Mergeada na `dev` pelo PR #6. Mapa em `AppRoutes`. Rota inicial `/`. `/table` abre `TableView`; as outras rotas da jornada são placeholder |
+| SCRUM-24 | Definir o contrato inicial da API REST | Concluído | Contrato aceito. O app consome `GET /health`. Os outros endpoints do contrato ainda não são chamados daqui |
 | SCRUM-26 | Configurar o cliente HTTP | Concluído | `ApiClient` centralizado com erro uniforme, revisado e concluído |
-| SCRUM-27 | Definir a persistência local | Em andamento | Ainda sem código de persistência neste repositório |
-| SCRUM-28 | Estrutura visual base | Em análise | Tema pronto; os componentes reutilizáveis ainda não existem |
+| SCRUM-27 | Definir a persistência local | Em andamento | Sem código neste repositório. O Jira propõe `sqflite` para carrinho, preferências e último pedido; o pacote não está no `pubspec` |
+| SCRUM-28 | Estrutura visual base | Em análise | Tema pronto na `dev`. Componentes reutilizáveis ainda sem merge, na branch `feature/SCRUM-28-tipografia-componentes` |
 
-As releases seguintes (R1 MVP Operacional, R2 Dinna, R3 Evoluções) estão no Jira, sem datas definidas. A SCRUM-23 está no código deste PR e segue *A fazer* no Jira. A SCRUM-27 está *Em andamento* no Jira e ainda não tem persistência neste repositório.
+A entrega acadêmica é 14/11/2026. As releases R1, R2 e R3 seguem sem data própria no Jira. A SCRUM-23 está concluída no Jira e na `dev`. A SCRUM-18 está em andamento: HTTP pronto, armazenamento local pendente. A SCRUM-27 está em andamento e ainda não tem persistência neste repositório.
 
 ---
 
@@ -398,10 +407,12 @@ Os focos vêm da distribuição de issues no backlog (Atividade 2) e não são c
 
 ## 13 · Próximos passos
 
-1. **Integração da navegação:** ligar a `TableView` do PR #3 (`/table`) ao mapa, preservando as rotas da SCRUM-23. A decisão de abrir o app em `/table` acontece nessa integração. Se a rota inicial mudar, os testes que esperam a home em `/` serão adaptados.
-2. **SCRUM-27:** implementar a persistência local (carrinho, preferências, último pedido). No Jira está *Em andamento*; neste repositório ainda não há código de persistência.
-3. **SCRUM-28:** criar os componentes Dinna reutilizáveis em cima do tema. No Jira está *Em análise*; o tema já existe.
-4. **Ambiente:** instalar `cmdline-tools` para o `flutter doctor` ficar verde. O debug Android já executa sem esse componente.
+1. **SCRUM-18:** declarar a dependência de armazenamento local quando a SCRUM-27 registrar a escolha neste repositório. O HTTP já está pronto. Esquema, tabelas e repositório ficam na SCRUM-27.
+2. **SCRUM-27:** João segue com a estratégia de persistência (carrinho, preferências e último pedido). A proposta no Jira é `sqflite`, ainda sem pacote no `pubspec`.
+3. **SCRUM-28:** componentes Dinna reutilizáveis, em análise na branch `feature/SCRUM-28-tipografia-componentes`. O tema já está na `dev`.
+4. **Mesa:** ligar os botões da `TableView` ao mapa (`/menu` e `/restaurant`) e decidir se a rota inicial deixa de ser `/`. O layout atual não é o fluxo pronto. Se a rota inicial passar a ser `/table`, os testes que esperam a home em `/` precisam ser adaptados.
+5. **PDFs em `lib/`:** o PR #3 versionou `Dinna · App Cliente Marina.pdf` (5,5 MB) e `Dinna · App Restaurante Ricardo.pdf` (8,6 MB) ao lado do código. Não são asset do app. A organização fica para outro PR.
+6. **Ambiente:** instalar `cmdline-tools` para o `flutter doctor` ficar verde. O debug Android já executa sem esse componente.
 
 ## 14 · Links
 
