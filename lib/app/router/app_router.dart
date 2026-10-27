@@ -4,14 +4,17 @@ import '../../features/client/table/table_view.dart';
 import '../../features/home/api_status_repository.dart';
 import '../../features/home/home_view.dart';
 import '../../features/home/home_view_model.dart';
+import '../../features/restaurant/order_repository.dart';
+import '../../features/restaurant/orders_queue_view.dart';
+import '../../features/restaurant/orders_queue_view_model.dart';
 import 'route_placeholder.dart';
 
 /// Nomes de rota do app.
 ///
 /// A home (`/`) é a rota inicial da fundação e o fluxo `GET /health`.
 /// [clientFlow] e [restaurantFlow] nomeiam a jornada da R1, na ordem do
-/// produto. A tela de cada passo entra na story correspondente; até lá o
-/// router mostra um [RoutePlaceholder].
+/// produto. A home, a mesa e a fila (`/restaurant`) têm tela. O restante
+/// ainda usa [RoutePlaceholder].
 ///
 /// A entrada do cliente é [table] (`/table`), o mesmo nome da `TableView`
 /// na branch `feature/client-ui`. A integração coloca essa tela num case
@@ -74,9 +77,17 @@ final class AppRouteId {
 }
 
 class AppRouter {
-  AppRouter({required this.apiStatusRepository});
+  AppRouter({
+    required this.apiStatusRepository,
+    required this.orderRepository,
+    required this.routeObserver,
+    this.pollDelay,
+  });
 
   final ApiStatusRepository apiStatusRepository;
+  final OrderRepository orderRepository;
+  final RouteObserver<PageRoute<dynamic>> routeObserver;
+  final Future<void> Function(Duration duration)? pollDelay;
 
   /// Sempre devolve uma rota. Nome fora do mapa cai em [UnknownRouteView].
   Route<dynamic> onGenerateRoute(RouteSettings settings) {
@@ -87,6 +98,10 @@ class AppRouter {
     return switch (name) {
       AppRoutes.home => HomeView(createViewModel: () => HomeViewModel(apiStatusRepository)),
       AppRoutes.table => const TableView(),
+      AppRoutes.restaurant => OrdersQueueView(
+        createViewModel: () => OrdersQueueViewModel(orderRepository, delay: pollDelay),
+        routeObserver: routeObserver,
+      ),
       _ when name != null && _isFlowRoute(name) => RoutePlaceholder(routeName: name),
       _ => UnknownRouteView(routeName: name),
     };
