@@ -18,6 +18,7 @@ void main() {
 
     expect(find.text('Tem alergia?'), findsOneWidget);
     expect(find.text('Confirme os ingredientes com a equipe.'), findsOneWidget);
+    expect(tester.getSize(find.byType(DinnaBanner)).height, lessThan(120));
   });
 
   testWidgets('sem título mostra só a mensagem', (tester) async {

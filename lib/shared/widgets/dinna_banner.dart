@@ -24,8 +24,8 @@ class DinnaBanner extends StatelessWidget {
       ),
       DinnaBannerTone.error => (DinnaColors.terracottaSoft, DinnaColors.error, Icons.error_outline),
     };
-    final textStyle = Theme.of(context).textTheme.bodySmall?.copyWith(color: foreground);
-
+    final textStyle = Theme.of(context).textTheme.bodySmall
+        ?.copyWith(color: Theme.of(context).colorScheme.onSurface);
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(12)),
@@ -36,6 +36,7 @@ class DinnaBanner extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (title != null)

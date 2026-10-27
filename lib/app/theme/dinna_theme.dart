@@ -71,7 +71,6 @@ abstract final class DinnaTheme {
           minimumSize: const Size.fromHeight(48),
           padding: const EdgeInsets.symmetric(horizontal: 16),
           shape: shape,
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -82,7 +81,6 @@ abstract final class DinnaTheme {
           backgroundColor: colorScheme.surfaceContainerLowest,
           foregroundColor: colorScheme.onSurface,
           side: BorderSide(color: colorScheme.outlineVariant),
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
