@@ -9,9 +9,10 @@ import 'order_repository.dart';
 ///
 /// O polling é uma única rotina por instância. [defaultPollInterval] é o
 /// intervalo entre consultas bem iniciadas. Enquanto uma consulta está em
-/// voo, outra não começa. [pause] segura a próxima consulta; [resume] busca
-/// na hora. Depois do [dispose], a resposta pendente não altera estado nem
-/// notifica.
+/// voo, outra não começa. [pause] segura a próxima. [resume] busca na hora;
+/// se a consulta atual ainda não terminou, a seguinte começa assim que ela
+/// acabar, sem esperar o intervalo. Depois do [dispose], a resposta pendente
+/// não altera estado nem notifica.
 ///
 /// A ordenação é local: `createdAt` crescente e, no empate, `id` em ordem
 /// lexicográfica. É a mesma chave do `ORDER BY created_at ASC, o.id ASC` da API.
@@ -43,6 +44,7 @@ class OrdersQueueViewModel extends ChangeNotifier {
   bool _started = false;
   bool _disposed = false;
   bool _inFlight = false;
+  bool _refreshSoon = false;
   Completer<void>? _signal;
 
   /// Pedidos já ordenados. Vazio antes da primeira resposta com sucesso.
@@ -64,9 +66,13 @@ class OrdersQueueViewModel extends ChangeNotifier {
   bool get isEmpty => _hasLoaded && _orders.isEmpty && _errorMessage == null;
 
   /// Liga a rotina. Se estava pausada, consulta assim que o ciclo acordar.
+  ///
+  /// Com uma consulta em voo, não abre outra. A rotina pede a próxima assim
+  /// que a atual terminar.
   void resume() {
     if (_disposed || _active) return;
     _active = true;
+    if (_inFlight) _refreshSoon = true;
     _completeSignal();
     if (_started) return;
     _started = true;
@@ -76,6 +82,7 @@ class OrdersQueueViewModel extends ChangeNotifier {
   /// Segura a próxima consulta. A que já está em voo pode concluir.
   void pause() {
     _active = false;
+    _refreshSoon = false;
   }
 
   /// Repete a consulta. Não inicia outra se já existe uma em voo.
@@ -90,6 +97,10 @@ class OrdersQueueViewModel extends ChangeNotifier {
         await _fetch(background: _hasLoaded);
       }
       if (_disposed) return;
+      if (_active && _refreshSoon) {
+        _refreshSoon = false;
+        continue;
+      }
       await _waitForNextPoll();
     }
   }
@@ -200,6 +211,7 @@ class OrdersQueueViewModel extends ChangeNotifier {
     if (_disposed) return;
     _disposed = true;
     _active = false;
+    _refreshSoon = false;
     _completeSignal();
     super.dispose();
   }

@@ -245,6 +245,108 @@ void main() {
     expect(gates, hasLength(2));
   });
 
+  test('retoma durante a consulta e busca de novo assim que ela termina', () async {
+    final gates = <Completer<OrderList>>[];
+    final repository = FakeOrderRepository(() {
+      final gate = Completer<OrderList>();
+      gates.add(gate);
+      return gate.future;
+    });
+    final delay = ControllableDelay();
+    keep(OrdersQueueViewModel(repository, delay: delay.call));
+
+    viewModel.resume();
+    expect(repository.calls, 1);
+    expect(delay.durations, isEmpty);
+
+    viewModel.pause();
+    viewModel.resume();
+
+    expect(repository.calls, 1);
+    expect(delay.durations, isEmpty);
+    expect(viewModel.orders, isEmpty);
+
+    gates.single.complete(OrderList.ready([sampleOrder(id: 'o1', table: '4')]));
+    await flushAsync();
+
+    expect(repository.calls, 2);
+    expect(delay.durations, isEmpty);
+    expect(viewModel.isLoading, isFalse);
+    expect(viewModel.orders.single.id, 'o1');
+
+    gates[1].complete(OrderList.ready([sampleOrder(id: 'o2', table: '8')]));
+    await flushAsync();
+
+    expect(repository.calls, 2);
+    expect(delay.durations, [OrdersQueueViewModel.defaultPollInterval]);
+    expect(viewModel.orders.single.id, 'o2');
+    expect(viewModel.isLoading, isFalse);
+  });
+
+  test(
+    'dispose durante a retomada no meio da consulta não notifica nem consulta de novo',
+    () async {
+      final gates = <Completer<OrderList>>[];
+      final repository = FakeOrderRepository(() {
+        final gate = Completer<OrderList>();
+        gates.add(gate);
+        return gate.future;
+      });
+      final delay = ControllableDelay();
+      keep(OrdersQueueViewModel(repository, delay: delay.call));
+      var notifications = 0;
+      viewModel.addListener(() => notifications++);
+
+      viewModel.resume();
+      expect(notifications, 1);
+
+      viewModel.pause();
+      viewModel.resume();
+      viewModel.dispose();
+
+      gates.single.complete(OrderList.ready([sampleOrder(id: 'o1')]));
+      await flushAsync();
+
+      expect(notifications, 1);
+      expect(repository.calls, 1);
+      expect(delay.durations, isEmpty);
+      expect(viewModel.orders, isEmpty);
+      expect(viewModel.isLoading, isTrue);
+    },
+  );
+
+  test('dispose da consulta pedida na retomada não notifica nem arma outro timer', () async {
+    final gates = <Completer<OrderList>>[];
+    final repository = FakeOrderRepository(() {
+      final gate = Completer<OrderList>();
+      gates.add(gate);
+      return gate.future;
+    });
+    final delay = ControllableDelay();
+    keep(OrdersQueueViewModel(repository, delay: delay.call));
+    var notifications = 0;
+    viewModel.addListener(() => notifications++);
+
+    viewModel.resume();
+    viewModel.pause();
+    viewModel.resume();
+    gates.single.complete(OrderList.ready([sampleOrder(id: 'o1', table: '4')]));
+    await flushAsync();
+
+    expect(repository.calls, 2);
+    expect(viewModel.orders.single.id, 'o1');
+    final afterFirst = notifications;
+
+    viewModel.dispose();
+    gates[1].complete(OrderList.ready([sampleOrder(id: 'o2', table: '8')]));
+    await flushAsync();
+
+    expect(notifications, afterFirst);
+    expect(repository.calls, 2);
+    expect(delay.durations, isEmpty);
+    expect(viewModel.orders.single.id, 'o1');
+  });
+
   test('descarta a resposta e não notifica depois do dispose', () async {
     final gate = Completer<OrderList>();
     final repository = FakeOrderRepository(() => gate.future);
