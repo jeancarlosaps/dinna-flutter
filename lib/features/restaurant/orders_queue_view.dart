@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/domain/order.dart';
-import '../../core/domain/order_status.dart';
+import 'order_format.dart';
 import 'orders_queue_view_model.dart';
 
 /// Fila de pedidos do restaurante, na rota `/restaurant`.
@@ -12,13 +12,21 @@ import 'orders_queue_view_model.dart';
 /// em [OrdersQueueViewModel.pause] e [OrdersQueueViewModel.resume]. O
 /// [RouteObserver] é o mesmo registrado no `MaterialApp`.
 class OrdersQueueView extends StatefulWidget {
-  const OrdersQueueView({super.key, required this.createViewModel, this.routeObserver});
+  const OrdersQueueView({
+    super.key,
+    required this.createViewModel,
+    this.routeObserver,
+    this.onOrderSelected,
+  });
 
   /// O ViewModel nasce e morre com o State da tela.
   final OrdersQueueViewModel Function() createViewModel;
 
   /// Observa cobertura da rota. Sem ele, o polling segue o ciclo do app.
   final RouteObserver<PageRoute<dynamic>>? routeObserver;
+
+  /// Abre o detalhe. A View não escolhe a rota.
+  final void Function(BuildContext context, Order order)? onOrderSelected;
 
   @override
   State<OrdersQueueView> createState() => _OrdersQueueViewState();
@@ -88,16 +96,18 @@ class _OrdersQueueViewState extends State<OrdersQueueView> with WidgetsBindingOb
       appBar: AppBar(title: const Text('Fila de pedidos')),
       body: ListenableBuilder(
         listenable: _viewModel,
-        builder: (context, _) => _QueueBody(viewModel: _viewModel),
+        builder: (context, _) =>
+            _QueueBody(viewModel: _viewModel, onOrderSelected: widget.onOrderSelected),
       ),
     );
   }
 }
 
 class _QueueBody extends StatelessWidget {
-  const _QueueBody({required this.viewModel});
+  const _QueueBody({required this.viewModel, required this.onOrderSelected});
 
   final OrdersQueueViewModel viewModel;
+  final void Function(BuildContext context, Order order)? onOrderSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -130,7 +140,9 @@ class _QueueBody extends StatelessWidget {
           const Expanded(child: _EmptyState())
         else ...[
           const _QueueHint(),
-          Expanded(child: _OrdersList(orders: viewModel.orders)),
+          Expanded(
+            child: _OrdersList(orders: viewModel.orders, onOrderSelected: onOrderSelected),
+          ),
         ],
       ],
     );
@@ -270,9 +282,10 @@ class _QueueHint extends StatelessWidget {
 }
 
 class _OrdersList extends StatelessWidget {
-  const _OrdersList({required this.orders});
+  const _OrdersList({required this.orders, required this.onOrderSelected});
 
   final List<Order> orders;
+  final void Function(BuildContext context, Order order)? onOrderSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -280,86 +293,76 @@ class _OrdersList extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       itemCount: orders.length,
       separatorBuilder: (context, index) => const SizedBox(height: 12),
-      itemBuilder: (context, index) => _OrderTile(order: orders[index]),
+      itemBuilder: (context, index) {
+        final order = orders[index];
+        return _OrderTile(key: ValueKey(order.id), order: order, onOrderSelected: onOrderSelected);
+      },
     );
   }
 }
 
 class _OrderTile extends StatelessWidget {
-  const _OrderTile({required this.order});
+  const _OrderTile({super.key, required this.order, required this.onOrderSelected});
 
   final Order order;
+  final void Function(BuildContext context, Order order)? onOrderSelected;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final time = _formatOrderTimestamp(order.createdAt);
-    final status = _statusLabel(order.status);
+    final time = formatOrderTimestamp(order.createdAt);
+    final status = orderStatusLabel(order.status);
+    final open = onOrderSelected;
 
     return Semantics(
       container: true,
+      button: open != null,
       excludeSemantics: true,
-      label: 'Mesa ${order.table}, $time, $status',
+      onTap: open == null ? null : () => open(context, order),
+      label: open == null
+          ? 'Mesa ${order.table}, $time, $status'
+          : 'Mesa ${order.table}, $time, $status. Abrir detalhes',
       child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Mesa ${order.table}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: open == null ? null : () => open(context, order),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Mesa ${order.table}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    time,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                    const SizedBox(width: 12),
+                    Text(
+                      time,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                status,
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: _statusColor(theme.colorScheme, order.status),
-                  fontWeight: FontWeight.w600,
+                  ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 8),
+                Text(
+                  status,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: orderStatusColor(theme.colorScheme, order.status),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 }
-
-String _formatOrderTimestamp(DateTime createdAt) {
-  final local = createdAt.toLocal();
-  final day = local.day.toString().padLeft(2, '0');
-  final month = local.month.toString().padLeft(2, '0');
-  final hour = local.hour.toString().padLeft(2, '0');
-  final minute = local.minute.toString().padLeft(2, '0');
-  return '$day/$month $hour:$minute';
-}
-
-String _statusLabel(OrderStatus status) => switch (status) {
-  OrderStatus.received => 'Recebido',
-  OrderStatus.preparing => 'Preparando',
-  OrderStatus.ready => 'Pronto',
-  OrderStatus.finished => 'Finalizado',
-};
-
-Color _statusColor(ColorScheme scheme, OrderStatus status) => switch (status) {
-  OrderStatus.received => scheme.primary,
-  OrderStatus.preparing => scheme.tertiary,
-  OrderStatus.ready => scheme.secondary,
-  OrderStatus.finished => scheme.onSurfaceVariant,
-};

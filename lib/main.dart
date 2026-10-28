@@ -5,6 +5,7 @@ import 'app/app.dart';
 import 'core/config/app_config.dart';
 import 'core/network/api_client.dart';
 import 'features/home/http_api_status_repository.dart';
+import 'features/menu/http_product_repository.dart';
 import 'features/restaurant/http_order_repository.dart';
 
 void main() {
@@ -15,6 +16,7 @@ void main() {
     DinnaApp(
       apiStatusRepository: HttpApiStatusRepository(apiClient),
       orderRepository: HttpOrderRepository(apiClient),
+      productRepository: HttpProductRepository(apiClient),
     ),
   );
 }

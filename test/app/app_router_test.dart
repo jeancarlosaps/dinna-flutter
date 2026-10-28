@@ -2,12 +2,15 @@ import 'package:dinna/app/app.dart';
 import 'package:dinna/app/router/app_router.dart';
 import 'package:dinna/features/client/table/table_view.dart';
 import 'package:dinna/features/home/api_status_repository.dart';
+import 'package:dinna/features/menu/product_repository.dart';
+import 'package:dinna/features/restaurant/order_details_view.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:dinna/features/restaurant/orders_queue_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../features/home/fake_api_status_repository.dart';
+import '../features/menu/fake_product_repository.dart';
 import '../features/restaurant/fake_order_repository.dart';
 
 void main() {
@@ -93,8 +96,9 @@ void main() {
         .pushNamed(AppRoutes.restaurantOrder, arguments: const AppRouteId('pedido-1'));
     await tester.pumpAndSettle();
 
-    expect(find.text(AppRoutes.restaurantOrder), findsOneWidget);
-    final orderContext = tester.element(find.text(AppRoutes.restaurantOrder));
+    expect(find.byType(OrderDetailsView), findsOneWidget);
+    expect(find.text('Pedido indisponível'), findsOneWidget);
+    final orderContext = tester.element(find.byType(OrderDetailsView));
     expect(ModalRoute.of(orderContext)!.settings.arguments, const AppRouteId('pedido-1'));
 
     Navigator.of(orderContext).pop('revisado');
@@ -139,10 +143,12 @@ void main() {
   });
 
   testWidgets('rotas sem tela própria abrem o placeholder', (tester) async {
-    final routes = [
-      ...AppRoutes.clientFlow,
-      ...AppRoutes.restaurantFlow,
-    ].where((route) => route != AppRoutes.table && route != AppRoutes.restaurant);
+    final routes = [...AppRoutes.clientFlow, ...AppRoutes.restaurantFlow].where(
+      (route) =>
+          route != AppRoutes.table &&
+          route != AppRoutes.restaurant &&
+          route != AppRoutes.restaurantOrder,
+    );
 
     for (final route in routes) {
       await _pumpApp(tester);
@@ -160,7 +166,9 @@ void main() {
       await _pumpApp(tester);
       await _push(tester, route, arguments: id);
 
-      final context = tester.element(find.text(route));
+      final context = tester.element(
+        route == AppRoutes.restaurantOrder ? find.byType(OrderDetailsView) : find.text(route),
+      );
       final modalRoute = ModalRoute.of(context)!;
       expect(modalRoute.settings.name, route, reason: route);
       expect(modalRoute.settings.arguments, id, reason: route);
@@ -200,6 +208,7 @@ Future<void> _pumpApp(WidgetTester tester) {
       key: UniqueKey(),
       apiStatusRepository: FakeApiStatusRepository(() async => const ApiAvailability.online()),
       orderRepository: FakeOrderRepository(() async => OrderList.ready(const [])),
+      productRepository: FakeProductRepository(() async => ProductList.ready(const [])),
       pollDelay: pendingPollDelay,
     ),
   );
