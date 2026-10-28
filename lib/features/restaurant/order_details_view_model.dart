@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../core/domain/data_failure.dart';
 import '../../core/domain/order.dart';
 import '../../core/domain/order_item.dart';
 import '../../core/domain/order_status.dart';
@@ -45,6 +46,7 @@ class OrderDetailsViewModel extends ChangeNotifier {
   bool _requested = false;
   bool _disposed = false;
   String? _productLookupMessage;
+  DataFailure? _productLookupFailure;
   Map<String, String> _names = const {};
 
   String get table => order.table;
@@ -61,6 +63,9 @@ class OrderDetailsViewModel extends ChangeNotifier {
   /// Preenchida só quando a consulta ao cardápio falha.
   String? get productLookupMessage => _productLookupMessage;
 
+  /// Classificação da falha do cardápio. Nula quando os nomes carregaram.
+  DataFailure? get productLookupFailure => _productLookupFailure;
+
   List<OrderDetailItem> get items => [for (final item in order.items) _present(item)];
 
   /// Uma consulta por instância. Uma segunda chamada não dispara outra.
@@ -68,6 +73,7 @@ class OrderDetailsViewModel extends ChangeNotifier {
     if (_disposed || _requested) return;
     _requested = true;
     _resolving = true;
+    _productLookupFailure = null;
     _notify();
 
     try {
@@ -75,7 +81,7 @@ class OrderDetailsViewModel extends ChangeNotifier {
       if (_disposed) return;
       final products = result.products;
       if (products == null) {
-        _fail(result.message);
+        _fail(result.message, result.failure ?? DataFailure.unavailable);
         return;
       }
       final names = <String, String>{};
@@ -85,12 +91,13 @@ class OrderDetailsViewModel extends ChangeNotifier {
       _names = Map.unmodifiable(names);
       _failed = false;
       _productLookupMessage = null;
+      _productLookupFailure = null;
       _resolving = false;
       _settled = true;
       _notify();
     } catch (error, stackTrace) {
       if (_disposed) return;
-      _fail(unexpectedCatalogMessage);
+      _fail(unexpectedCatalogMessage, DataFailure.unavailable);
       if (kDebugMode) {
         FlutterError.presentError(
           FlutterErrorDetails(
@@ -122,12 +129,13 @@ class OrderDetailsViewModel extends ChangeNotifier {
     return missingProductName;
   }
 
-  void _fail(String? message) {
+  void _fail(String? message, DataFailure failure) {
     _names = const {};
     _failed = true;
     _resolving = false;
     _settled = true;
     _productLookupMessage = message == null || message.isEmpty ? unexpectedCatalogMessage : message;
+    _productLookupFailure = failure;
     _notify();
   }
 

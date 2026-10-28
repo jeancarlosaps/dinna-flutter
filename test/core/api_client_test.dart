@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:dinna/core/domain/data_failure.dart';
 import 'package:dinna/core/network/api_client.dart';
 import 'package:dinna/core/network/api_exception.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -45,9 +46,59 @@ void main() {
       throwsA(
         isA<ApiException>()
             .having((e) => e.statusCode, 'statusCode', 404)
-            .having((e) => e.message, 'message', 'Produto não encontrado'),
+            .having((e) => e.message, 'message', 'Produto não encontrado')
+            .having((e) => e.detail, 'detail', isNull)
+            .having((e) => e.failure, 'failure', DataFailure.notFound),
       ),
     );
+  });
+
+  test('erro sem mensagem usa texto amigável e guarda o status', () async {
+    Future<ApiException> failed(int status, String body) async {
+      final client = clientReturning(http.Response(body, status));
+      try {
+        await client.getJson('/orders');
+      } on ApiException catch (error) {
+        return error;
+      }
+      fail('esperava ApiException');
+    }
+
+    final empty = {
+      for (final status in [400, 404, 409, 500]) status: await failed(status, ''),
+    };
+    final malformed = {
+      for (final status in [400, 404, 409, 500]) status: await failed(status, 'not-json'),
+    };
+    final blank = await failed(
+      500,
+      jsonEncode({
+        'error': {'message': '  '},
+      }),
+    );
+
+    expect(empty[400]!.failure, DataFailure.validation);
+    expect(empty[404]!.failure, DataFailure.notFound);
+    expect(empty[409]!.failure, DataFailure.conflict);
+    expect(empty[500]!.failure, DataFailure.unavailable);
+
+    for (final status in [400, 404, 409, 500]) {
+      expect(empty[status]!.statusCode, status);
+      expect(empty[status]!.message, ApiClient.httpFailureMessage);
+      expect(empty[status]!.message, isNot(contains('Erro HTTP')));
+      expect(empty[status]!.detail, 'HTTP $status');
+
+      expect(malformed[status]!.statusCode, status);
+      expect(malformed[status]!.message, ApiClient.httpFailureMessage);
+      expect(malformed[status]!.message, isNot(contains('Erro HTTP')));
+      expect(malformed[status]!.detail, 'HTTP $status: corpo inválido');
+      expect(malformed[status]!.failure, empty[status]!.failure);
+    }
+
+    expect(blank.message, ApiClient.httpFailureMessage);
+    expect(blank.statusCode, 500);
+    expect(blank.detail, 'HTTP 500');
+    expect(blank.failure, DataFailure.unavailable);
   });
 
   test('rejeita corpo que não é JSON em resposta de sucesso', () async {
@@ -71,7 +122,12 @@ void main() {
 
     await expectLater(
       client.getJson('/health'),
-      throwsA(isA<ApiException>().having((e) => e.statusCode, 'statusCode', isNull)),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.statusCode, 'statusCode', isNull)
+            .having((error) => error.message, 'message', 'Não foi possível conectar à API')
+            .having((error) => error.detail, 'detail', 'Connection refused'),
+      ),
     );
   });
 }

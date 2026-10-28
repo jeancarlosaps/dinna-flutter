@@ -24,7 +24,7 @@ class HttpOrderRepository implements OrderRepository {
       final orders = <Order>[for (final item in body) Order.fromJson(item as Object?)];
       return OrderList.ready(orders);
     } on ApiException catch (error) {
-      return OrderList.unavailable(error.message);
+      return OrderList.unavailable(error.message, failure: error.failure, detail: error.detail);
     } on FormatException {
       return const OrderList.unavailable(unexpectedResponseMessage);
     }

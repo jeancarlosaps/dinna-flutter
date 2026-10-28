@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dinna/core/domain/data_failure.dart';
 import 'package:dinna/core/network/api_client.dart';
 import 'package:dinna/features/restaurant/http_order_repository.dart';
+import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -153,8 +155,36 @@ void main() {
 
     expect(maintenance.orders, isNull);
     expect(maintenance.message, 'API em manutenção');
+    expect(maintenance.failure, DataFailure.unavailable);
     expect(failure.orders, isNull);
-    expect(failure.message, 'Erro HTTP 500');
+    expect(failure.message, ApiClient.httpFailureMessage);
+    expect(failure.message, isNot(contains('Erro HTTP')));
+    expect(failure.detail, 'HTTP 500');
+    expect(failure.failure, DataFailure.unavailable);
+  });
+
+  test('diferencia validação, ausência e conflito', () async {
+    Future<OrderList> failed(int status, String message) {
+      return repositoryReturning(
+        http.Response(
+          jsonEncode({
+            'error': {'code': 'X', 'message': message},
+          }),
+          status,
+          headers: const {'content-type': 'application/json; charset=utf-8'},
+        ),
+      ).list();
+    }
+
+    final validation = await failed(400, 'Mesa inválida');
+    final missing = await failed(404, 'Pedido não encontrado');
+    final conflict = await failed(409, 'Transição inválida');
+
+    expect(validation.message, 'Mesa inválida');
+    expect(validation.failure, DataFailure.validation);
+    expect(validation.orders, isNull);
+    expect(missing.failure, DataFailure.notFound);
+    expect(conflict.failure, DataFailure.conflict);
   });
 
   test('traduz indisponibilidade de rede', () async {
@@ -176,7 +206,11 @@ void main() {
 
     expect(socket.orders, isNull);
     expect(socket.message, 'Não foi possível conectar à API');
+    expect(socket.detail, 'Network is unreachable');
     expect(client.orders, isNull);
-    expect(client.message, 'Connection refused');
+    expect(client.message, 'Não foi possível conectar à API');
+    expect(client.message, isNot(contains('Connection refused')));
+    expect(client.failure, DataFailure.unavailable);
+    expect(client.detail, 'Connection refused');
   });
 }

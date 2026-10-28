@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../core/domain/data_failure.dart';
 import '../../core/domain/order.dart';
 import 'order_repository.dart';
 
@@ -40,6 +41,7 @@ class OrdersQueueViewModel extends ChangeNotifier {
   bool _loading = false;
   String? _errorMessage;
   String? _refreshError;
+  DataFailure? _failure;
   bool _active = false;
   bool _started = false;
   bool _disposed = false;
@@ -61,6 +63,9 @@ class OrdersQueueViewModel extends ChangeNotifier {
 
   /// Falha de uma atualização depois que a lista já existe. A lista permanece.
   String? get refreshError => _refreshError;
+
+  /// Classificação da falha atual, inicial ou de atualização. Nula com a lista válida.
+  DataFailure? get failure => _failure;
 
   /// Lista válida e sem pedidos. Erro inicial não é fila vazia.
   bool get isEmpty => _hasLoaded && _orders.isEmpty && _errorMessage == null;
@@ -126,6 +131,7 @@ class OrdersQueueViewModel extends ChangeNotifier {
     if (showBlockingLoading) {
       _loading = true;
       _errorMessage = null;
+      _failure = null;
       _notify();
     }
 
@@ -138,10 +144,13 @@ class OrdersQueueViewModel extends ChangeNotifier {
         return;
       }
       final message = result.message;
-      _showFailure(message == null || message.isEmpty ? unexpectedFailureMessage : message);
+      _showFailure(
+        message == null || message.isEmpty ? unexpectedFailureMessage : message,
+        result.failure ?? DataFailure.unavailable,
+      );
     } catch (error, stackTrace) {
       if (_disposed) return;
-      _showFailure(unexpectedFailureMessage);
+      _showFailure(unexpectedFailureMessage, DataFailure.unavailable);
       if (kDebugMode) {
         FlutterError.presentError(
           FlutterErrorDetails(
@@ -164,25 +173,29 @@ class OrdersQueueViewModel extends ChangeNotifier {
         _loading ||
         _errorMessage != null ||
         _refreshError != null ||
+        _failure != null ||
         !_sameOrders(_orders, sorted);
     _orders = sorted;
     _hasLoaded = true;
     _loading = false;
     _errorMessage = null;
     _refreshError = null;
+    _failure = null;
     if (changed) _notify();
   }
 
-  void _showFailure(String message) {
+  void _showFailure(String message, DataFailure failure) {
     _loading = false;
     if (_hasLoaded) {
-      if (_refreshError == message) return;
+      if (_refreshError == message && _failure == failure) return;
       _refreshError = message;
+      _failure = failure;
       _notify();
       return;
     }
     _errorMessage = message;
     _refreshError = null;
+    _failure = failure;
     _notify();
   }
 

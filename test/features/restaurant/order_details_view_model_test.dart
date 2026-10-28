@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dinna/core/domain/data_failure.dart';
 import 'package:dinna/core/domain/order.dart';
 import 'package:dinna/core/domain/order_item.dart';
 import 'package:dinna/core/domain/order_status.dart';
@@ -98,6 +99,7 @@ void main() {
     expect(viewModel.isResolvingProducts, isFalse);
     expect(viewModel.productLookupMessage, OrderDetailsViewModel.unexpectedCatalogMessage);
     expect(viewModel.productLookupMessage, isNot(contains(detalheInterno)));
+    expect(viewModel.productLookupFailure, DataFailure.unavailable);
     expect(viewModel.table, '4');
     expect(viewModel.status, OrderStatus.preparing);
     expect(viewModel.totalCents, 6580);
@@ -113,8 +115,27 @@ void main() {
     await viewModel.resolveProducts();
 
     expect(viewModel.productLookupMessage, 'sem rede');
+    expect(viewModel.productLookupFailure, DataFailure.unavailable);
     expect(viewModel.items.single.name, OrderDetailsViewModel.unavailableProductName);
     expect(viewModel.items.single.quantity, 2);
+  });
+
+  test('preserva conflito do cardápio e deixa o detalhe técnico fora da mensagem', () async {
+    final repository = FakeProductRepository(
+      () async => const ProductList.unavailable(
+        'Catálogo em conflito',
+        failure: DataFailure.conflict,
+        detail: 'Connection refused',
+      ),
+    );
+    keep(OrderDetailsViewModel(repository, order: orderWith()));
+
+    await viewModel.resolveProducts();
+
+    expect(viewModel.productLookupMessage, 'Catálogo em conflito');
+    expect(viewModel.productLookupMessage, isNot(contains('Connection refused')));
+    expect(viewModel.productLookupFailure, DataFailure.conflict);
+    expect(viewModel.table, '4');
   });
 
   test('observação em branco não entra na linha', () async {

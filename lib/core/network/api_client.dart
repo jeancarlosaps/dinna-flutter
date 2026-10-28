@@ -21,6 +21,9 @@ class ApiClient {
   final Duration timeout;
   final http.Client _httpClient;
 
+  /// Texto da interface quando o erro HTTP não traz `error.message` utilizável.
+  static const httpFailureMessage = 'Não foi possível concluir a consulta';
+
   Future<Object?> getJson(String path) async {
     final http.Response response;
     try {
@@ -29,18 +32,20 @@ class ApiClient {
           .timeout(timeout);
     } on TimeoutException {
       throw const ApiException('Tempo de resposta esgotado');
-    } on SocketException {
-      throw const ApiException('Não foi possível conectar à API');
+    } on SocketException catch (error) {
+      throw ApiException('Não foi possível conectar à API', detail: error.message);
     } on http.ClientException catch (error) {
-      throw ApiException(error.message);
+      throw ApiException('Não foi possível conectar à API', detail: error.message);
     }
 
     final body = _decodeBody(response);
     if (response.statusCode >= 200 && response.statusCode < 300) return body;
 
+    final message = _errorMessage(body);
     throw ApiException(
-      _errorMessage(body) ?? 'Erro HTTP ${response.statusCode}',
+      message ?? httpFailureMessage,
       statusCode: response.statusCode,
+      detail: message == null ? 'HTTP ${response.statusCode}' : null,
     );
   }
 
@@ -53,18 +58,22 @@ class ApiClient {
     try {
       return jsonDecode(utf8.decode(response.bodyBytes));
     } on FormatException {
+      final success = response.statusCode >= 200 && response.statusCode < 300;
       throw ApiException(
-        response.statusCode >= 200 && response.statusCode < 300
-            ? 'Resposta inválida da API'
-            : 'Erro HTTP ${response.statusCode}',
+        success ? 'Resposta inválida da API' : httpFailureMessage,
         statusCode: response.statusCode,
+        detail: success ? null : 'HTTP ${response.statusCode}: corpo inválido',
       );
     }
   }
 
   /// Lê o formato de erro da API: `{ "error": { "code", "message" } }`.
+  ///
+  /// Mensagem vazia ou só com espaço não conta: o chamador usa o texto amigável.
   String? _errorMessage(Object? body) {
-    if (body case {'error': {'message': final String message}}) return message;
+    if (body case {'error': {'message': final String message}} when message.trim().isNotEmpty) {
+      return message;
+    }
     return null;
   }
 }

@@ -17,7 +17,7 @@ class HttpApiStatusRepository implements ApiStatusRepository {
         _ => const ApiAvailability.offline('Resposta inesperada da API'),
       };
     } on ApiException catch (error) {
-      return ApiAvailability.offline(error.message);
+      return ApiAvailability.offline(error.message, failure: error.failure, detail: error.detail);
     }
   }
 }
