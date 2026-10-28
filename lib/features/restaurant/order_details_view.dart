@@ -141,6 +141,7 @@ class _SummaryCard extends StatelessWidget {
     final status = orderStatusLabel(viewModel.status);
     return Semantics(
       container: true,
+      excludeSemantics: true,
       label: 'Mesa ${viewModel.table}, $time, $status',
       child: Card(
         child: Padding(

@@ -12,6 +12,7 @@ import 'package:dinna/features/restaurant/order_details_view_model.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:dinna/features/restaurant/orders_queue_view.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../home/fake_api_status_repository.dart';
@@ -78,6 +79,32 @@ void main() {
     final scheme = Theme.of(tester.element(find.text('Preparando'))).colorScheme;
     expect(tester.widget<Text>(find.text('Preparando')).style?.color, scheme.tertiary);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('o resumo anuncia mesa, horário e status uma única vez', (tester) async {
+    final handle = tester.ensureSemantics();
+    try {
+      final order = detailOrder();
+      await pumpDetails(
+        tester,
+        arguments: RestaurantOrderArgs(id: const AppRouteId('o1'), order: order),
+        products: catalog([]),
+      );
+
+      final time = _clock(order.createdAt);
+      final summary = 'Mesa 12, $time, Recebido';
+      final labels = _semanticsLabels(tester);
+
+      expect(find.text('Mesa 12'), findsOneWidget);
+      expect(find.text(time), findsOneWidget);
+      expect(find.text('Recebido'), findsOneWidget);
+      expect(labels.where((label) => label.contains('Mesa 12')), [summary]);
+      expect(labels.where((label) => label == time), isEmpty);
+      expect(labels.where((label) => label == 'Recebido'), isEmpty);
+      expect(tester.takeException(), isNull);
+    } finally {
+      handle.dispose();
+    }
   });
 
   testWidgets('mostra os itens e as quantidades', (tester) async {
@@ -318,6 +345,25 @@ void main() {
     expect(products.calls, 1);
     expect(tester.takeException(), isNull);
   });
+}
+
+List<String> _semanticsLabels(WidgetTester tester) {
+  final renderView = tester.binding.renderViews.firstWhere(
+    (view) => view.flutterView == tester.view,
+  );
+  final root = renderView.owner!.semanticsOwner!.rootSemanticsNode!;
+  final labels = <String>[];
+  void visit(SemanticsNode node) {
+    final label = node.getSemanticsData().label;
+    if (label.isNotEmpty) labels.add(label);
+    node.visitChildren((child) {
+      visit(child);
+      return true;
+    });
+  }
+
+  visit(root);
+  return labels;
 }
 
 String _clock(DateTime createdAt) {
