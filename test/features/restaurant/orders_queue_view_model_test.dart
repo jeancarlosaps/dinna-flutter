@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dinna/core/domain/data_failure.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:dinna/features/restaurant/orders_queue_view_model.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -89,6 +90,7 @@ void main() {
     expect(viewModel.hasLoaded, isFalse);
     expect(viewModel.isEmpty, isFalse);
     expect(viewModel.errorMessage, 'Não foi possível conectar à API');
+    expect(viewModel.failure, DataFailure.unavailable);
     expect(viewModel.orders, isEmpty);
 
     fail = false;
@@ -97,7 +99,27 @@ void main() {
     expect(viewModel.hasLoaded, isTrue);
     expect(viewModel.isLoading, isFalse);
     expect(viewModel.errorMessage, isNull);
+    expect(viewModel.failure, isNull);
     expect(viewModel.orders, [order]);
+  });
+
+  test('a carga inicial preserva ausência sem levar o detalhe técnico à mensagem', () async {
+    final repository = FakeOrderRepository(
+      () async => const OrderList.unavailable(
+        'Pedido não encontrado',
+        failure: DataFailure.notFound,
+        detail: 'Connection refused',
+      ),
+    );
+    keep(OrdersQueueViewModel(repository, delay: ControllableDelay().call));
+
+    viewModel.resume();
+    await flushAsync();
+
+    expect(viewModel.errorMessage, 'Pedido não encontrado');
+    expect(viewModel.errorMessage, isNot(contains('Connection refused')));
+    expect(viewModel.failure, DataFailure.notFound);
+    expect(viewModel.refreshError, isNull);
   });
 
   test('exceção inesperada vira erro de tela sem o detalhe interno', () async {
