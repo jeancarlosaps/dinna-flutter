@@ -1,11 +1,13 @@
 import 'package:dinna/app/app.dart';
 import 'package:dinna/app/theme/dinna_colors.dart';
 import 'package:dinna/features/home/api_status_repository.dart';
+import 'package:dinna/features/menu/product_repository.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'features/home/fake_api_status_repository.dart';
+import 'features/menu/fake_product_repository.dart';
 import 'features/restaurant/fake_order_repository.dart';
 
 void main() {
@@ -14,6 +16,7 @@ void main() {
       DinnaApp(
         apiStatusRepository: FakeApiStatusRepository(() async => const ApiAvailability.online()),
         orderRepository: FakeOrderRepository(() async => OrderList.ready(const [])),
+        productRepository: FakeProductRepository(() async => ProductList.ready(const [])),
         pollDelay: pendingPollDelay,
       ),
     );
@@ -32,6 +35,7 @@ void main() {
       DinnaApp(
         apiStatusRepository: FakeApiStatusRepository(() async => const ApiAvailability.online()),
         orderRepository: FakeOrderRepository(() async => OrderList.ready(const [])),
+        productRepository: FakeProductRepository(() async => ProductList.ready(const [])),
         pollDelay: pendingPollDelay,
       ),
     );

@@ -1,20 +1,27 @@
 import 'package:flutter/material.dart';
 
+import '../../core/domain/order.dart';
 import '../../features/client/table/table_view.dart';
 import '../../features/home/api_status_repository.dart';
 import '../../features/home/home_view.dart';
 import '../../features/home/home_view_model.dart';
+import '../../features/menu/product_repository.dart';
+import '../../features/restaurant/order_details_view.dart';
+import '../../features/restaurant/order_details_view_model.dart';
 import '../../features/restaurant/order_repository.dart';
 import '../../features/restaurant/orders_queue_view.dart';
 import '../../features/restaurant/orders_queue_view_model.dart';
+import 'app_route_args.dart';
 import 'route_placeholder.dart';
+
+export 'app_route_args.dart';
 
 /// Nomes de rota do app.
 ///
 /// A home (`/`) é a rota inicial da fundação e o fluxo `GET /health`.
 /// [clientFlow] e [restaurantFlow] nomeiam a jornada da R1, na ordem do
-/// produto. A home, a mesa e a fila (`/restaurant`) têm tela. O restante
-/// ainda usa [RoutePlaceholder].
+/// produto. A home, a mesa, a fila (`/restaurant`) e o detalhe do pedido
+/// (`/restaurant/order`) têm tela. O restante ainda usa [RoutePlaceholder].
 ///
 /// A entrada do cliente é [table] (`/table`), o mesmo nome da `TableView`
 /// na branch `feature/client-ui`. A integração coloca essa tela num case
@@ -43,7 +50,7 @@ abstract final class AppRoutes {
   /// Fila de pedidos. Entrada do restaurante (painel).
   static const restaurant = '/restaurant';
 
-  /// Detalhe do pedido na fila. Argumento: [AppRouteId].
+  /// Detalhe do pedido na fila. Argumento: [RestaurantOrderArgs].
   static const restaurantOrder = '/restaurant/order';
 
   /// Cardápio gerido pelo restaurante.
@@ -56,36 +63,22 @@ abstract final class AppRoutes {
   static const restaurantFlow = <String>[restaurant, restaurantOrder, restaurantMenu];
 
   /// Rotas de detalhe. O id vai em [RouteSettings.arguments] como [AppRouteId].
+  /// Em [restaurantOrder], [RestaurantOrderArgs] leva o id e o pedido da fila.
   static const detailRoutes = <String>[product, orderTracking, restaurantOrder];
-}
-
-/// Id de produto ou de pedido passado em [RouteSettings.arguments].
-///
-/// O router não lê este valor. A View da rota é quem valida.
-final class AppRouteId {
-  const AppRouteId(this.value);
-
-  final String value;
-
-  @override
-  bool operator ==(Object other) {
-    return identical(this, other) || (other is AppRouteId && other.value == value);
-  }
-
-  @override
-  int get hashCode => value.hashCode;
 }
 
 class AppRouter {
   AppRouter({
     required this.apiStatusRepository,
     required this.orderRepository,
+    required this.productRepository,
     required this.routeObserver,
     this.pollDelay,
   });
 
   final ApiStatusRepository apiStatusRepository;
   final OrderRepository orderRepository;
+  final ProductRepository productRepository;
   final RouteObserver<PageRoute<dynamic>> routeObserver;
   final Future<void> Function(Duration duration)? pollDelay;
 
@@ -101,10 +94,21 @@ class AppRouter {
       AppRoutes.restaurant => OrdersQueueView(
         createViewModel: () => OrdersQueueViewModel(orderRepository, delay: pollDelay),
         routeObserver: routeObserver,
+        onOrderSelected: _openOrder,
+      ),
+      AppRoutes.restaurantOrder => OrderDetailsView(
+        createViewModel: (order) => OrderDetailsViewModel(productRepository, order: order),
       ),
       _ when name != null && _isFlowRoute(name) => RoutePlaceholder(routeName: name),
       _ => UnknownRouteView(routeName: name),
     };
+  }
+
+  void _openOrder(BuildContext context, Order order) {
+    Navigator.of(context).pushNamed(
+      AppRoutes.restaurantOrder,
+      arguments: RestaurantOrderArgs(id: AppRouteId(order.id), order: order),
+    );
   }
 
   bool _isFlowRoute(String? name) {
