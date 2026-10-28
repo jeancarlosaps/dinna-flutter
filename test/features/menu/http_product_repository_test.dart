@@ -1,7 +1,9 @@
 import 'dart:convert';
 
+import 'package:dinna/core/domain/data_failure.dart';
 import 'package:dinna/core/network/api_client.dart';
 import 'package:dinna/features/menu/http_product_repository.dart';
+import 'package:dinna/features/menu/product_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -143,6 +145,31 @@ void main() {
 
     expect(result.products, isNull);
     expect(result.message, 'API em manutenção');
+    expect(result.failure, DataFailure.unavailable);
+  });
+
+  test('diferencia validação, ausência e conflito', () async {
+    Future<ProductList> failed(int status, String message) {
+      return repositoryReturning(
+        http.Response(
+          jsonEncode({
+            'error': {'code': 'X', 'message': message},
+          }),
+          status,
+          headers: const {'content-type': 'application/json; charset=utf-8'},
+        ),
+      ).list();
+    }
+
+    final validation = await failed(400, 'Consulta inválida');
+    final missing = await failed(404, 'Produto não encontrado');
+    final conflict = await failed(409, 'Conflito');
+
+    expect(validation.message, 'Consulta inválida');
+    expect(validation.failure, DataFailure.validation);
+    expect(validation.products, isNull);
+    expect(missing.failure, DataFailure.notFound);
+    expect(conflict.failure, DataFailure.conflict);
   });
 
   test('traduz erro de rede na mensagem do Service', () async {
@@ -156,6 +183,9 @@ void main() {
     final result = await repository.list();
 
     expect(result.products, isNull);
-    expect(result.message, 'Connection refused');
+    expect(result.message, 'Não foi possível conectar à API');
+    expect(result.message, isNot(contains('Connection refused')));
+    expect(result.failure, DataFailure.unavailable);
+    expect(result.detail, 'Connection refused');
   });
 }

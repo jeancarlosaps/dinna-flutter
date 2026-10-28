@@ -71,7 +71,12 @@ void main() {
 
     await expectLater(
       client.getJson('/health'),
-      throwsA(isA<ApiException>().having((e) => e.statusCode, 'statusCode', isNull)),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.statusCode, 'statusCode', isNull)
+            .having((error) => error.message, 'message', 'Não foi possível conectar à API')
+            .having((error) => error.detail, 'detail', 'Connection refused'),
+      ),
     );
   });
 }

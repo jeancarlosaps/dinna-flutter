@@ -21,7 +21,7 @@ class HttpProductRepository implements ProductRepository {
       final products = <Product>[for (final item in body) Product.fromJson(item as Object?)];
       return ProductList.ready(products);
     } on ApiException catch (error) {
-      return ProductList.unavailable(error.message);
+      return ProductList.unavailable(error.message, failure: error.failure, detail: error.detail);
     } on FormatException {
       return const ProductList.unavailable(unexpectedResponseMessage);
     }

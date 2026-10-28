@@ -29,10 +29,10 @@ class ApiClient {
           .timeout(timeout);
     } on TimeoutException {
       throw const ApiException('Tempo de resposta esgotado');
-    } on SocketException {
-      throw const ApiException('Não foi possível conectar à API');
+    } on SocketException catch (error) {
+      throw ApiException('Não foi possível conectar à API', detail: error.message);
     } on http.ClientException catch (error) {
-      throw ApiException(error.message);
+      throw ApiException('Não foi possível conectar à API', detail: error.message);
     }
 
     final body = _decodeBody(response);
