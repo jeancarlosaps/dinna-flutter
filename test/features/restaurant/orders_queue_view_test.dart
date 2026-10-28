@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:dinna/app/router/app_router.dart';
 import 'package:dinna/app/theme/dinna_theme.dart';
+import 'package:dinna/core/domain/order.dart';
 import 'package:dinna/core/domain/order_status.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:dinna/features/restaurant/orders_queue_view.dart';
 import 'package:dinna/features/restaurant/orders_queue_view_model.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'controllable_delay.dart';
@@ -14,11 +16,15 @@ import 'fake_order_repository.dart';
 import 'sample_order.dart';
 
 void main() {
-  Future<void> pumpQueue(WidgetTester tester, OrdersQueueViewModel Function() create) {
+  Future<void> pumpQueue(
+    WidgetTester tester,
+    OrdersQueueViewModel Function() create, {
+    void Function(BuildContext context, Order order)? onOrderSelected,
+  }) {
     return tester.pumpWidget(
       MaterialApp(
         theme: DinnaTheme.light(),
-        home: OrdersQueueView(createViewModel: create),
+        home: OrdersQueueView(createViewModel: create, onOrderSelected: onOrderSelected),
       ),
     );
   }
@@ -85,6 +91,34 @@ void main() {
     expect(find.text('Recebido'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('o card expõe o toque que abre o pedido', (tester) async {
+    final handle = tester.ensureSemantics();
+    try {
+      Order? selected;
+      await pumpQueue(
+        tester,
+        () => OrdersQueueViewModel(
+          FakeOrderRepository(() async => OrderList.ready([sampleOrder(id: 'o1', table: '12')])),
+          delay: pendingPollDelay,
+        ),
+        onOrderSelected: (context, order) => selected = order,
+      );
+      await tester.pumpAndSettle();
+
+      final node = tester.getSemantics(find.byType(Card));
+      expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+      expect(node.getSemanticsData().label, contains('Abrir detalhes'));
+
+      node.owner!.performAction(node.id, SemanticsAction.tap);
+      await tester.pump();
+
+      expect(selected?.id, 'o1');
+      expect(tester.takeException(), isNull);
+    } finally {
+      handle.dispose();
+    }
   });
 
   testWidgets('mostra mesa, horário e status na ordem da fila', (tester) async {

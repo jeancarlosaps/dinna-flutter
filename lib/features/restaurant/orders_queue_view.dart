@@ -318,6 +318,7 @@ class _OrderTile extends StatelessWidget {
       container: true,
       button: open != null,
       excludeSemantics: true,
+      onTap: open == null ? null : () => open(context, order),
       label: open == null
           ? 'Mesa ${order.table}, $time, $status'
           : 'Mesa ${order.table}, $time, $status. Abrir detalhes',
