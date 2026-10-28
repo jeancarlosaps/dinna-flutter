@@ -157,7 +157,9 @@ void main() {
     expect(maintenance.message, 'API em manutenção');
     expect(maintenance.failure, DataFailure.unavailable);
     expect(failure.orders, isNull);
-    expect(failure.message, 'Erro HTTP 500');
+    expect(failure.message, ApiClient.httpFailureMessage);
+    expect(failure.message, isNot(contains('Erro HTTP')));
+    expect(failure.detail, 'HTTP 500');
     expect(failure.failure, DataFailure.unavailable);
   });
 
