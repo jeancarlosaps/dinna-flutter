@@ -7,13 +7,15 @@ Order sampleOrder({
   String table = '12',
   OrderStatus status = OrderStatus.received,
   DateTime? createdAt,
+  List<OrderItem>? items,
+  int totalCents = 1000,
 }) {
   return Order(
     id: id,
     table: table,
     status: status,
-    items: [OrderItem(productId: 'p1', quantity: 1, note: null)],
-    totalCents: 1000,
+    items: items ?? [OrderItem(productId: 'p1', quantity: 1, note: null)],
+    totalCents: totalCents,
     createdAt: createdAt ?? DateTime.utc(2026, 10, 16, 18),
   );
 }
