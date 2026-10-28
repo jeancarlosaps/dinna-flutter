@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../../app/theme/dinna_theme.dart';
+import '../../../shared/widgets/dinna_logo.dart';
+
 class TableView extends StatelessWidget {
   const TableView({super.key});
 
@@ -22,24 +25,7 @@ class TableView extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const SizedBox(height: 50),
-                          Text.rich(
-                            TextSpan(
-                              text: 'dinna',
-                              style: TextStyle(
-                                fontSize: 56,
-                                height: 1.0,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: -2,
-                                color: theme.colorScheme.onSurface,
-                              ),
-                              children: [
-                                TextSpan(
-                                  text: '.',
-                                  style: TextStyle(color: theme.colorScheme.primary),
-                                ),
-                              ],
-                            ),
-                          ),
+                          const DinnaLogo(),
                           const SizedBox(height: 4),
                           Container(
                             width: 20,
@@ -49,11 +35,10 @@ class TableView extends StatelessWidget {
                               color: theme.colorScheme.primary,
                             ),
                           ),
-                          SizedBox(height: 8),
+                          const SizedBox(height: 8),
                           Text(
                             'Pedido à mesa, do seu jeito.',
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              fontStyle: FontStyle.italic,
+                            style: DinnaTheme.taglineStyle.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),

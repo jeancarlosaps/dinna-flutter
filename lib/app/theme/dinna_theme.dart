@@ -3,7 +3,17 @@ import 'package:flutter/material.dart';
 import 'dinna_colors.dart';
 
 abstract final class DinnaTheme {
-  static const radius = 16.0;
+  static const radius = 12.0;
+
+  static const fontFamily = 'Inter';
+  static const serifFamily = 'Source Serif 4';
+
+  static const taglineStyle = TextStyle(
+    fontFamily: serifFamily,
+    fontStyle: FontStyle.italic,
+    fontSize: 22,
+    height: 1.4,
+  );
 
   static ThemeData light() {
     final colorScheme =
@@ -37,6 +47,12 @@ abstract final class DinnaTheme {
 
     return ThemeData(
       useMaterial3: true,
+      fontFamily: fontFamily,
+      textTheme: const TextTheme(
+        titleMedium: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, height: 1.4),
+        bodySmall: TextStyle(fontSize: 13, height: 1.4),
+        labelLarge: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, height: 1.4),
+      ),
       colorScheme: colorScheme,
       scaffoldBackgroundColor: colorScheme.surface,
       appBarTheme: AppBarTheme(
@@ -52,13 +68,20 @@ abstract final class DinnaTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(52),
+          minimumSize: const Size.fromHeight(48),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           shape: shape,
-          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52), shape: shape),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(48),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          shape: shape,
+          backgroundColor: colorScheme.surfaceContainerLowest,
+          foregroundColor: colorScheme.onSurface,
+          side: BorderSide(color: colorScheme.outlineVariant),
+        ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
