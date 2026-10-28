@@ -2,10 +2,13 @@ import 'package:dinna/app/app.dart';
 import 'package:dinna/app/router/app_router.dart';
 import 'package:dinna/features/client/table/table_view.dart';
 import 'package:dinna/features/home/api_status_repository.dart';
+import 'package:dinna/features/restaurant/order_repository.dart';
+import 'package:dinna/features/restaurant/orders_queue_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../features/home/fake_api_status_repository.dart';
+import '../features/restaurant/fake_order_repository.dart';
 
 void main() {
   test('os fluxos não se sobrepõem e o detalhe aponta para rota conhecida', () {
@@ -50,11 +53,12 @@ void main() {
     await _pumpApp(tester);
     await _push(tester, AppRoutes.restaurant);
 
-    expect(find.text(AppRoutes.restaurant), findsOneWidget);
-    expect(find.text('Tela ainda não implementada.'), findsOneWidget);
+    expect(find.byType(OrdersQueueView), findsOneWidget);
+    expect(find.text('Fila de pedidos'), findsOneWidget);
+    expect(find.text('Tela ainda não implementada.'), findsNothing);
     expect(find.text('Página não encontrada'), findsNothing);
 
-    final context = tester.element(find.text(AppRoutes.restaurant));
+    final context = tester.element(find.byType(OrdersQueueView));
     expect(ModalRoute.of(context)!.settings.name, AppRoutes.restaurant);
   });
 
@@ -84,7 +88,7 @@ void main() {
     await _pumpApp(tester);
     await _push(tester, AppRoutes.restaurant);
 
-    final queueContext = tester.element(find.text(AppRoutes.restaurant));
+    final queueContext = tester.element(find.text('Fila de pedidos'));
     final openedOrder = Navigator.of(queueContext)
         .pushNamed(AppRoutes.restaurantOrder, arguments: const AppRouteId('pedido-1'));
     await tester.pumpAndSettle();
@@ -96,7 +100,7 @@ void main() {
     Navigator.of(orderContext).pop('revisado');
     await tester.pumpAndSettle();
 
-    expect(find.text(AppRoutes.restaurant), findsOneWidget);
+    expect(find.text('Fila de pedidos'), findsOneWidget);
     expect(await openedOrder, 'revisado');
   });
 
@@ -134,11 +138,11 @@ void main() {
     }
   });
 
-  testWidgets('cada rota de cliente e restaurante abre o próprio placeholder', (tester) async {
+  testWidgets('rotas sem tela própria abrem o placeholder', (tester) async {
     final routes = [
       ...AppRoutes.clientFlow,
       ...AppRoutes.restaurantFlow,
-    ].where((route) => route != AppRoutes.table);
+    ].where((route) => route != AppRoutes.table && route != AppRoutes.restaurant);
 
     for (final route in routes) {
       await _pumpApp(tester);
@@ -195,6 +199,8 @@ Future<void> _pumpApp(WidgetTester tester) {
     DinnaApp(
       key: UniqueKey(),
       apiStatusRepository: FakeApiStatusRepository(() async => const ApiAvailability.online()),
+      orderRepository: FakeOrderRepository(() async => OrderList.ready(const [])),
+      pollDelay: pendingPollDelay,
     ),
   );
 }
