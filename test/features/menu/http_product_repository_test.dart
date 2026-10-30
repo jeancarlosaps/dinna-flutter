@@ -188,4 +188,130 @@ void main() {
     expect(result.failure, DataFailure.unavailable);
     expect(result.detail, 'Connection refused');
   });
+
+  test('busca o produto em GET /products/:id', () async {
+    late Uri requested;
+    final repository = HttpProductRepository(
+      ApiClient(
+        baseUrl: baseUrl,
+        httpClient: MockClient((request) async {
+          requested = request.url;
+          return http.Response(
+            jsonEncode(_contractProduct),
+            200,
+            headers: const {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      ),
+    );
+
+    final result = await repository.findById('p1');
+
+    expect(requested.toString(), 'http://localhost:3333/products/p1');
+    expect(result.product?.id, 'p1');
+    expect(result.product?.name, 'Burger Clássico');
+    expect(result.product?.priceCents, 3290);
+    expect(result.product?.available, isTrue);
+    expect(result.message, isNull);
+    expect(result.failure, isNull);
+  });
+
+  test('produto indisponível em GET /products/:id continua sendo sucesso', () async {
+    final repository = repositoryReturning(
+      http.Response(
+        jsonEncode(_seedUnavailable),
+        200,
+        headers: const {'content-type': 'application/json; charset=utf-8'},
+      ),
+    );
+
+    final result = await repository.findById('p8');
+
+    expect(result.product?.id, 'p8');
+    expect(result.product?.available, isFalse);
+    expect(result.message, isNull);
+    expect(result.failure, isNull);
+  });
+
+  test('traduz 404 de GET /products/:id como produto ausente', () async {
+    final repository = repositoryReturning(
+      http.Response(
+        jsonEncode({
+          'error': {'code': 'PRODUCT_NOT_FOUND', 'message': 'Produto p9 não encontrado'},
+        }),
+        404,
+        headers: const {'content-type': 'application/json; charset=utf-8'},
+      ),
+    );
+
+    final result = await repository.findById('p9');
+
+    expect(result.product, isNull);
+    expect(result.message, 'Produto p9 não encontrado');
+    expect(result.failure, DataFailure.notFound);
+    expect(result.detail, isNull);
+  });
+
+  test('traduz JSON incompatível com o produto do contrato', () async {
+    final listBody = repositoryReturning(
+      http.Response(
+        jsonEncode([_contractProduct]),
+        200,
+        headers: const {'content-type': 'application/json; charset=utf-8'},
+      ),
+    );
+    final brokenProduct = repositoryReturning(
+      http.Response(
+        jsonEncode({'id': 'p1', 'name': 'Burger Clássico'}),
+        200,
+        headers: const {'content-type': 'application/json; charset=utf-8'},
+      ),
+    );
+
+    final wrapped = await listBody.findById('p1');
+    final broken = await brokenProduct.findById('p1');
+
+    expect(wrapped.product, isNull);
+    expect(wrapped.message, HttpProductRepository.unexpectedResponseMessage);
+    expect(wrapped.failure, DataFailure.unavailable);
+    expect(broken.product, isNull);
+    expect(broken.message, HttpProductRepository.unexpectedResponseMessage);
+  });
+
+  test('rejeita id vazio sem chamar a API', () async {
+    var calls = 0;
+    final repository = HttpProductRepository(
+      ApiClient(
+        baseUrl: baseUrl,
+        httpClient: MockClient((_) async {
+          calls++;
+          return http.Response('{}', 200);
+        }),
+      ),
+    );
+
+    final result = await repository.findById('');
+
+    expect(calls, 0);
+    expect(result.product, isNull);
+    expect(result.message, 'Identificador do produto inválido');
+    expect(result.failure, DataFailure.validation);
+  });
+
+  test('traduz erro de rede de GET /products/:id na mensagem do Service', () async {
+    final repository = HttpProductRepository(
+      ApiClient(
+        baseUrl: baseUrl,
+        httpClient: MockClient((_) async => throw http.ClientException('Connection refused')),
+      ),
+    );
+
+    final result = await repository.findById('p1');
+
+    expect(result.product, isNull);
+    expect(result.message, 'Não foi possível conectar à API');
+    expect(result.message, isNot(contains('Connection refused')));
+    expect(result.failure, DataFailure.unavailable);
+    expect(result.detail, 'Connection refused');
+  });
 }
