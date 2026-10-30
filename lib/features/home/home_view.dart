@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 
 import 'home_view_model.dart';
+import 'temporary_flow_access.dart';
 
 /// Tela inicial provisória da fundação (R0). As telas reais do cliente e do
 /// restaurante são implementadas nas Stories correspondentes.
+///
+/// [TemporaryFlowAccess] é o atalho de desenvolvimento. Apague o widget e o
+/// arquivo antes da entrega; a marca e o cartão da API ficam.
 class HomeView extends StatefulWidget {
   const HomeView({super.key, required this.createViewModel});
 
@@ -34,24 +38,42 @@ class _HomeViewState extends State<HomeView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Spacer(),
-              Text(
-                'dinna',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.displayMedium?.copyWith(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.w700,
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return SingleChildScrollView(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              'dinna',
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.displayMedium?.copyWith(
+                                color: theme.colorScheme.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Pedido à mesa, do seu jeito.',
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 32),
+                            const TemporaryFlowAccess(),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Pedido à mesa, do seu jeito.',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const Spacer(),
+              const SizedBox(height: 16),
               ListenableBuilder(
                 listenable: _viewModel,
                 builder: (context, _) => _ApiStatusCard(viewModel: _viewModel),
