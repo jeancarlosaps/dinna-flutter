@@ -30,13 +30,47 @@ class ProductList {
   final String? detail;
 }
 
-/// Fonte da lista de produtos do cardápio.
+/// Produto já traduzido para o ViewModel.
 ///
-/// A implementação concreta traduz o JSON de `GET /products` e as falhas de
-/// transporte para [ProductList]. O ViewModel depende deste contrato.
+/// Não carrega status HTTP nem exceção de transporte. Sucesso traz [product].
+/// Falha deixa [product] nulo. [failure] classifica essa falha para a tela.
+class ProductDetail {
+  ProductDetail.ready(Product product) : this._(product: product);
+
+  const ProductDetail.unavailable(
+    String message, {
+    DataFailure failure = DataFailure.unavailable,
+    String? detail,
+  }) : this._(message: message, failure: failure, detail: detail);
+
+  const ProductDetail._({this.product, this.message, this.failure, this.detail});
+
+  /// `null` quando a consulta falhou.
+  final Product? product;
+
+  /// Preenchida só quando a consulta falha.
+  final String? message;
+
+  /// Nula quando o produto carregou.
+  final DataFailure? failure;
+
+  /// Causa técnica. A tela usa [message].
+  final String? detail;
+}
+
+/// Fonte dos produtos do cardápio.
 ///
-/// A API também aceita `category`, `q` e `available` na query. Este contrato
-/// pede a lista inteira; o filtro entra quando a tela precisar.
+/// [list] traduz `GET /products`. [findById] traduz `GET /products/:id`.
+/// O ViewModel depende deste contrato e não vê HTTP.
+///
+/// A API também aceita `category`, `q` e `available` na query de [list].
+/// Este contrato pede a lista inteira; o filtro entra quando a tela precisar.
 abstract interface class ProductRepository {
   Future<ProductList> list();
+
+  /// Produto completo do contrato, ou falha traduzida.
+  ///
+  /// `available: false` ainda é sucesso: o produto existe e a tela decide o
+  /// que mostrar. Id inexistente chega como [DataFailure.notFound].
+  Future<ProductDetail> findById(String id);
 }

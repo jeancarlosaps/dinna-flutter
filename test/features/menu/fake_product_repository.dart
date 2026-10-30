@@ -2,15 +2,27 @@ import 'package:dinna/core/domain/product.dart';
 import 'package:dinna/features/menu/product_repository.dart';
 
 class FakeProductRepository implements ProductRepository {
-  FakeProductRepository(this._list);
+  FakeProductRepository(this._list, {this.onFindById});
 
   final Future<ProductList> Function() _list;
+  final Future<ProductDetail> Function(String id)? onFindById;
   int calls = 0;
+  int findCalls = 0;
 
   @override
   Future<ProductList> list() {
     calls++;
     return _list();
+  }
+
+  @override
+  Future<ProductDetail> findById(String id) {
+    findCalls++;
+    final find = onFindById;
+    if (find == null) {
+      throw UnimplementedError('findById');
+    }
+    return find(id);
   }
 }
 

@@ -1,15 +1,18 @@
+import '../../core/domain/data_failure.dart';
 import '../../core/domain/product.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import 'product_repository.dart';
 
-/// Repository concreto do `GET /products`, usando o [ApiClient] como Service.
+/// Repository concreto de `GET /products` e `GET /products/:id`.
+///
+/// Usa o [ApiClient] como Service. Não decide tela nem ingredientes.
 class HttpProductRepository implements ProductRepository {
   HttpProductRepository(this._apiClient);
 
   final ApiClient _apiClient;
 
-  /// Mensagem estável para corpo JSON que não é a lista do contrato.
+  /// Mensagem estável para corpo JSON que não é o contrato do produto.
   static const unexpectedResponseMessage = 'Resposta inesperada da API';
 
   @override
@@ -24,6 +27,25 @@ class HttpProductRepository implements ProductRepository {
       return ProductList.unavailable(error.message, failure: error.failure, detail: error.detail);
     } on FormatException {
       return const ProductList.unavailable(unexpectedResponseMessage);
+    }
+  }
+
+  @override
+  Future<ProductDetail> findById(String id) async {
+    if (id.isEmpty) {
+      return const ProductDetail.unavailable(
+        'Identificador do produto inválido',
+        failure: DataFailure.validation,
+      );
+    }
+
+    try {
+      final body = await _apiClient.getJson('/products/${Uri.encodeComponent(id)}');
+      return ProductDetail.ready(Product.fromJson(body));
+    } on ApiException catch (error) {
+      return ProductDetail.unavailable(error.message, failure: error.failure, detail: error.detail);
+    } on FormatException {
+      return const ProductDetail.unavailable(unexpectedResponseMessage);
     }
   }
 }
