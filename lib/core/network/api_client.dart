@@ -24,6 +24,13 @@ class ApiClient {
   /// Texto da interface quando o erro HTTP não traz `error.message` utilizável.
   static const httpFailureMessage = 'Não foi possível concluir a consulta';
 
+  /// POST sem confirmação. A frase é a mesma do contrato de envio do pedido.
+  ///
+  /// O client não importa a feature. O teste de criação trava este texto no
+  /// contrato que a tela vai ler.
+  static const uncertainOutcomeMessage =
+      'Não foi possível confirmar o envio. O pedido pode ter sido registrado.';
+
   Future<Object?> getJson(String path) async {
     final http.Response response;
     try {
@@ -38,6 +45,52 @@ class ApiClient {
       throw ApiException('Não foi possível conectar à API', detail: error.message);
     }
 
+    return _interpret(response);
+  }
+
+  /// Envia JSON e devolve o corpo em resposta 2xx.
+  ///
+  /// O contrato de erro é o de [getJson]. Tempo esgotado, ou queda de conexão
+  /// depois que a requisição já foi enviada, marca [ApiException.outcomeUncertain]:
+  /// o servidor pode ter aplicado o POST. Falha ao conectar, antes de haver
+  /// resposta, não marca esse sinal. Não há nova tentativa.
+  Future<Object?> postJson(String path, Object? jsonBody) async {
+    final request = http.Request('POST', baseUrl.resolve(path))
+      ..headers.addAll(const {'Accept': 'application/json', 'Content-Type': 'application/json'})
+      ..body = jsonEncode(jsonBody);
+
+    final deadline = DateTime.now().add(timeout);
+    Duration remaining() {
+      final left = deadline.difference(DateTime.now());
+      return left.isNegative ? Duration.zero : left;
+    }
+
+    final http.StreamedResponse streamed;
+    try {
+      streamed = await _httpClient.send(request).timeout(remaining());
+    } on TimeoutException {
+      throw const ApiException(uncertainOutcomeMessage, outcomeUncertain: true);
+    } on SocketException catch (error) {
+      throw ApiException('Não foi possível conectar à API', detail: error.message);
+    } on http.ClientException catch (error) {
+      throw ApiException('Não foi possível conectar à API', detail: error.message);
+    }
+
+    final http.Response response;
+    try {
+      response = await http.Response.fromStream(streamed).timeout(remaining());
+    } on TimeoutException {
+      throw const ApiException(uncertainOutcomeMessage, outcomeUncertain: true);
+    } on SocketException catch (error) {
+      throw ApiException(uncertainOutcomeMessage, detail: error.message, outcomeUncertain: true);
+    } on http.ClientException catch (error) {
+      throw ApiException(uncertainOutcomeMessage, detail: error.message, outcomeUncertain: true);
+    }
+
+    return _interpret(response);
+  }
+
+  Object? _interpret(http.Response response) {
     final body = _decodeBody(response);
     if (response.statusCode >= 200 && response.statusCode < 300) return body;
 

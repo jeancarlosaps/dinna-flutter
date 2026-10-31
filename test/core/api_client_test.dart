@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dinna/core/domain/data_failure.dart';
 import 'package:dinna/core/network/api_client.dart';
@@ -48,7 +50,8 @@ void main() {
             .having((e) => e.statusCode, 'statusCode', 404)
             .having((e) => e.message, 'message', 'Produto não encontrado')
             .having((e) => e.detail, 'detail', isNull)
-            .having((e) => e.failure, 'failure', DataFailure.notFound),
+            .having((e) => e.failure, 'failure', DataFailure.notFound)
+            .having((e) => e.outcomeUncertain, 'outcomeUncertain', isFalse),
       ),
     );
   });
@@ -126,8 +129,170 @@ void main() {
         isA<ApiException>()
             .having((error) => error.statusCode, 'statusCode', isNull)
             .having((error) => error.message, 'message', 'Não foi possível conectar à API')
-            .having((error) => error.detail, 'detail', 'Connection refused'),
+            .having((error) => error.detail, 'detail', 'Connection refused')
+            .having((error) => error.outcomeUncertain, 'outcomeUncertain', isFalse),
       ),
     );
   });
+
+  test('POST envia JSON, devolve o corpo do 201 e não repete a chamada', () async {
+    final calls = <http.Request>[];
+    final client = ApiClient(
+      baseUrl: baseUrl,
+      httpClient: MockClient((request) async {
+        calls.add(request);
+        return http.Response(
+          jsonEncode({'id': 'o1', 'status': 'received'}),
+          201,
+          headers: const {'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    final body = await client.postJson('/orders', {
+      'table': '12',
+      'items': [
+        {'productId': 'p1', 'quantity': 2, 'note': 'sem cebola'},
+      ],
+    });
+
+    expect(calls, hasLength(1));
+    expect(calls.single.method, 'POST');
+    expect(calls.single.url.toString(), 'http://localhost:3333/orders');
+    expect(calls.single.headers['content-type'], 'application/json');
+    expect(calls.single.headers['accept'], 'application/json');
+    expect(jsonDecode(calls.single.body), {
+      'table': '12',
+      'items': [
+        {'productId': 'p1', 'quantity': 2, 'note': 'sem cebola'},
+      ],
+    });
+    expect(body, {'id': 'o1', 'status': 'received'});
+  });
+
+  test('POST com erro HTTP preserva status e não marca incerteza', () async {
+    final client = clientReturning(
+      http.Response(
+        jsonEncode({
+          'error': {'code': 'VALIDATION_ERROR', 'message': 'Mesa inválida'},
+        }),
+        400,
+        headers: const {'content-type': 'application/json'},
+      ),
+    );
+
+    await expectLater(
+      client.postJson('/orders', const {'table': '12', 'items': []}),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.statusCode, 'statusCode', 400)
+            .having((error) => error.message, 'message', 'Mesa inválida')
+            .having((error) => error.failure, 'failure', DataFailure.validation)
+            .having((error) => error.outcomeUncertain, 'outcomeUncertain', isFalse),
+      ),
+    );
+  });
+
+  test('POST esgotado antes da resposta é incerto e não é repetido', () async {
+    var calls = 0;
+    final client = ApiClient(
+      baseUrl: baseUrl,
+      timeout: const Duration(milliseconds: 20),
+      httpClient: MockClient((request) {
+        calls++;
+        expect(request.method, 'POST');
+        return Completer<http.Response>().future;
+      }),
+    );
+
+    await expectLater(
+      client.postJson('/orders', const {'table': '12'}),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.statusCode, 'statusCode', isNull)
+            .having((error) => error.message, 'message', ApiClient.uncertainOutcomeMessage)
+            .having((error) => error.failure, 'failure', DataFailure.uncertain)
+            .having((error) => error.outcomeUncertain, 'outcomeUncertain', isTrue),
+      ),
+    );
+    expect(calls, 1);
+  });
+
+  test('POST que não conecta não trata o resultado como incerto', () async {
+    final client = ApiClient(
+      baseUrl: baseUrl,
+      httpClient: MockClient((_) async => throw const SocketException('Connection refused')),
+    );
+
+    await expectLater(
+      client.postJson('/orders', const {'table': '12'}),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.statusCode, 'statusCode', isNull)
+            .having((error) => error.message, 'message', 'Não foi possível conectar à API')
+            .having((error) => error.detail, 'detail', 'Connection refused')
+            .having((error) => error.failure, 'failure', DataFailure.unavailable)
+            .having((error) => error.outcomeUncertain, 'outcomeUncertain', isFalse),
+      ),
+    );
+  });
+
+  test('POST com queda depois do envio é incerto', () async {
+    final client = ApiClient(
+      baseUrl: baseUrl,
+      httpClient: _BodyErrorClient(const SocketException('Connection reset by peer')),
+    );
+
+    await expectLater(
+      client.postJson('/orders', const {'table': '12'}),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.statusCode, 'statusCode', isNull)
+            .having((error) => error.message, 'message', ApiClient.uncertainOutcomeMessage)
+            .having((error) => error.detail, 'detail', 'Connection reset by peer')
+            .having((error) => error.failure, 'failure', DataFailure.uncertain)
+            .having((error) => error.outcomeUncertain, 'outcomeUncertain', isTrue),
+      ),
+    );
+  });
+
+  test('POST com tempo esgotado ao ler a resposta é incerto', () async {
+    final client = ApiClient(
+      baseUrl: baseUrl,
+      timeout: const Duration(milliseconds: 20),
+      httpClient: _HangingBodyClient(),
+    );
+
+    await expectLater(
+      client.postJson('/orders', const {'table': '12'}),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.outcomeUncertain, 'outcomeUncertain', isTrue)
+            .having((error) => error.failure, 'failure', DataFailure.uncertain)
+            .having((error) => error.message, 'message', ApiClient.uncertainOutcomeMessage),
+      ),
+    );
+  });
+}
+
+/// A requisição sai; a leitura do corpo cai.
+class _BodyErrorClient extends http.BaseClient {
+  _BodyErrorClient(this._error);
+
+  final Object _error;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    await request.finalize().drain<void>();
+    return http.StreamedResponse(Stream<List<int>>.error(_error), 201);
+  }
+}
+
+/// A requisição sai; o corpo não chega.
+class _HangingBodyClient extends http.BaseClient {
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    await request.finalize().drain<void>();
+    return http.StreamedResponse(Stream<List<int>>.fromFuture(Completer<List<int>>().future), 201);
+  }
 }
