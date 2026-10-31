@@ -24,6 +24,13 @@ class ApiClient {
   /// Texto da interface quando o erro HTTP não traz `error.message` utilizável.
   static const httpFailureMessage = 'Não foi possível concluir a consulta';
 
+  /// POST sem confirmação. A frase é a mesma do contrato de envio do pedido.
+  ///
+  /// O client não importa a feature. O teste de criação trava este texto no
+  /// contrato que a tela vai ler.
+  static const uncertainOutcomeMessage =
+      'Não foi possível confirmar o envio. O pedido pode ter sido registrado.';
+
   Future<Object?> getJson(String path) async {
     final http.Response response;
     try {
@@ -38,6 +45,123 @@ class ApiClient {
       throw ApiException('Não foi possível conectar à API', detail: error.message);
     }
 
+    return _interpret(response);
+  }
+
+  /// Envia JSON e devolve o corpo em resposta 2xx.
+  ///
+  /// [http.Client.send] só retorna quando os headers chegam. Uma exceção aí
+  /// não prova que o servidor deixou de receber o body e marca
+  /// [ApiException.outcomeUncertain]. Se os headers já chegaram, 4xx e 5xx
+  /// continuam falha confirmada mesmo com o corpo ilegível; 2xx ilegível
+  /// permanece incerto. Não há nova tentativa. [getJson] não usa este sinal.
+  Future<Object?> postJson(String path, Object? jsonBody) async {
+    final request = http.Request('POST', baseUrl.resolve(path))
+      ..headers.addAll(const {'Accept': 'application/json', 'Content-Type': 'application/json'})
+      ..body = jsonEncode(jsonBody);
+
+    final deadline = DateTime.now().add(timeout);
+    Duration remaining() {
+      final left = deadline.difference(DateTime.now());
+      return left.isNegative ? Duration.zero : left;
+    }
+
+    ApiException uncertain(String? detail) =>
+        ApiException(uncertainOutcomeMessage, detail: detail, outcomeUncertain: true);
+
+    final http.StreamedResponse streamed;
+    try {
+      streamed = await _httpClient.send(request).timeout(remaining());
+    } on TimeoutException {
+      throw uncertain(null);
+    } on SocketException catch (error) {
+      throw uncertain(error.message);
+    } on HttpException catch (error) {
+      throw uncertain(error.message);
+    } on http.ClientException catch (error) {
+      throw uncertain(error.message);
+    }
+
+    final http.Response response;
+    try {
+      response = await http.Response.fromStream(streamed).timeout(remaining());
+    } on TimeoutException {
+      throw _bodyReadFailure(streamed, null);
+    } catch (error) {
+      throw _bodyReadFailure(streamed, _transportDetail(error));
+    }
+
+    final Object? body;
+    try {
+      body = _interpret(response);
+    } on ApiException catch (error) {
+      if (_accepted(error.statusCode)) {
+        throw ApiException(
+          uncertainOutcomeMessage,
+          statusCode: error.statusCode,
+          detail: error.detail ?? error.message,
+          outcomeUncertain: true,
+        );
+      }
+      rethrow;
+    } on FormatException {
+      // `response.body` decodifica UTF-8 antes de `_decodeBody` e perde o status.
+      throw _invalidBody(response.statusCode);
+    }
+    if (body == null) {
+      throw ApiException(
+        uncertainOutcomeMessage,
+        statusCode: response.statusCode,
+        detail: 'corpo vazio',
+        outcomeUncertain: true,
+      );
+    }
+    return body;
+  }
+
+  bool _accepted(int? statusCode) => statusCode != null && statusCode >= 200 && statusCode < 300;
+
+  String? _transportDetail(Object error) => switch (error) {
+    SocketException(:final message) => message,
+    HttpException(:final message) => message,
+    http.ClientException(:final message) => message,
+    _ => error.toString(),
+  };
+
+  /// Corpo ilegível com status já conhecido. Erro HTTP permanece confirmado.
+  ApiException _invalidBody(int statusCode) {
+    if (_accepted(statusCode)) {
+      return ApiException(
+        uncertainOutcomeMessage,
+        statusCode: statusCode,
+        detail: 'Resposta inválida da API',
+        outcomeUncertain: true,
+      );
+    }
+    return ApiException(
+      httpFailureMessage,
+      statusCode: statusCode,
+      detail: 'HTTP $statusCode: corpo inválido',
+      outcomeUncertain: false,
+    );
+  }
+
+  /// Headers já recebidos. Erro HTTP permanece confirmado; sucesso sem corpo
+  /// legível continua incerto.
+  ApiException _bodyReadFailure(http.StreamedResponse response, String? detail) {
+    final status = response.statusCode;
+    if (_accepted(status)) {
+      return ApiException(uncertainOutcomeMessage, detail: detail, outcomeUncertain: true);
+    }
+    return ApiException(
+      httpFailureMessage,
+      statusCode: status,
+      detail: detail ?? 'HTTP $status',
+      outcomeUncertain: false,
+    );
+  }
+
+  Object? _interpret(http.Response response) {
     final body = _decodeBody(response);
     if (response.statusCode >= 200 && response.statusCode < 300) return body;
 
