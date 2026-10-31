@@ -17,11 +17,11 @@ class ApiException implements Exception {
   /// POST sem resposta confirmada. Consultas deixam isto falso.
   final bool outcomeUncertain;
 
-  /// 400 validação, 404 ausência, 409 conflito. Sem confirmação de um POST,
-  /// [DataFailure.uncertain]. Rede e os demais status ficam em
-  /// [DataFailure.unavailable].
+  /// 400 validação, 404 ausência, 409 conflito. [outcomeUncertain] vence o
+  /// status: sem confirmação do POST o resultado é [DataFailure.uncertain].
+  /// Rede em consulta e os demais status ficam em [DataFailure.unavailable].
   DataFailure get failure {
-    if (outcomeUncertain && statusCode == null) return DataFailure.uncertain;
+    if (outcomeUncertain) return DataFailure.uncertain;
     return switch (statusCode) {
       400 => DataFailure.validation,
       404 => DataFailure.notFound,

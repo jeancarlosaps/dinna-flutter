@@ -218,21 +218,73 @@ void main() {
     expect(calls, 1);
   });
 
-  test('POST que não conecta não trata o resultado como incerto', () async {
-    final client = ApiClient(
-      baseUrl: baseUrl,
-      httpClient: MockClient((_) async => throw const SocketException('Connection refused')),
+  test('POST com falha de transporte em send não afirma que o pedido ficou no aparelho', () async {
+    Future<void> expectUncertain(http.Client httpClient, String detail) {
+      final client = ApiClient(baseUrl: baseUrl, httpClient: httpClient);
+      return expectLater(
+        client.postJson('/orders', const {'table': '12'}),
+        throwsA(
+          isA<ApiException>()
+              .having((error) => error.statusCode, 'statusCode', isNull)
+              .having((error) => error.message, 'message', ApiClient.uncertainOutcomeMessage)
+              .having((error) => error.detail, 'detail', detail)
+              .having((error) => error.failure, 'failure', DataFailure.uncertain)
+              .having((error) => error.outcomeUncertain, 'outcomeUncertain', isTrue),
+        ),
+      );
+    }
+
+    await expectUncertain(
+      MockClient((_) async => throw const SocketException('Connection refused')),
+      'Connection refused',
+    );
+    await expectUncertain(
+      MockClient((_) async => throw http.ClientException('Connection closed')),
+      'Connection closed',
+    );
+  });
+
+  test('POST 201 ilegível é incerto e o erro HTTP continua confirmado', () async {
+    final invalid = clientReturning(http.Response('not-json', 201));
+    final empty = clientReturning(http.Response('', 201));
+    final rejected = clientReturning(
+      http.Response(
+        jsonEncode({
+          'error': {'code': 'VALIDATION_ERROR', 'message': 'Mesa inválida'},
+        }),
+        400,
+        headers: const {'content-type': 'application/json'},
+      ),
     );
 
     await expectLater(
-      client.postJson('/orders', const {'table': '12'}),
+      invalid.postJson('/orders', const {'table': '12'}),
       throwsA(
         isA<ApiException>()
-            .having((error) => error.statusCode, 'statusCode', isNull)
-            .having((error) => error.message, 'message', 'Não foi possível conectar à API')
-            .having((error) => error.detail, 'detail', 'Connection refused')
-            .having((error) => error.failure, 'failure', DataFailure.unavailable)
-            .having((error) => error.outcomeUncertain, 'outcomeUncertain', isFalse),
+            .having((error) => error.statusCode, 'statusCode', 201)
+            .having((error) => error.outcomeUncertain, 'outcomeUncertain', isTrue)
+            .having((error) => error.failure, 'failure', DataFailure.uncertain)
+            .having((error) => error.message, 'message', ApiClient.uncertainOutcomeMessage)
+            .having((error) => error.detail, 'detail', 'Resposta inválida da API'),
+      ),
+    );
+    await expectLater(
+      empty.postJson('/orders', const {'table': '12'}),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.statusCode, 'statusCode', 201)
+            .having((error) => error.outcomeUncertain, 'outcomeUncertain', isTrue)
+            .having((error) => error.detail, 'detail', 'corpo vazio'),
+      ),
+    );
+    await expectLater(
+      rejected.postJson('/orders', const {'table': '12'}),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.statusCode, 'statusCode', 400)
+            .having((error) => error.outcomeUncertain, 'outcomeUncertain', isFalse)
+            .having((error) => error.failure, 'failure', DataFailure.validation)
+            .having((error) => error.message, 'message', 'Mesa inválida'),
       ),
     );
   });

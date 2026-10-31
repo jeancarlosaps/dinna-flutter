@@ -207,7 +207,7 @@ void main() {
     expect(errorBody.shouldClearCart, isFalse);
   });
 
-  test('falha de conexão antes da resposta não é resultado incerto', () async {
+  test('falha de transporte em send é incerta: o body pode ter saído', () async {
     final repository = HttpOrderRepository(
       ApiClient(
         baseUrl: baseUrl,
@@ -218,12 +218,12 @@ void main() {
     final result = await repository.create(table: '12', items: _items);
 
     expect(result.order, isNull);
-    expect(result.outcomeUncertain, isFalse);
-    expect(result.failure, DataFailure.unavailable);
+    expect(result.outcomeUncertain, isTrue);
+    expect(result.failure, DataFailure.uncertain);
     expect(result.shouldClearCart, isFalse);
-    expect(result.message, 'Não foi possível conectar à API');
+    expect(result.message, OrderSubmission.uncertainOutcomeMessage);
     expect(result.message, isNot(contains('Connection refused')));
-    expect(result.message, isNot(contains('pode ter sido registrado')));
+    expect(result.message, isNot(contains('não foi criado')));
     expect(result.detail, 'Connection refused');
   });
 

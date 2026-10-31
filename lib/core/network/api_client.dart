@@ -50,10 +50,11 @@ class ApiClient {
 
   /// Envia JSON e devolve o corpo em resposta 2xx.
   ///
-  /// O contrato de erro é o de [getJson]. Tempo esgotado, ou queda de conexão
-  /// depois que a requisição já foi enviada, marca [ApiException.outcomeUncertain]:
-  /// o servidor pode ter aplicado o POST. Falha ao conectar, antes de haver
-  /// resposta, não marca esse sinal. Não há nova tentativa.
+  /// [http.Client.send] só retorna quando os headers chegam. Uma exceção aí,
+  /// ou ao ler o corpo, não prova que o servidor deixou de receber o body.
+  /// Esses casos, o tempo esgotado e um 2xx ilegível marcam
+  /// [ApiException.outcomeUncertain]. Status 4xx e 5xx são resposta confirmada.
+  /// Não há nova tentativa. [getJson] não usa este sinal.
   Future<Object?> postJson(String path, Object? jsonBody) async {
     final request = http.Request('POST', baseUrl.resolve(path))
       ..headers.addAll(const {'Accept': 'application/json', 'Content-Type': 'application/json'})
@@ -65,30 +66,57 @@ class ApiClient {
       return left.isNegative ? Duration.zero : left;
     }
 
+    ApiException uncertain(String? detail) =>
+        ApiException(uncertainOutcomeMessage, detail: detail, outcomeUncertain: true);
+
     final http.StreamedResponse streamed;
     try {
       streamed = await _httpClient.send(request).timeout(remaining());
     } on TimeoutException {
-      throw const ApiException(uncertainOutcomeMessage, outcomeUncertain: true);
+      throw uncertain(null);
     } on SocketException catch (error) {
-      throw ApiException('Não foi possível conectar à API', detail: error.message);
+      throw uncertain(error.message);
     } on http.ClientException catch (error) {
-      throw ApiException('Não foi possível conectar à API', detail: error.message);
+      throw uncertain(error.message);
     }
 
     final http.Response response;
     try {
       response = await http.Response.fromStream(streamed).timeout(remaining());
     } on TimeoutException {
-      throw const ApiException(uncertainOutcomeMessage, outcomeUncertain: true);
+      throw uncertain(null);
     } on SocketException catch (error) {
-      throw ApiException(uncertainOutcomeMessage, detail: error.message, outcomeUncertain: true);
+      throw uncertain(error.message);
     } on http.ClientException catch (error) {
-      throw ApiException(uncertainOutcomeMessage, detail: error.message, outcomeUncertain: true);
+      throw uncertain(error.message);
     }
 
-    return _interpret(response);
+    final Object? body;
+    try {
+      body = _interpret(response);
+    } on ApiException catch (error) {
+      if (_accepted(error.statusCode)) {
+        throw ApiException(
+          uncertainOutcomeMessage,
+          statusCode: error.statusCode,
+          detail: error.detail ?? error.message,
+          outcomeUncertain: true,
+        );
+      }
+      rethrow;
+    }
+    if (body == null) {
+      throw ApiException(
+        uncertainOutcomeMessage,
+        statusCode: response.statusCode,
+        detail: 'corpo vazio',
+        outcomeUncertain: true,
+      );
+    }
+    return body;
   }
+
+  bool _accepted(int? statusCode) => statusCode != null && statusCode >= 200 && statusCode < 300;
 
   Object? _interpret(http.Response response) {
     final body = _decodeBody(response);
