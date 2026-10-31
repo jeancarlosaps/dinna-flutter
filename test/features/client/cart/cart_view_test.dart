@@ -44,10 +44,17 @@ void main() {
     required CartLines lines,
     ProductList? products,
     void Function(BuildContext context)? onOpenMenu,
+    TextScaler textScaler = TextScaler.noScaling,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: DinnaTheme.light(),
+        builder: (context, child) {
+          return MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
         home: CartView(
           createViewModel: () => CartViewModel(
             FakeProductRepository(() async => products ?? ProductList.ready(const [])),
@@ -78,6 +85,39 @@ void main() {
     await tester.pump();
 
     expect(opened, 1);
+  });
+
+  testWidgets('o estado vazio rola até o cardápio em tela baixa', (tester) async {
+    tester.view.physicalSize = const Size(360, 220);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    var opened = 0;
+    await pumpCart(tester, lines: ProcessCartLines(), onOpenMenu: (_) => opened++);
+
+    final button = find.text('Ver cardápio');
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pump();
+
+    expect(opened, 1);
+  });
+
+  testWidgets('o preço da linha cabe em tela estreita com texto ampliado', (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await pumpCart(
+      tester,
+      lines: ProcessCartLines([line('p1', 1)]),
+      products: catalog,
+      textScaler: const TextScaler.linear(2),
+    );
+
+    expect(find.text(formatOrderTotal(4890)), findsWidgets);
+    expect(find.text('Total estimado'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('alterar a quantidade atualiza o preço da linha e o total', (tester) async {

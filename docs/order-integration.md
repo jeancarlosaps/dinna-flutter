@@ -16,7 +16,7 @@ O app monta um único `HttpOrderRepository` em `lib/main.dart` e o entrega ao `A
 | `OrderRepository.create` | `lib/features/restaurant/order_repository.dart` | `POST /orders`. Devolve `OrderSubmission`. |
 | `OrderSubmissionViewModel` | `lib/features/client/order/order_submission_view_model.dart` | Estado do envio. Não guarda o carrinho. |
 | `Order` | `lib/core/domain/order.dart` | Resposta da API, com `totalCents` calculado no servidor. |
-| `CartLines` | `lib/features/client/cart/cart_lines.dart` | Entrada `read` e saída `write` da revisão. |
+| `CartLines` | `lib/features/client/cart/cart_lines.dart` | Entrada `read` e gravação condicional `replace`. |
 | `ProcessCartLines` | o mesmo arquivo | Lista só do processo. João substitui esta classe. |
 | `CartViewModel` | `lib/features/client/cart/cart_view_model.dart` | Quantidade, remoção e total estimado. Não envia o pedido. |
 
@@ -89,13 +89,13 @@ final item = CartItem(productId: product.id, quantity: quantity, note: note);
 
 A UI continua responsável por ler a mesa, escolher quantidade e observação, navegar (`AppRoutes.menu`, `AppRoutes.product`, `AppRoutes.cart`) e não chamar HTTP. Reutilize `CartItem`, `Product`, `ProductRepository` e `ProductDetailViewModel`. Não crie outro model de item, não escolha `lineId` e não crie outro envio. João gera o id ao persistir a inclusão.
 
-A inclusão grava pelo mesmo `CartLines.write` que a revisão lê em `read`. Não crie outra lista.
+A inclusão usa o mesmo `CartLines`. Lê a lista, acrescenta o item e grava com `replace`. Se `replace` devolver `false`, lê de novo e tenta outra vez. Não crie outra lista e não grave por cima de uma revisão que aconteceu no meio.
 
 ## João — SCRUM-69/70/71
 
-Não há repositório de carrinho nem `sqflite` no projeto. **Pendente:** a persistência e o `lineId`. A revisão já chama `CartLines.write` a cada alteração. A persistência entra no lugar de `ProcessCartLines`, em `main`. O `POST /orders` continua em `toOrderItem()`: `productId`, `quantity` e `note`. O JSON local de hoje ainda não guarda `lineId`; a linha persistida precisa guardar.
+Não há repositório de carrinho nem `sqflite` no projeto. **Pendente:** a persistência e o `lineId`. A revisão grava com `CartLines.replace`: a lista inteira só entra se `expected` ainda for a lista armazenada. A persistência entra no lugar de `ProcessCartLines`, em `main`, e implementa essa mesma regra. O `POST /orders` continua em `toOrderItem()`: `productId`, `quantity` e `note`. O JSON local de hoje ainda não guarda `lineId`; a linha persistida precisa guardar.
 
-`CartItem` ainda não tem `lineId`. A troca de quantidade copia a linha em `CartViewModel._withQuantity`. Quando o campo entrar, essa função precisa repassá-lo. Sem a cópia, a linha perde a identidade. A tela não casa item por `productId` + `note`: a posição na lista é a identidade até o campo existir.
+`CartItem` ainda não tem `lineId`. A troca de quantidade copia a linha em `CartViewModel._withQuantity` e hoje leva só `productId`, `quantity` e `note`. Quando o campo entrar, essa função precisa repassá-lo, e `==` / `hashCode` também. Sem a cópia, trocar a quantidade perde a identidade. Sem o `==`, `replace` não enxerga a troca de `lineId`. A tela não casa item por `productId` + `note`: a posição na lista é a identidade até o campo existir.
 
 **Pendente na limpeza.** Gerar um `lineId` novo em cada inclusão, mesmo que produto e observação repitam uma linha apagada. Não reutilizar o id. Implementar `withoutConfirmed` pelo `lineId`, com a regra de observação e quantidade acima. Não casar por `productId` + `note`. Em falha confirmada ou resultado incerto, não rodar essa limpeza.
 
@@ -136,11 +136,33 @@ if (submission.shouldClearCart) {
 ```dart
 abstract interface class CartLines {
   List<CartItem> read();
-  void write(List<CartItem> items);
+  bool replace(List<CartItem> expected, List<CartItem> next);
 }
 ```
 
-`read` é a lista externa quando a tela abre. Cada aumento, diminuição ou remoção chama `write` com a lista inteira, na mesma ordem. `ProcessCartLines` guarda essa lista só no processo e não é a SCRUM-69. A lista morre com o app. `write` substitui a lista; inclusão e revisão não gravam ao mesmo tempo.
+`read` é a lista externa quando a tela abre. Cada aumento, diminuição ou remoção chama `replace` com a lista que a tela leu e a lista inteira nova, na mesma ordem. Se outra gravação ocorreu no meio, `replace` devolve `false` e a tela adota a lista externa. A alteração local dessa tentativa não fica. `ProcessCartLines` guarda a lista só no processo e não é a SCRUM-69. A lista morre com o app.
+
+### Obrigações e testes
+
+Gabriel, na inclusão:
+
+```dart
+final current = lines.read();
+final stored = lines.replace(current, [...current, item]);
+```
+
+Se `stored` for `false`, repetir a partir de um `read` novo. Não gerar `lineId`.
+
+João, na persistência:
+
+- Implementar `replace` de modo que `false` não grave.
+- Ao criar `lineId`, copiá-lo em `_withQuantity` e incluí-lo em `==` e `hashCode`.
+- Não enviar `lineId` em `toOrderItem()`.
+- Testar que mudar a quantidade conserva o `lineId`.
+- Testar que `replace` devolve `false` quando a lista armazenada deixou de ser `expected`.
+- Testar o round-trip do `lineId` no JSON local e a limpeza `withoutConfirmed` por esse id.
+
+A revisão já cobre, sem `lineId`: quantidade e remoção pela posição, total estimado, estado vazio, e a recusa de gravar quando a lista mudou depois da leitura.
 
 O total da tela é a soma `priceCents * quantity`, com o rótulo "Total estimado". Não é `order.totalCents` e não inclui taxa de serviço. Se o cardápio falhar ou faltar preço, o total estimado fica ausente e as linhas permanecem. Sem itens, a tela mostra o estado vazio e abre `AppRoutes.menu`.
 

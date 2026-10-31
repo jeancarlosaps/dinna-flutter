@@ -30,12 +30,16 @@ final class CartRow {
 ///
 /// Depois do [dispose], resposta pendente não altera estado nem notifica.
 class CartViewModel extends ChangeNotifier {
-  CartViewModel(this._products, {required CartLines lines})
-    : _lines = lines,
-      _items = List<CartItem>.of(lines.read());
+  CartViewModel(ProductRepository products, {required CartLines lines})
+    : this._(products, lines, List<CartItem>.of(lines.read()));
+
+  CartViewModel._(this._products, this._lines, List<CartItem> initial)
+    : _committed = List<CartItem>.of(initial),
+      _items = List<CartItem>.of(initial);
 
   final ProductRepository _products;
   final CartLines _lines;
+  final List<CartItem> _committed;
   final List<CartItem> _items;
 
   /// Nome enquanto o cardápio ainda não respondeu.
@@ -181,7 +185,21 @@ class CartViewModel extends ChangeNotifier {
 
   void _publish() {
     if (_disposed) return;
-    _lines.write(List<CartItem>.unmodifiable(_items));
+    final next = List<CartItem>.of(_items);
+    if (!_lines.replace(_committed, next)) {
+      final external = _lines.read();
+      _items
+        ..clear()
+        ..addAll(external);
+      _committed
+        ..clear()
+        ..addAll(external);
+      _notify();
+      return;
+    }
+    _committed
+      ..clear()
+      ..addAll(next);
     _notify();
   }
 

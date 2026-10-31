@@ -38,7 +38,7 @@ void main() {
   test('a ligação do processo devolve a lista gravada e protege a leitura', () {
     final lines = ProcessCartLines();
     final item = line('p1', 1);
-    lines.write([item]);
+    expect(lines.replace(lines.read(), [item]), isTrue);
 
     final read = lines.read();
     expect(read, [item]);
@@ -145,6 +145,19 @@ void main() {
     expect(lines.writes, 1);
   });
 
+  test('não substitui uma lista alterada depois da leitura', () {
+    final lines = ProcessCartLines([line('p1', 1)]);
+    final viewModel = viewModelOf(const [], catalog([priced('p1', 'Moqueca', 1000)]), lines: lines);
+    final current = lines.read();
+    expect(lines.replace(current, [...current, line('p2', 1)]), isTrue);
+
+    viewModel.increase(0);
+
+    expect(lines.read().map((item) => item.productId), ['p1', 'p2']);
+    expect(lines.read().first.quantity, 1);
+    expect(viewModel.rows.map((row) => row.quantity), [1, 1]);
+  });
+
   test('índice fora da lista não grava', () async {
     final lines = _RecordingLines([line('p1', 1)]);
     final viewModel = viewModelOf(const [], catalog([priced('p1', 'Moqueca', 1000)]), lines: lines);
@@ -242,8 +255,13 @@ class _RecordingLines implements CartLines {
   List<CartItem> read() => List<CartItem>.unmodifiable(items);
 
   @override
-  void write(List<CartItem> next) {
+  bool replace(List<CartItem> expected, List<CartItem> next) {
+    if (expected.length != items.length) return false;
+    for (var index = 0; index < items.length; index++) {
+      if (expected[index] != items[index]) return false;
+    }
     writes++;
     items = List<CartItem>.of(next);
+    return true;
   }
 }

@@ -10,7 +10,7 @@ import 'cart_view_model.dart';
 /// Revisão do carrinho, na rota `/cart`.
 ///
 /// O [CartViewModel] nasce e morre com o State. A lista vem de [CartLines]
-/// e cada alteração volta por `write`. [onOpenMenu] abre o cardápio no
+/// e cada alteração volta por `replace`. [onOpenMenu] abre o cardápio no
 /// estado vazio; a rota fica no router.
 class CartView extends StatefulWidget {
   const CartView({super.key, required this.createViewModel, required this.onOpenMenu});
@@ -62,13 +62,21 @@ class _EmptyCart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DinnaEmptyState(
-      icon: Icons.shopping_cart_outlined,
-      title: 'Seu carrinho está vazio',
-      message:
-          'Escolha os pratos no cardápio e eles aparecem aqui para você revisar antes de enviar.',
-      actionLabel: 'Ver cardápio',
-      onAction: onOpenMenu,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: DinnaEmptyState(
+              icon: Icons.shopping_cart_outlined,
+              title: 'Seu carrinho está vazio',
+              message: 'Escolha os pratos no cardápio e eles aparecem aqui para você revisar antes de enviar.',
+              actionLabel: 'Ver cardápio',
+              onAction: onOpenMenu,
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -203,12 +211,19 @@ class _LineCard extends StatelessWidget {
                   onPressed: onIncrease,
                   icon: const Icon(Icons.add),
                 ),
-                const Spacer(),
                 if (lineTotal != null)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Text(formatOrderTotal(lineTotal), style: theme.textTheme.titleMedium),
-                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Text(
+                        formatOrderTotal(lineTotal),
+                        style: theme.textTheme.titleMedium,
+                        textAlign: TextAlign.end,
+                      ),
+                    ),
+                  )
+                else
+                  const Spacer(),
               ],
             ),
             Align(
@@ -238,7 +253,10 @@ class _EstimatedTotal extends StatelessWidget {
       child: Row(
         children: [
           Expanded(child: Text('Total estimado', style: theme.textTheme.titleMedium)),
-          Text(amount, style: theme.textTheme.titleMedium),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(amount, textAlign: TextAlign.end, style: theme.textTheme.titleMedium),
+          ),
         ],
       ),
     );
