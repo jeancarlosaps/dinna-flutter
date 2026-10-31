@@ -82,7 +82,7 @@ Os nomes são correspondência exata: sem barra no fim e sem parâmetro no camin
 | Cliente | `table` | `/table` | — | `TableView`. Layout da mesa, sem leitura do campo e sem navegação nos botões. A story de informar a mesa segue pendente |
 | Cliente | `menu` | `/menu` | — | Placeholder |
 | Cliente | `product` | `/product` | `AppRouteId` | Placeholder |
-| Cliente | `cart` | `/cart` | — | Placeholder |
+| Cliente | `cart` | `/cart` | — | `CartView`. Revisão no processo, via `CartLines`. |
 | Cliente | `order` | `/order` | — | Placeholder |
 | Cliente | `orderTracking` | `/order/tracking` | `AppRouteId` | Placeholder |
 | Restaurante | `restaurant` | `/restaurant` | — | Placeholder. Entrada do painel, na fila de pedidos |

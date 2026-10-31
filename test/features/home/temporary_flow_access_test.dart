@@ -29,6 +29,7 @@ void main() {
     expect(find.text('Mesa'), findsOneWidget);
     expect(find.text('Cardápio'), findsOneWidget);
     expect(find.text('Detalhe do produto'), findsOneWidget);
+    expect(find.text('Carrinho'), findsOneWidget);
     expect(find.text('Fila de pedidos'), findsOneWidget);
     expect(find.text('pendente'), findsNWidgets(2));
     expect(find.text('O detalhe do pedido abre ao tocar um item da fila.'), findsOneWidget);
@@ -73,6 +74,22 @@ void main() {
 
     final context = tester.element(find.text('Tela ainda não implementada.'));
     expect(ModalRoute.of(context)!.settings.name, AppRoutes.product);
+  });
+
+  testWidgets('o carrinho abre o estado vazio e segue para o cardápio', (tester) async {
+    await _pumpApp(tester);
+    await _open(tester, 'Carrinho');
+
+    expect(find.text('Seu carrinho está vazio'), findsOneWidget);
+    expect(find.text('Tela ainda não implementada.'), findsNothing);
+    final cartContext = tester.element(find.text('Seu carrinho está vazio'));
+    expect(ModalRoute.of(cartContext)!.settings.name, AppRoutes.cart);
+
+    await tester.tap(find.text('Ver cardápio'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(AppRoutes.menu), findsOneWidget);
+    expect(find.text('Tela ainda não implementada.'), findsOneWidget);
   });
 
   testWidgets('a fila abre o detalhe de um pedido já existente', (tester) async {

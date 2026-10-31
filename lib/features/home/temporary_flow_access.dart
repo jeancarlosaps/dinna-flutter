@@ -7,10 +7,10 @@ import '../../app/router/app_router.dart';
 /// Apague este arquivo e a chamada em `HomeView` antes da entrega final.
 /// Não cria rotas: só chama [Navigator.pushNamed] com os nomes de [AppRoutes].
 ///
-/// Mesa, fila e detalhe do pedido usam as telas reais. Cardápio e detalhe de
-/// produto ainda não têm View e caem no placeholder da rota. O detalhe do
-/// pedido abre pelo toque na fila, com o pedido de `GET /orders`, sem
-/// `POST /orders`.
+/// Mesa, carrinho, fila e detalhe do pedido usam as telas reais. Cardápio e
+/// detalhe de produto ainda não têm View e caem no placeholder da rota. O
+/// detalhe do pedido abre pelo toque na fila, com o pedido de `GET /orders`,
+/// sem `POST /orders`.
 class TemporaryFlowAccess extends StatelessWidget {
   const TemporaryFlowAccess({super.key});
 
@@ -18,6 +18,7 @@ class TemporaryFlowAccess extends StatelessWidget {
     _FlowDestination(label: 'Mesa', route: AppRoutes.table),
     _FlowDestination(label: 'Cardápio', route: AppRoutes.menu, pending: true),
     _FlowDestination(label: 'Detalhe do produto', route: AppRoutes.product, pending: true),
+    _FlowDestination(label: 'Carrinho', route: AppRoutes.cart),
   ];
 
   static const _restaurantEntries = <_FlowDestination>[

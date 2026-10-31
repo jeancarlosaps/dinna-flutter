@@ -65,6 +65,18 @@ void main() {
     expect(ModalRoute.of(context)!.settings.name, AppRoutes.restaurant);
   });
 
+  testWidgets('abre o carrinho vazio', (tester) async {
+    await _pumpApp(tester);
+    await _push(tester, AppRoutes.cart);
+
+    expect(find.text('Seu carrinho'), findsOneWidget);
+    expect(find.text('Seu carrinho está vazio'), findsOneWidget);
+    expect(find.text('Tela ainda não implementada.'), findsNothing);
+
+    final context = tester.element(find.text('Seu carrinho está vazio'));
+    expect(ModalRoute.of(context)!.settings.name, AppRoutes.cart);
+  });
+
   testWidgets('navega para o cardápio e volta até a home', (tester) async {
     await _pumpApp(tester);
 
@@ -146,6 +158,7 @@ void main() {
     final routes = [...AppRoutes.clientFlow, ...AppRoutes.restaurantFlow].where(
       (route) =>
           route != AppRoutes.table &&
+          route != AppRoutes.cart &&
           route != AppRoutes.restaurant &&
           route != AppRoutes.restaurantOrder,
     );

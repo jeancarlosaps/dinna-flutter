@@ -1,6 +1,6 @@
 # Envio de pedido — handoff
 
-Contrato para Gabriel, João e Jean trabalharem em paralelo. O `POST /orders` já está na camada de dados. Não há tela de carrinho, confirmação, persistência nem leitura da mesa.
+Contrato para Gabriel, João e Jean trabalharem em paralelo. O `POST /orders` já está na camada de dados. `/cart` revisa as linhas recebidas. Ainda não há confirmação, persistência nem leitura da mesa.
 
 O app monta um único `HttpOrderRepository` em `lib/main.dart` e o entrega ao `AppRouter.orderRepository`. Ninguém cria outro cliente HTTP para pedido.
 
@@ -16,8 +16,11 @@ O app monta um único `HttpOrderRepository` em `lib/main.dart` e o entrega ao `A
 | `OrderRepository.create` | `lib/features/restaurant/order_repository.dart` | `POST /orders`. Devolve `OrderSubmission`. |
 | `OrderSubmissionViewModel` | `lib/features/client/order/order_submission_view_model.dart` | Estado do envio. Não guarda o carrinho. |
 | `Order` | `lib/core/domain/order.dart` | Resposta da API, com `totalCents` calculado no servidor. |
+| `CartLines` | `lib/features/client/cart/cart_lines.dart` | Entrada `read` e gravação condicional `replace`. |
+| `ProcessCartLines` | o mesmo arquivo | Lista só do processo. João substitui esta classe. |
+| `CartViewModel` | `lib/features/client/cart/cart_view_model.dart` | Quantidade, remoção e total estimado. Não envia o pedido. |
 
-`AppRoutes.cart` (`/cart`) e `AppRoutes.order` (`/order`) ainda caem em `RoutePlaceholder`. **Pendente:** a tela de cada rota.
+`AppRoutes.order` (`/order`) ainda cai em `RoutePlaceholder`. **Pendente:** a tela de confirmação.
 
 ## Regras comuns
 
@@ -86,9 +89,13 @@ final item = CartItem(productId: product.id, quantity: quantity, note: note);
 
 A UI continua responsável por ler a mesa, escolher quantidade e observação, navegar (`AppRoutes.menu`, `AppRoutes.product`, `AppRoutes.cart`) e não chamar HTTP. Reutilize `CartItem`, `Product`, `ProductRepository` e `ProductDetailViewModel`. Não crie outro model de item, não escolha `lineId` e não crie outro envio. João gera o id ao persistir a inclusão.
 
+A inclusão usa o mesmo `CartLines`. Lê a lista, acrescenta o item e grava com `replace`. Se `replace` devolver `false`, lê de novo e tenta outra vez. Não crie outra lista e não grave por cima de uma revisão que aconteceu no meio.
+
 ## João — SCRUM-69/70/71
 
-Não há repositório de carrinho nem `sqflite` no projeto. **Pendente:** a persistência e o `lineId`. O `POST /orders` continua em `toOrderItem()`: `productId`, `quantity` e `note`. O JSON local de hoje ainda não guarda `lineId`; a linha persistida precisa guardar.
+Não há repositório de carrinho nem `sqflite` no projeto. **Pendente:** a persistência e o `lineId`. A revisão grava com `CartLines.replace`: a lista inteira só entra se `expected` ainda for a lista armazenada. A persistência entra no lugar de `ProcessCartLines`, em `main`, e implementa essa mesma regra. O `POST /orders` continua em `toOrderItem()`: `productId`, `quantity` e `note`. O JSON local de hoje ainda não guarda `lineId`; a linha persistida precisa guardar.
+
+`CartItem` ainda não tem `lineId`. A troca de quantidade copia a linha em `CartViewModel._withQuantity` e hoje leva só `productId`, `quantity` e `note`. Quando o campo entrar, essa função precisa repassá-lo, e `==` / `hashCode` também. Sem a cópia, trocar a quantidade perde a identidade. Sem o `==`, `replace` não enxerga a troca de `lineId`. A tela não casa item por `productId` + `note`: a posição na lista é a identidade até o campo existir.
 
 **Pendente na limpeza.** Gerar um `lineId` novo em cada inclusão, mesmo que produto e observação repitam uma linha apagada. Não reutilizar o id. Implementar `withoutConfirmed` pelo `lineId`, com a regra de observação e quantidade acima. Não casar por `productId` + `note`. Em falha confirmada ou resultado incerto, não rodar essa limpeza.
 
@@ -122,9 +129,46 @@ if (submission.shouldClearCart) {
 
 `confirmedItems` é a fotografia, não o carrinho atual. Não substitua a lista inteira por vazia. Não crie um segundo `OrderSubmissionViewModel` para guardar item.
 
-## Jean — SCRUM-40/44
+## Jean — SCRUM-40
 
-**Pendente:** `/cart` e `/order` seguem em `RoutePlaceholder`. O ViewModel nasce no `State` da tela, com o `OrderRepository` do router, e morre no `dispose`. A tela observa com `ListenableBuilder`.
+`/cart` abre `CartView`. O `CartViewModel` nasce no `State`, observa com `ListenableBuilder` e morre no `dispose`. Não chama `OrderRepository` nem `submit`.
+
+```dart
+abstract interface class CartLines {
+  List<CartItem> read();
+  bool replace(List<CartItem> expected, List<CartItem> next);
+}
+```
+
+`read` é a lista externa quando a tela abre. Cada aumento, diminuição ou remoção chama `replace` com a lista que a tela leu e a lista inteira nova, na mesma ordem. Se outra gravação ocorreu no meio, `replace` devolve `false` e a tela adota a lista externa. A alteração local dessa tentativa não fica. `ProcessCartLines` guarda a lista só no processo e não é a SCRUM-69. A lista morre com o app.
+
+### Obrigações e testes
+
+Gabriel, na inclusão:
+
+```dart
+final current = lines.read();
+final stored = lines.replace(current, [...current, item]);
+```
+
+Se `stored` for `false`, repetir a partir de um `read` novo. Não gerar `lineId`.
+
+João, na persistência:
+
+- Implementar `replace` de modo que `false` não grave.
+- Ao criar `lineId`, copiá-lo em `_withQuantity` e incluí-lo em `==` e `hashCode`.
+- Não enviar `lineId` em `toOrderItem()`.
+- Testar que mudar a quantidade conserva o `lineId`.
+- Testar que `replace` devolve `false` quando a lista armazenada deixou de ser `expected`.
+- Testar o round-trip do `lineId` no JSON local e a limpeza `withoutConfirmed` por esse id.
+
+A revisão já cobre, sem `lineId`: quantidade e remoção pela posição, total estimado, estado vazio, e a recusa de gravar quando a lista mudou depois da leitura.
+
+O total da tela é a soma `priceCents * quantity`, com o rótulo "Total estimado". Não é `order.totalCents` e não inclui taxa de serviço. Se o cardápio falhar ou faltar preço, o total estimado fica ausente e as linhas permanecem. Sem itens, a tela mostra o estado vazio e abre `AppRoutes.menu`.
+
+## Confirmação — ainda pendente
+
+`/order` segue em `RoutePlaceholder`. O envio continua no `OrderSubmissionViewModel`. A tela de confirmação, quando existir, nasce no `State`, observa com `ListenableBuilder` e usa o total do servidor. A revisão do carrinho não chama o trecho abaixo.
 
 ```dart
 final submission = OrderSubmissionViewModel(orderRepository);
@@ -151,4 +195,4 @@ if (submission.shouldClearCart) {
 }
 ```
 
-`cartStore` **não existe**. Jean chama a API de persistência do João; não grava o carrinho de novo na tela. O `submit` recebe as linhas persistidas, com o `lineId`. Não monte outra lista só com `productId`, `quantity` e `note`: a fotografia perderia a identidade e a limpeza voltaria a apagar uma linha recriada. `openConfirmation` **não existe**: a rota é `AppRoutes.order` e o argumento ainda não foi definido. O pedido a exibir é o `Order` do ViewModel, sem novo `GET /orders`.
+`cartStore` **não existe**. A limpeza depois do sucesso fica na implementação de `CartLines` do João. A revisão não grava nesse momento e não chama `submit`. O `submit` recebe as linhas persistidas, com o `lineId`. Não monte outra lista só com `productId`, `quantity` e `note`: a fotografia perderia a identidade e a limpeza voltaria a apagar uma linha recriada. `openConfirmation` **não existe**: a rota é `AppRoutes.order` e o argumento ainda não foi definido. O pedido a exibir é o `Order` do ViewModel, sem novo `GET /orders`.
