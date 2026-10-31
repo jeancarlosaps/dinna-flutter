@@ -36,9 +36,10 @@ class OrderList {
 /// Não carrega status HTTP nem exceção de transporte. Sucesso traz [order],
 /// com o total que a API calculou. Falha deixa [order] nulo.
 ///
-/// [shouldClearCart] é o contrato com o carrinho que ainda não existe: fica
-/// verdadeiro só quando a API confirmou o pedido. Falha, inclusive resultado
-/// incerto, não pede limpeza. Esta classe não apaga item.
+/// [shouldClearCart] fica verdadeiro só quando a API confirmou o pedido.
+/// Os itens a remover são a fotografia em `OrderSubmissionViewModel.confirmedItems`,
+/// não o carrinho inteiro. Falha e resultado incerto não pedem limpeza.
+/// Esta classe não guarda nem apaga item.
 class OrderSubmission {
   OrderSubmission.created(Order order) : this._(order: order);
 
@@ -81,10 +82,10 @@ class OrderSubmission {
   /// Causa técnica. A tela usa [message].
   final String? detail;
 
-  /// Verdadeiro em tempo esgotado ou queda depois do envio.
+  /// Verdadeiro quando não dá para afirmar se o servidor ficou com o pedido.
   ///
-  /// Também cobre resposta 2xx que não pôde ser lida como [Order]: houve
-  /// aceite, mas o pedido confirmado não está disponível.
+  /// Cobre tempo esgotado, falha de transporte em que o body pode ter saído
+  /// e resposta 2xx que não pôde ser lida como [Order]. Não é falha definitiva.
   final bool outcomeUncertain;
 
   /// A futura tela do carrinho limpa os itens somente neste caso.

@@ -10,15 +10,16 @@ enum OrderSubmissionStatus { idle, submitting, succeeded, failed }
 
 /// Envio do pedido: ViewModel → [OrderRepository.create].
 ///
-/// Não guarda carrinho. Quem chama entrega a mesa e os [CartItem] no [submit].
-/// [shouldClearCart] fica verdadeiro só depois que a API confirma o pedido.
-/// A tela do carrinho, quando existir, limpa os itens nesse caso. Falha,
-/// inclusive resultado incerto, não pede limpeza e não apaga item.
+/// Não guarda carrinho. [submit] fotografa a mesa e os [CartItem] e envia
+/// essa cópia. [shouldClearCart] fica verdadeiro só depois que a API confirma
+/// o pedido. A limpeza remove [confirmedItems], não o carrinho inteiro: itens
+/// incluídos ou alterados depois do [submit] ficam de fora da fotografia.
+/// Falha e resultado incerto não pedem limpeza.
 ///
-/// Uma chamada durante o envio é ignorada. Não há nova tentativa automática:
-/// outra chamada só acontece se quem usa o ViewModel pedir de novo, depois
-/// que a anterior terminou. Depois do [dispose], a resposta pendente não
-/// altera estado nem notifica.
+/// [OrderSubmissionStatus.failed] com [outcomeUncertain] não é falha
+/// definitiva. [isDefiniteFailure] é o erro confirmado. Uma chamada durante
+/// o envio é ignorada. Não há nova tentativa automática. Depois do [dispose],
+/// a resposta pendente não altera estado nem notifica.
 class OrderSubmissionViewModel extends ChangeNotifier {
   OrderSubmissionViewModel(this._repository);
 
@@ -32,6 +33,8 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   String? _errorMessage;
   DataFailure? _failure;
   bool _outcomeUncertain = false;
+  List<CartItem>? _confirmedItems;
+  String? _confirmedTable;
   bool _disposed = false;
 
   OrderSubmissionStatus get status => _status;
@@ -46,14 +49,29 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   DataFailure? get failure => _failure;
 
   /// Verdadeiro quando o POST pode ter sido aplicado sem confirmação.
+  ///
+  /// A tela não trata este caso como falha definitiva e não limpa o carrinho.
   bool get outcomeUncertain => _outcomeUncertain;
+
+  /// Erro com resposta confirmada ou validação local.
+  ///
+  /// Resultado incerto fica de fora: [status] pode ser
+  /// [OrderSubmissionStatus.failed] e este getter continua falso.
+  bool get isDefiniteFailure => _status == OrderSubmissionStatus.failed && !_outcomeUncertain;
 
   bool get isSubmitting => _status == OrderSubmissionStatus.submitting;
 
-  /// Contrato com o carrinho que ainda não está ligado a esta entrega.
+  /// Itens da fotografia que a API confirmou. Nulo sem sucesso.
   ///
+  /// A limpeza tira só esta lista. Esta classe não altera o carrinho.
+  List<CartItem>? get confirmedItems => _confirmedItems;
+
+  /// Mesa da mesma fotografia. Nula sem sucesso.
+  String? get confirmedTable => _confirmedTable;
+
   /// Só a confirmação da API liga este sinal. Esta classe não apaga item.
-  bool get shouldClearCart => _status == OrderSubmissionStatus.succeeded && _order != null;
+  bool get shouldClearCart =>
+      _status == OrderSubmissionStatus.succeeded && _order != null && _confirmedItems != null;
 
   /// Envia [items] para a mesa [table].
   ///
@@ -62,15 +80,19 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   Future<void> submit({required String table, required List<CartItem> items}) async {
     if (_disposed || _status == OrderSubmissionStatus.submitting) return;
 
+    final submittedItems = List<CartItem>.unmodifiable(items);
+    final submittedTable = table;
     _status = OrderSubmissionStatus.submitting;
     _order = null;
     _errorMessage = null;
     _failure = null;
     _outcomeUncertain = false;
+    _confirmedItems = null;
+    _confirmedTable = null;
     _notify();
 
     try {
-      final result = await _repository.create(table: table, items: items);
+      final result = await _repository.create(table: submittedTable, items: submittedItems);
       if (_disposed) return;
       final order = result.order;
       if (order == null) {
@@ -83,7 +105,12 @@ class OrderSubmissionViewModel extends ChangeNotifier {
         );
         return;
       }
-      _publish(status: OrderSubmissionStatus.succeeded, order: order);
+      _publish(
+        status: OrderSubmissionStatus.succeeded,
+        order: order,
+        confirmedItems: submittedItems,
+        confirmedTable: submittedTable,
+      );
     } catch (error, stackTrace) {
       if (_disposed) return;
       _publish(
@@ -116,6 +143,8 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     String? message,
     DataFailure? failure,
     bool outcomeUncertain = false,
+    List<CartItem>? confirmedItems,
+    String? confirmedTable,
   }) {
     if (_disposed) return;
     _status = status;
@@ -123,6 +152,8 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     _errorMessage = message;
     _failure = failure;
     _outcomeUncertain = outcomeUncertain;
+    _confirmedItems = confirmedItems;
+    _confirmedTable = confirmedTable;
     _notify();
   }
 

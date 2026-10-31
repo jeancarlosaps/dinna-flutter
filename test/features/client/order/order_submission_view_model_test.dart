@@ -31,6 +31,9 @@ void main() {
     expect(viewModel.errorMessage, isNull);
     expect(viewModel.failure, isNull);
     expect(viewModel.outcomeUncertain, isFalse);
+    expect(viewModel.isDefiniteFailure, isFalse);
+    expect(viewModel.confirmedItems, isNull);
+    expect(viewModel.confirmedTable, isNull);
     expect(viewModel.shouldClearCart, isFalse);
   });
 
@@ -64,6 +67,9 @@ void main() {
     expect(viewModel.errorMessage, isNull);
     expect(viewModel.failure, isNull);
     expect(viewModel.outcomeUncertain, isFalse);
+    expect(viewModel.isDefiniteFailure, isFalse);
+    expect(viewModel.confirmedTable, '12');
+    expect(viewModel.confirmedItems, items);
     expect(viewModel.shouldClearCart, isTrue);
     expect(items.single.quantity, 2);
   });
@@ -81,35 +87,69 @@ void main() {
     expect(viewModel.errorMessage, 'Informe a mesa');
     expect(viewModel.failure, DataFailure.validation);
     expect(viewModel.outcomeUncertain, isFalse);
+    expect(viewModel.isDefiniteFailure, isTrue);
+    expect(viewModel.confirmedItems, isNull);
     expect(viewModel.shouldClearCart, isFalse);
     expect(items, hasLength(1));
   });
 
-  test('409 e falha de conexão são erros confirmados', () async {
+  test('erro confirmado pela API não pede limpeza nem é incerto', () async {
     final conflict = viewModelOf(
       ({required table, required items}) async =>
           const OrderSubmission.failed('Pedido em conflito', failure: DataFailure.conflict),
     );
-    final offline = viewModelOf(
-      ({required table, required items}) async => const OrderSubmission.failed(
-        'Não foi possível conectar à API',
-        detail: 'Connection refused',
-      ),
+    final server = viewModelOf(
+      ({required table, required items}) async =>
+          const OrderSubmission.failed('Erro interno', failure: DataFailure.unavailable),
     );
 
     await conflict.submit(table: '12', items: items);
-    await offline.submit(table: '12', items: items);
+    await server.submit(table: '12', items: items);
 
     expect(conflict.failure, DataFailure.conflict);
     expect(conflict.outcomeUncertain, isFalse);
+    expect(conflict.isDefiniteFailure, isTrue);
+    expect(conflict.confirmedItems, isNull);
     expect(conflict.shouldClearCart, isFalse);
     expect(conflict.errorMessage, 'Pedido em conflito');
-    expect(offline.failure, DataFailure.unavailable);
-    expect(offline.outcomeUncertain, isFalse);
-    expect(offline.shouldClearCart, isFalse);
-    expect(offline.errorMessage, 'Não foi possível conectar à API');
-    expect(offline.errorMessage, isNot(contains('Connection refused')));
+    expect(server.isDefiniteFailure, isTrue);
+    expect(server.outcomeUncertain, isFalse);
+    expect(server.shouldClearCart, isFalse);
+    expect(server.errorMessage, 'Erro interno');
     expect(items, hasLength(1));
+  });
+
+  test('alteração posterior ao submit fica fora da fotografia confirmada', () async {
+    final gate = Completer<OrderSubmission>();
+    final sent = CartItem(productId: 'p1', quantity: 2, note: 'sem cebola');
+    final cart = <CartItem>[sent];
+    List<CartItem>? received;
+    String? receivedTable;
+    final viewModel = viewModelOf(({required table, required items}) {
+      receivedTable = table;
+      received = items;
+      cart.add(CartItem(productId: 'p2', quantity: 1, note: null));
+      cart[0] = CartItem(productId: 'p1', quantity: 5, note: 'sem cebola');
+      return gate.future;
+    });
+
+    final pending = viewModel.submit(table: '12', items: cart);
+    expect(received, isNot(same(cart)));
+    expect(receivedTable, '12');
+    expect(received, [sent]);
+    expect(viewModel.confirmedItems, isNull);
+    expect(viewModel.shouldClearCart, isFalse);
+
+    gate.complete(OrderSubmission.created(sampleOrder(id: 'o1', totalCents: 10470)));
+    await pending;
+
+    expect(viewModel.shouldClearCart, isTrue);
+    expect(viewModel.confirmedTable, '12');
+    expect(viewModel.confirmedItems, [sent]);
+    expect(viewModel.confirmedItems!.single.quantity, 2);
+    expect(cart, hasLength(2));
+    expect(cart.first.quantity, 5);
+    expect(cart.last.productId, 'p2');
   });
 
   test('tempo esgotado não afirma que o pedido falhou e não limpa o carrinho', () async {
@@ -127,7 +167,10 @@ void main() {
     expect(viewModel.status, OrderSubmissionStatus.failed);
     expect(viewModel.order, isNull);
     expect(viewModel.outcomeUncertain, isTrue);
+    expect(viewModel.isDefiniteFailure, isFalse);
     expect(viewModel.failure, DataFailure.uncertain);
+    expect(viewModel.confirmedItems, isNull);
+    expect(viewModel.confirmedTable, isNull);
     expect(viewModel.shouldClearCart, isFalse);
     expect(viewModel.errorMessage, OrderSubmission.uncertainOutcomeMessage);
     expect(viewModel.errorMessage, contains('pode ter sido registrado'));
@@ -151,6 +194,8 @@ void main() {
 
     expect(viewModel.errorMessage, OrderSubmission.uncertainOutcomeMessage);
     expect(viewModel.outcomeUncertain, isTrue);
+    expect(viewModel.isDefiniteFailure, isFalse);
+    expect(viewModel.confirmedItems, isNull);
     expect(viewModel.shouldClearCart, isFalse);
   });
 
