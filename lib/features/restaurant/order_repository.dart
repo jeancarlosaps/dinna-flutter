@@ -1,3 +1,4 @@
+import '../../core/domain/cart_item.dart';
 import '../../core/domain/data_failure.dart';
 import '../../core/domain/order.dart';
 
@@ -30,11 +31,78 @@ class OrderList {
   final String? detail;
 }
 
-/// Fonte da fila de pedidos do restaurante.
+/// Pedido criado, ou a falha já traduzida para a tela.
 ///
-/// A implementação concreta traduz o JSON de `GET /orders` e as falhas de
-/// transporte para [OrderList]. O ViewModel depende deste contrato e ordena
-/// a fila; este contrato devolve a lista na ordem recebida.
+/// Não carrega status HTTP nem exceção de transporte. Sucesso traz [order],
+/// com o total que a API calculou. Falha deixa [order] nulo.
+///
+/// [shouldClearCart] é o contrato com o carrinho que ainda não existe: fica
+/// verdadeiro só quando a API confirmou o pedido. Falha, inclusive resultado
+/// incerto, não pede limpeza. Esta classe não apaga item.
+class OrderSubmission {
+  OrderSubmission.created(Order order) : this._(order: order);
+
+  const OrderSubmission.failed(
+    String message, {
+    DataFailure failure = DataFailure.unavailable,
+    String? detail,
+    bool outcomeUncertain = false,
+  }) : this._(
+         message: message,
+         failure: failure,
+         detail: detail,
+         outcomeUncertain: outcomeUncertain,
+       );
+
+  const OrderSubmission._({
+    this.order,
+    this.message,
+    this.failure,
+    this.detail,
+    this.outcomeUncertain = false,
+  });
+
+  /// Texto quando o POST pode ter sido aplicado e a confirmação não chegou.
+  ///
+  /// Não afirma que o pedido falhou. A mesma frase está em
+  /// `ApiClient.uncertainOutcomeMessage`; o client não importa esta feature.
+  static const uncertainOutcomeMessage =
+      'Não foi possível confirmar o envio. O pedido pode ter sido registrado.';
+
+  /// `null` quando a criação falhou.
+  final Order? order;
+
+  /// Preenchida só quando a criação falha.
+  final String? message;
+
+  /// Nula quando o pedido foi criado.
+  final DataFailure? failure;
+
+  /// Causa técnica. A tela usa [message].
+  final String? detail;
+
+  /// Verdadeiro em tempo esgotado ou queda depois do envio.
+  ///
+  /// Também cobre resposta 2xx que não pôde ser lida como [Order]: houve
+  /// aceite, mas o pedido confirmado não está disponível.
+  final bool outcomeUncertain;
+
+  /// A futura tela do carrinho limpa os itens somente neste caso.
+  bool get shouldClearCart => order != null;
+}
+
+/// Fonte dos pedidos.
+///
+/// [list] traduz `GET /orders` na ordem recebida; o ViewModel da fila ordena.
+/// [create] traduz `POST /orders`. O body é mesa e itens. O total não é
+/// calculado aqui.
 abstract interface class OrderRepository {
   Future<OrderList> list();
+
+  /// Cria o pedido da mesa.
+  ///
+  /// [items] são os [CartItem] do carrinho. Mesa vazia, lista vazia,
+  /// identificador em branco ou quantidade inválida voltam como
+  /// [DataFailure.validation], sem chamar a API.
+  Future<OrderSubmission> create({required String table, required List<CartItem> items});
 }
