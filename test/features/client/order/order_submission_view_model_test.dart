@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dinna/core/domain/cart_item.dart';
 import 'package:dinna/core/domain/data_failure.dart';
@@ -298,24 +299,41 @@ void main() {
     expect(viewModel.shouldClearCart, isFalse);
   });
 
-  test('exceção inesperada sai de envio sem o detalhe interno e sem limpar', () async {
+  test('exceção inesperada não confirma rejeição nem limpa o carrinho', () async {
     const detalheInterno = 'falha interna do repository';
-    final viewModel = viewModelOf(
-      ({required table, required items}) async => throw StateError(detalheInterno),
-    );
-    final states = <OrderSubmissionStatus>[];
-    viewModel.addListener(() => states.add(viewModel.status));
+    final errors = <Object>[StateError(detalheInterno), const HttpException('conexao encerrada')];
 
-    await viewModel.submit(table: '12', items: items);
+    for (final error in errors) {
+      var calls = 0;
+      final repository = FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async {
+          calls++;
+          throw error;
+        },
+      );
+      final viewModel = OrderSubmissionViewModel(repository);
+      final states = <OrderSubmissionStatus>[];
+      viewModel.addListener(() => states.add(viewModel.status));
 
-    expect(states, [OrderSubmissionStatus.submitting, OrderSubmissionStatus.failed]);
-    expect(viewModel.order, isNull);
-    expect(viewModel.errorMessage, OrderSubmissionViewModel.unexpectedFailureMessage);
-    expect(viewModel.errorMessage, isNot(contains(detalheInterno)));
-    expect(viewModel.failure, DataFailure.unavailable);
-    expect(viewModel.outcomeUncertain, isFalse);
-    expect(viewModel.shouldClearCart, isFalse);
-    expect(items, hasLength(1));
+      await viewModel.submit(table: '12', items: items);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(calls, 1);
+      expect(repository.createCalls, 1);
+      expect(states, [OrderSubmissionStatus.submitting, OrderSubmissionStatus.failed]);
+      expect(viewModel.order, isNull);
+      expect(viewModel.errorMessage, OrderSubmission.uncertainOutcomeMessage);
+      expect(viewModel.errorMessage, isNot(contains(detalheInterno)));
+      expect(viewModel.errorMessage, isNot(contains('conexao encerrada')));
+      expect(viewModel.failure, DataFailure.uncertain);
+      expect(viewModel.outcomeUncertain, isTrue);
+      expect(viewModel.isDefiniteFailure, isFalse);
+      expect(viewModel.confirmedItems, isNull);
+      expect(viewModel.confirmedTable, isNull);
+      expect(viewModel.shouldClearCart, isFalse);
+      expect(items, hasLength(1));
+    }
   });
 
   test('exceção inesperada depois do dispose termina sem atualizar nem notificar', () async {

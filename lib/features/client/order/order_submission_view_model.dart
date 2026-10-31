@@ -25,7 +25,7 @@ class OrderSubmissionViewModel extends ChangeNotifier {
 
   final OrderRepository _repository;
 
-  /// Mensagem quando o repository deixa escapar uma falha que não traduziu.
+  /// Mensagem quando uma falha confirmada chega sem texto utilizável.
   static const unexpectedFailureMessage = 'Não foi possível enviar o pedido';
 
   OrderSubmissionStatus _status = OrderSubmissionStatus.idle;
@@ -113,10 +113,12 @@ class OrderSubmissionViewModel extends ChangeNotifier {
       );
     } catch (error, stackTrace) {
       if (_disposed) return;
+      // A exceção escapou do repositório. Não há status que prove a rejeição.
       _publish(
         status: OrderSubmissionStatus.failed,
-        message: unexpectedFailureMessage,
-        failure: DataFailure.unavailable,
+        message: OrderSubmission.uncertainOutcomeMessage,
+        failure: DataFailure.uncertain,
+        outcomeUncertain: true,
       );
       if (kDebugMode) {
         FlutterError.presentError(
