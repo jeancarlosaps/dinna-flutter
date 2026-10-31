@@ -302,6 +302,41 @@ void main() {
       expect(result.message, isNot(contains('pode ter sido registrado')));
     }
   });
+
+  test('UTF-8 inválido em erro HTTP continua rejeição confirmada', () async {
+    Future<OrderSubmission> read(int status) {
+      return repositoryReturning(
+        http.Response.bytes(
+          const [0xff],
+          status,
+          headers: const {'content-type': 'application/json; charset=utf-8'},
+        ),
+      ).create(table: '12', items: _items);
+    }
+
+    final validation = await read(400);
+    final missing = await read(404);
+    final conflict = await read(409);
+    final server = await read(500);
+    final accepted = await read(201);
+
+    expect(validation.failure, DataFailure.validation);
+    expect(missing.failure, DataFailure.notFound);
+    expect(conflict.failure, DataFailure.conflict);
+    expect(server.failure, DataFailure.unavailable);
+
+    for (final result in [validation, missing, conflict, server]) {
+      expect(result.order, isNull);
+      expect(result.outcomeUncertain, isFalse);
+      expect(result.shouldClearCart, isFalse);
+      expect(result.message, ApiClient.httpFailureMessage);
+      expect(result.message, isNot(contains('pode ter sido registrado')));
+    }
+    expect(accepted.outcomeUncertain, isTrue);
+    expect(accepted.failure, DataFailure.uncertain);
+    expect(accepted.shouldClearCart, isFalse);
+    expect(accepted.message, OrderSubmission.uncertainOutcomeMessage);
+  });
 }
 
 class _BodyStatusError extends http.BaseClient {

@@ -293,6 +293,50 @@ void main() {
     );
   });
 
+  test('POST com UTF-8 inválido preserva a rejeição HTTP', () async {
+    Future<ApiException> read(int status) async {
+      final client = clientReturning(
+        http.Response.bytes(
+          const [0xff],
+          status,
+          headers: const {'content-type': 'application/json; charset=utf-8'},
+        ),
+      );
+      try {
+        await client.postJson('/orders', const {'table': '12'});
+      } on ApiException catch (error) {
+        return error;
+      }
+      fail('POST $status deveria falhar');
+    }
+
+    final validation = await read(400);
+    final missing = await read(404);
+    final conflict = await read(409);
+    final server = await read(500);
+    final accepted = await read(201);
+
+    expect(validation.statusCode, 400);
+    expect(validation.failure, DataFailure.validation);
+    expect(missing.statusCode, 404);
+    expect(missing.failure, DataFailure.notFound);
+    expect(conflict.statusCode, 409);
+    expect(conflict.failure, DataFailure.conflict);
+    expect(server.statusCode, 500);
+    expect(server.failure, DataFailure.unavailable);
+
+    for (final error in [validation, missing, conflict, server]) {
+      expect(error.message, ApiClient.httpFailureMessage);
+      expect(error.detail, 'HTTP ${error.statusCode}: corpo inválido');
+      expect(error.outcomeUncertain, isFalse);
+      expect(error.failure, isNot(DataFailure.uncertain));
+    }
+    expect(accepted.statusCode, 201);
+    expect(accepted.outcomeUncertain, isTrue);
+    expect(accepted.failure, DataFailure.uncertain);
+    expect(accepted.message, ApiClient.uncertainOutcomeMessage);
+  });
+
   test('POST com queda depois do envio é incerto', () async {
     final client = ApiClient(
       baseUrl: baseUrl,

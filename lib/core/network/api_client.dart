@@ -104,6 +104,9 @@ class ApiClient {
         );
       }
       rethrow;
+    } on FormatException {
+      // `response.body` decodifica UTF-8 antes de `_decodeBody` e perde o status.
+      throw _invalidBody(response.statusCode);
     }
     if (body == null) {
       throw ApiException(
@@ -124,6 +127,24 @@ class ApiClient {
     http.ClientException(:final message) => message,
     _ => error.toString(),
   };
+
+  /// Corpo ilegível com status já conhecido. Erro HTTP permanece confirmado.
+  ApiException _invalidBody(int statusCode) {
+    if (_accepted(statusCode)) {
+      return ApiException(
+        uncertainOutcomeMessage,
+        statusCode: statusCode,
+        detail: 'Resposta inválida da API',
+        outcomeUncertain: true,
+      );
+    }
+    return ApiException(
+      httpFailureMessage,
+      statusCode: statusCode,
+      detail: 'HTTP $statusCode: corpo inválido',
+      outcomeUncertain: false,
+    );
+  }
 
   /// Headers já recebidos. Erro HTTP permanece confirmado; sucesso sem corpo
   /// legível continua incerto.
