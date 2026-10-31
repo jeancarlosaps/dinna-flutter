@@ -242,6 +242,10 @@ void main() {
       MockClient((_) async => throw http.ClientException('Connection closed')),
       'Connection closed',
     );
+    await expectUncertain(
+      MockClient((_) async => throw const HttpException('Connection closed before full header')),
+      'Connection closed before full header',
+    );
   });
 
   test('POST 201 ilegível é incerto e o erro HTTP continua confirmado', () async {
@@ -294,6 +298,10 @@ void main() {
       baseUrl: baseUrl,
       httpClient: _BodyErrorClient(const SocketException('Connection reset by peer')),
     );
+    final httpFailure = ApiClient(
+      baseUrl: baseUrl,
+      httpClient: _BodyErrorClient(const HttpException('Connection closed while receiving data')),
+    );
 
     await expectLater(
       client.postJson('/orders', const {'table': '12'}),
@@ -304,6 +312,67 @@ void main() {
             .having((error) => error.detail, 'detail', 'Connection reset by peer')
             .having((error) => error.failure, 'failure', DataFailure.uncertain)
             .having((error) => error.outcomeUncertain, 'outcomeUncertain', isTrue),
+      ),
+    );
+    await expectLater(
+      httpFailure.postJson('/orders', const {'table': '12'}),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.statusCode, 'statusCode', isNull)
+            .having((error) => error.message, 'message', ApiClient.uncertainOutcomeMessage)
+            .having((error) => error.detail, 'detail', 'Connection closed while receiving data')
+            .having((error) => error.failure, 'failure', DataFailure.uncertain)
+            .having((error) => error.outcomeUncertain, 'outcomeUncertain', isTrue),
+      ),
+    );
+  });
+
+  test('POST com headers de erro preserva o status quando o corpo falha', () async {
+    Future<void> expectConfirmed(int status, DataFailure failure, Object error, String detail) {
+      final client = ApiClient(
+        baseUrl: baseUrl,
+        httpClient: _BodyErrorClient(error, statusCode: status),
+      );
+      return expectLater(
+        client.postJson('/orders', const {'table': '12'}),
+        throwsA(
+          isA<ApiException>()
+              .having((exception) => exception.statusCode, 'statusCode', status)
+              .having((exception) => exception.message, 'message', ApiClient.httpFailureMessage)
+              .having((exception) => exception.detail, 'detail', detail)
+              .having((exception) => exception.outcomeUncertain, 'outcomeUncertain', isFalse)
+              .having((exception) => exception.failure, 'failure', failure),
+        ),
+      );
+    }
+
+    await expectConfirmed(400, DataFailure.validation, const SocketException('reset'), 'reset');
+    await expectConfirmed(404, DataFailure.notFound, const HttpException('closed'), 'closed');
+    await expectConfirmed(409, DataFailure.conflict, http.ClientException('closed'), 'closed');
+    await expectConfirmed(
+      500,
+      DataFailure.unavailable,
+      StateError('truncado'),
+      'Bad state: truncado',
+    );
+  });
+
+  test('POST 500 com tempo esgotado na leitura continua falha confirmada', () async {
+    final client = ApiClient(
+      baseUrl: baseUrl,
+      timeout: const Duration(milliseconds: 20),
+      httpClient: _HangingBodyClient(statusCode: 500),
+    );
+
+    await expectLater(
+      client.postJson('/orders', const {'table': '12'}),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.statusCode, 'statusCode', 500)
+            .having((error) => error.message, 'message', ApiClient.httpFailureMessage)
+            .having((error) => error.detail, 'detail', 'HTTP 500')
+            .having((error) => error.failure, 'failure', DataFailure.unavailable)
+            .having((error) => error.outcomeUncertain, 'outcomeUncertain', isFalse),
       ),
     );
   });
@@ -329,22 +398,30 @@ void main() {
 
 /// A requisição sai; a leitura do corpo cai.
 class _BodyErrorClient extends http.BaseClient {
-  _BodyErrorClient(this._error);
+  _BodyErrorClient(this._error, {this.statusCode = 201});
 
   final Object _error;
+  final int statusCode;
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     await request.finalize().drain<void>();
-    return http.StreamedResponse(Stream<List<int>>.error(_error), 201);
+    return http.StreamedResponse(Stream<List<int>>.error(_error), statusCode);
   }
 }
 
 /// A requisição sai; o corpo não chega.
 class _HangingBodyClient extends http.BaseClient {
+  _HangingBodyClient({this.statusCode = 201});
+
+  final int statusCode;
+
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     await request.finalize().drain<void>();
-    return http.StreamedResponse(Stream<List<int>>.fromFuture(Completer<List<int>>().future), 201);
+    return http.StreamedResponse(
+      Stream<List<int>>.fromFuture(Completer<List<int>>().future),
+      statusCode,
+    );
   }
 }

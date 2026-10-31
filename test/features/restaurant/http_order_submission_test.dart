@@ -276,6 +276,45 @@ void main() {
     expect(result.message, isNot(contains('Connection reset')));
     expect(result.detail, 'Connection reset by peer');
   });
+
+  test('erro HTTP com corpo ilegível continua falha confirmada', () async {
+    Future<OrderSubmission> readFailed(int status, Object error) {
+      return HttpOrderRepository(
+        ApiClient(baseUrl: baseUrl, httpClient: _BodyStatusError(status, error)),
+      ).create(table: '12', items: _items);
+    }
+
+    final validation = await readFailed(400, const SocketException('reset'));
+    final missing = await readFailed(404, const HttpException('closed'));
+    final conflict = await readFailed(409, http.ClientException('closed'));
+    final server = await readFailed(500, StateError('truncado'));
+
+    expect(validation.failure, DataFailure.validation);
+    expect(missing.failure, DataFailure.notFound);
+    expect(conflict.failure, DataFailure.conflict);
+    expect(server.failure, DataFailure.unavailable);
+
+    for (final result in [validation, missing, conflict, server]) {
+      expect(result.order, isNull);
+      expect(result.outcomeUncertain, isFalse);
+      expect(result.shouldClearCart, isFalse);
+      expect(result.message, ApiClient.httpFailureMessage);
+      expect(result.message, isNot(contains('pode ter sido registrado')));
+    }
+  });
+}
+
+class _BodyStatusError extends http.BaseClient {
+  _BodyStatusError(this.statusCode, this.error);
+
+  final int statusCode;
+  final Object error;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    await request.finalize().drain<void>();
+    return http.StreamedResponse(Stream<List<int>>.error(error), statusCode);
+  }
 }
 
 class _ResetAfterSend extends http.BaseClient {

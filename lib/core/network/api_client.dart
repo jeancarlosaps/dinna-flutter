@@ -50,11 +50,11 @@ class ApiClient {
 
   /// Envia JSON e devolve o corpo em resposta 2xx.
   ///
-  /// [http.Client.send] só retorna quando os headers chegam. Uma exceção aí,
-  /// ou ao ler o corpo, não prova que o servidor deixou de receber o body.
-  /// Esses casos, o tempo esgotado e um 2xx ilegível marcam
-  /// [ApiException.outcomeUncertain]. Status 4xx e 5xx são resposta confirmada.
-  /// Não há nova tentativa. [getJson] não usa este sinal.
+  /// [http.Client.send] só retorna quando os headers chegam. Uma exceção aí
+  /// não prova que o servidor deixou de receber o body e marca
+  /// [ApiException.outcomeUncertain]. Se os headers já chegaram, 4xx e 5xx
+  /// continuam falha confirmada mesmo com o corpo ilegível; 2xx ilegível
+  /// permanece incerto. Não há nova tentativa. [getJson] não usa este sinal.
   Future<Object?> postJson(String path, Object? jsonBody) async {
     final request = http.Request('POST', baseUrl.resolve(path))
       ..headers.addAll(const {'Accept': 'application/json', 'Content-Type': 'application/json'})
@@ -76,6 +76,8 @@ class ApiClient {
       throw uncertain(null);
     } on SocketException catch (error) {
       throw uncertain(error.message);
+    } on HttpException catch (error) {
+      throw uncertain(error.message);
     } on http.ClientException catch (error) {
       throw uncertain(error.message);
     }
@@ -84,11 +86,9 @@ class ApiClient {
     try {
       response = await http.Response.fromStream(streamed).timeout(remaining());
     } on TimeoutException {
-      throw uncertain(null);
-    } on SocketException catch (error) {
-      throw uncertain(error.message);
-    } on http.ClientException catch (error) {
-      throw uncertain(error.message);
+      throw _bodyReadFailure(streamed, null);
+    } catch (error) {
+      throw _bodyReadFailure(streamed, _transportDetail(error));
     }
 
     final Object? body;
@@ -117,6 +117,28 @@ class ApiClient {
   }
 
   bool _accepted(int? statusCode) => statusCode != null && statusCode >= 200 && statusCode < 300;
+
+  String? _transportDetail(Object error) => switch (error) {
+    SocketException(:final message) => message,
+    HttpException(:final message) => message,
+    http.ClientException(:final message) => message,
+    _ => error.toString(),
+  };
+
+  /// Headers já recebidos. Erro HTTP permanece confirmado; sucesso sem corpo
+  /// legível continua incerto.
+  ApiException _bodyReadFailure(http.StreamedResponse response, String? detail) {
+    final status = response.statusCode;
+    if (_accepted(status)) {
+      return ApiException(uncertainOutcomeMessage, detail: detail, outcomeUncertain: true);
+    }
+    return ApiException(
+      httpFailureMessage,
+      statusCode: status,
+      detail: detail ?? 'HTTP $status',
+      outcomeUncertain: false,
+    );
+  }
 
   Object? _interpret(http.Response response) {
     final body = _decodeBody(response);
