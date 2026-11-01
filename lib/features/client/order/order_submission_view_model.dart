@@ -162,32 +162,15 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     return task;
   }
 
-  /// Envia [items] para a mesa [table], ou retoma a intenção ainda aberta.
+  /// Envia um pedido novo com [items] na mesa [table].
   ///
-  /// Ignora a chamada durante um envio, depois do sucesso, com o reenvio
-  /// bloqueado ou após o [dispose]. [confirmedResume] é a confirmação explícita
-  /// do diálogo. Sem ela, uma intenção achada na leitura não gera POST. No
-  /// reenvio confirmado, a chave e o body guardados se repetem. O carrinho
-  /// vivo fica de fora. Não repete o POST sozinho.
-  Future<void> submit({
-    required String table,
-    required List<CartItem> items,
-    bool confirmedResume = false,
-  }) async {
+  /// Não retoma intenção. Se já existe uma gravada, publica o estado dela e
+  /// não cria chave. Ignora a chamada durante um envio, depois do sucesso,
+  /// com o reenvio bloqueado ou após o [dispose].
+  Future<void> submit({required String table, required List<CartItem> items}) async {
     if (_disposed || _gate || _status == OrderSubmissionStatus.submitting) return;
     if (_restored &&
         (_storeBlocked || _resendBlocked || _status == OrderSubmissionStatus.succeeded)) {
-      return;
-    }
-
-    final open = _intent;
-    if (confirmedResume && open != null && !open.allowsResume(_now())) {
-      _gate = true;
-      try {
-        await _persistBlock(open, OrderIntentBlock.expired);
-      } finally {
-        _gate = false;
-      }
       return;
     }
 
@@ -204,23 +187,46 @@ class OrderSubmissionViewModel extends ChangeNotifier {
         return;
       }
       final intent = _intent;
-      if (intent != null && !confirmedResume) {
+      if (intent != null) {
         await _holdStored(intent);
         return;
       }
-      if (intent != null && intent.phase == OrderIntentPhase.blocked) {
-        _publishBlocked(_blockedMessage(intent.block), _blockedFailure(intent.block));
-        return;
-      }
-      if (intent != null && intent.phase == OrderIntentPhase.succeeded) {
-        _publishSuccess(intent);
-        return;
-      }
-      if (intent != null) {
-        await _resume(intent);
-        return;
-      }
       await _startNew(table, snapshot);
+    } finally {
+      _gate = false;
+    }
+  }
+
+  /// Repete a intenção [intentId] que o diálogo mostrou ao abrir.
+  ///
+  /// Só há POST quando esse ID é o da intenção ainda persistida, em fase
+  /// pendente ou incerta, e dentro da folga. Confirmação antiga, duplicada,
+  /// de intenção encerrada ou ausente não cria chave e não chama o envio novo.
+  Future<void> resume(String intentId) async {
+    if (_disposed || _gate || isSubmitting) return;
+    _gate = true;
+    try {
+      final OrderIntent? persisted;
+      try {
+        persisted = await _store.load();
+      } on OrderIntentStoreException {
+        if (_disposed) return;
+        _restored = true;
+        _storeBlocked = true;
+        _publishBlocked(unreadableIntentMessage, DataFailure.unavailable);
+        return;
+      }
+      if (_disposed) return;
+      _restored = true;
+      if (persisted == null || persisted.id != intentId) return;
+      _intent = persisted;
+      if (persisted.phase == OrderIntentPhase.succeeded) return;
+      if (persisted.phase == OrderIntentPhase.blocked || !persisted.allowsResume(_now())) {
+        await _persistBlock(persisted, persisted.block ?? OrderIntentBlock.expired);
+        return;
+      }
+      _enterSubmitting();
+      await _dispatch(persisted);
     } finally {
       _gate = false;
     }
@@ -310,14 +316,6 @@ class OrderSubmissionViewModel extends ChangeNotifier {
       return;
     }
     if (_disposed) return;
-    await _dispatch(intent);
-  }
-
-  Future<void> _resume(OrderIntent intent) async {
-    if (!intent.allowsResume(_now())) {
-      await _persistBlock(intent, OrderIntentBlock.expired);
-      return;
-    }
     await _dispatch(intent);
   }
 

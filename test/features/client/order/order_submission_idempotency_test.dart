@@ -78,7 +78,7 @@ void main() {
     expect(viewModel.shouldClearCart, isFalse);
 
     fail = false;
-    await viewModel.submit(table: '99', items: cart, confirmedResume: true);
+    await viewModel.resume(viewModel.intentId!);
 
     expect(repository.createCalls, 2);
     expect(ids, [idAt(1)]);
@@ -164,11 +164,7 @@ void main() {
     );
     expect(secondRepository.createCalls, 0);
 
-    await second.submit(
-      table: '12',
-      items: [CartItem(productId: 'p9', quantity: 4, note: null)],
-      confirmedResume: true,
-    );
+    await second.resume(second.intentId!);
 
     expect(secondRepository.createCalls, 1);
     expect(secondRepository.lastIdempotencyKey, idAt(1));
@@ -382,11 +378,7 @@ void main() {
     expect(viewModel.outcomeUncertain, isTrue);
     expect((await inner.load())!.id, idAt(1));
 
-    await viewModel.submit(
-      table: '8',
-      items: [CartItem(productId: 'p9', quantity: 3, note: null)],
-      confirmedResume: true,
-    );
+    await viewModel.resume(viewModel.intentId!);
 
     expect(repository.createCalls, 1);
     expect(repository.lastIdempotencyKey, idAt(1));
@@ -613,12 +605,9 @@ void main() {
     final viewModel = open(repository: repository, store: store, ids: ids, now: () => now);
 
     await viewModel.submit(table: '12', items: original);
+    final confirmedId = viewModel.intentId!;
     now = now.add(const Duration(hours: 23));
-    await viewModel.submit(
-      table: '99',
-      items: [CartItem(productId: 'p9', quantity: 8, note: 'outro')],
-      confirmedResume: true,
-    );
+    await viewModel.resume(confirmedId);
 
     expect(repository.createCalls, 1);
     expect(ids, [idAt(1)]);
@@ -635,12 +624,183 @@ void main() {
       now: () => now,
     );
     await backward.submit(table: '12', items: original);
+    final backwardId = backward.intentId!;
     now = now.subtract(const Duration(minutes: 1));
-    await backward.submit(table: '12', items: original, confirmedResume: true);
+    await backward.resume(backwardId);
 
     expect(repository.createCalls, 2);
     expect(backward.errorMessage, OrderSubmissionViewModel.expiredIntentMessage);
     expect(backward.canRequestSubmit, isFalse);
+  });
+
+  test('confirmação depois do encerramento não cria pedido', () async {
+    final ids = <String>[];
+    final now = DateTime.utc(2026, 11, 1, 12);
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async =>
+          OrderSubmission.created(sampleOrder(id: 'o1')),
+    );
+    final viewModel = open(
+      repository: repository,
+      store: MemoryOrderIntentStore(),
+      ids: ids,
+      now: () => now,
+    );
+
+    await viewModel.submit(table: '12', items: original);
+    final confirmedId = viewModel.intentId!;
+    await viewModel.beginAnotherOrder();
+    await viewModel.resume(confirmedId);
+
+    expect(repository.createCalls, 1);
+    expect(ids, [idAt(1)]);
+    expect(viewModel.intentId, isNull);
+    expect(viewModel.status, OrderSubmissionStatus.idle);
+  });
+
+  test('confirmação da intenção substituída não envia nenhuma das duas', () async {
+    final ids = <String>[];
+    final now = DateTime.utc(2026, 11, 1, 12);
+    final store = MemoryOrderIntentStore();
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async {
+        return const OrderSubmission.failed(
+          OrderSubmission.uncertainOutcomeMessage,
+          failure: DataFailure.uncertain,
+          outcomeUncertain: true,
+        );
+      },
+    );
+    final viewModel = open(repository: repository, store: store, ids: ids, now: () => now);
+
+    await viewModel.submit(table: '12', items: original);
+    final shownId = viewModel.intentId!;
+    const replacementId = '00000000-0000-4000-8000-000000000099';
+    await store.save(
+      OrderIntent.pending(
+        id: replacementId,
+        createdAt: now,
+        table: '12',
+        items: OrderRequest.itemMaps(original),
+      ),
+    );
+    await viewModel.resume(shownId);
+
+    expect(repository.createCalls, 1);
+    expect(ids, [idAt(1)]);
+    expect((await store.load())!.id, replacementId);
+  });
+
+  test('confirmação duplicada faz um POST e a repetição depois do sucesso não faz outro', () async {
+    final ids = <String>[];
+    final now = DateTime.utc(2026, 11, 1, 12);
+    var uncertain = true;
+    final gate = Completer<OrderSubmission>();
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) {
+        if (uncertain) {
+          return Future<OrderSubmission>.value(
+            const OrderSubmission.failed(
+              OrderSubmission.uncertainOutcomeMessage,
+              failure: DataFailure.uncertain,
+              outcomeUncertain: true,
+            ),
+          );
+        }
+        return gate.future;
+      },
+    );
+    final viewModel = open(
+      repository: repository,
+      store: MemoryOrderIntentStore(),
+      ids: ids,
+      now: () => now,
+    );
+
+    await viewModel.submit(table: '12', items: original);
+    final confirmedId = viewModel.intentId!;
+    uncertain = false;
+    final first = viewModel.resume(confirmedId);
+    final second = viewModel.resume(confirmedId);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(repository.createCalls, 2);
+    expect(ids, [idAt(1)]);
+
+    gate.complete(OrderSubmission.created(sampleOrder(id: 'o1')));
+    await Future.wait([first, second]);
+    await viewModel.resume(confirmedId);
+
+    expect(repository.createCalls, 2);
+    expect(repository.lastIdempotencyKey, idAt(1));
+    expect(ids, [idAt(1)]);
+    expect(viewModel.status, OrderSubmissionStatus.succeeded);
+  });
+
+  test('retomada sem intenção persistida não envia', () async {
+    final ids = <String>[];
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async =>
+          OrderSubmission.created(sampleOrder(id: 'o1')),
+    );
+    final viewModel = open(
+      repository: repository,
+      store: MemoryOrderIntentStore(),
+      ids: ids,
+      now: () => DateTime.utc(2026, 11, 1, 12),
+    );
+
+    await viewModel.restore();
+    await viewModel.resume(idAt(1));
+
+    expect(repository.createCalls, 0);
+    expect(ids, isEmpty);
+    expect(viewModel.status, OrderSubmissionStatus.idle);
+    expect(viewModel.order, isNull);
+  });
+
+  test('retomada confirmada repete a chave e o body gravados', () async {
+    final ids = <String>[];
+    final now = DateTime.utc(2026, 11, 1, 12);
+    var fail = true;
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async {
+        if (fail) {
+          return const OrderSubmission.failed(
+            OrderSubmission.uncertainOutcomeMessage,
+            failure: DataFailure.uncertain,
+            outcomeUncertain: true,
+          );
+        }
+        return OrderSubmission.created(sampleOrder(id: 'o1'));
+      },
+    );
+    final viewModel = open(
+      repository: repository,
+      store: MemoryOrderIntentStore(),
+      ids: ids,
+      now: () => now,
+    );
+
+    await viewModel.submit(table: '12', items: original);
+    final confirmedId = viewModel.intentId!;
+    fail = false;
+    await viewModel.resume(confirmedId);
+
+    expect(repository.createCalls, 2);
+    expect(ids, [idAt(1)]);
+    expect(repository.lastIdempotencyKey, confirmedId);
+    expect(repository.lastBody!['table'], '12');
+    expect(repository.lastBody!['items'], [
+      {'productId': 'p1', 'quantity': 2, 'note': 'sem cebola'},
+      {'productId': 'p2', 'quantity': 1},
+      {'productId': 'p3', 'quantity': 1, 'note': ''},
+    ]);
   });
 
   test('diretório inacessível não vira intenção nova', () async {

@@ -256,7 +256,7 @@ void main() {
     expect(items, hasLength(1));
 
     fail = false;
-    await viewModel.submit(table: '12', items: items, confirmedResume: true);
+    await viewModel.resume(viewModel.intentId!);
 
     expect(repository.createCalls, 2);
     expect(viewModel.status, OrderSubmissionStatus.succeeded);

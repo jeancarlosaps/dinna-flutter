@@ -60,13 +60,7 @@ class _CartViewState extends State<CartView> {
     return _submission.submit(table: widget.table ?? '', items: _viewModel.items);
   }
 
-  Future<void> _resume() {
-    return _submission.submit(
-      table: widget.table ?? '',
-      items: _viewModel.items,
-      confirmedResume: true,
-    );
-  }
+  Future<void> _resume(String intentId) => _submission.resume(intentId);
 
   Future<void> _beginAnother() => _submission.beginAnotherOrder();
 
@@ -212,7 +206,7 @@ class _SubmissionSection extends StatelessWidget {
 
   final OrderSubmissionViewModel submission;
   final VoidCallback onSubmit;
-  final VoidCallback onResume;
+  final void Function(String intentId) onResume;
   final VoidCallback onBeginAnother;
   final bool allowSend;
 
@@ -258,7 +252,11 @@ class _SubmissionSection extends StatelessWidget {
         if (submission.canResumeSameIntent) ...[
           const SizedBox(height: 12),
           FilledButton(
-            onPressed: () => _confirmResume(context),
+            onPressed: () {
+              final intentId = submission.intentId;
+              if (intentId == null) return;
+              _confirmResume(context, intentId);
+            },
             child: const Text('Reenviar o mesmo pedido', textAlign: TextAlign.center),
           ),
         ],
@@ -266,7 +264,7 @@ class _SubmissionSection extends StatelessWidget {
     );
   }
 
-  Future<void> _confirmResume(BuildContext context) async {
+  Future<void> _confirmResume(BuildContext context, String intentId) async {
     final accepted = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -286,7 +284,7 @@ class _SubmissionSection extends StatelessWidget {
         ],
       ),
     );
-    if (accepted == true) onResume();
+    if (accepted == true) onResume(intentId);
   }
 }
 

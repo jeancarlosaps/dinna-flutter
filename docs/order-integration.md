@@ -180,7 +180,7 @@ await submission.submit(table: table, items: List<CartItem>.of(cart));
 | --- | --- |
 | `isSubmitting` | Carregando. O botão de envio sai. `canRequestSubmit` fica falso e outro toque não chama `submit`. |
 | `isDefiniteFailure` | `errorMessage`. "Tentar novamente" chama `submit` com a mesa e as linhas atuais. O carrinho fica. |
-| `outcomeUncertain` | `errorMessage` e `OrderSubmissionViewModel.verifyBeforeRetryGuidance`. Não diga que o pedido falhou. Não mostre "Tentar novamente". Não limpe. Não dispare outro POST sozinho. "Reenviar o mesmo pedido" pede confirmação e repete a chave e o body já guardados. |
+| `outcomeUncertain` | `errorMessage` e `OrderSubmissionViewModel.verifyBeforeRetryGuidance`. Não diga que o pedido falhou. Não mostre "Tentar novamente". Não limpe. Não dispare outro POST sozinho. "Reenviar o mesmo pedido" abre o diálogo com o ID da intenção daquele momento. Confirmar chama `resume` com esse ID. Só há POST se ele ainda for a intenção persistida. |
 | `status == succeeded` | Aviso de pedido enviado. O botão de envio sai. As linhas ficam. `order` é o pedido da API; a confirmação, quando existir, usa `order.id`, `order.table`, `order.items`, `order.totalCents` e `order.createdAt`. |
 
 ```dart
