@@ -67,7 +67,11 @@ void main() {
 
   Future<void> tapSend(WidgetTester tester, String label) async {
     final button = find.text(label);
-    await tester.ensureVisible(button);
+    if (button.evaluate().isEmpty) {
+      await tester.scrollUntilVisible(button, 120);
+    } else {
+      await tester.ensureVisible(button);
+    }
     await tester.tap(button);
   }
 
@@ -349,6 +353,53 @@ void main() {
     expect(find.text('Tentar novamente'), findsNothing);
     expect(find.text('Enviar pedido'), findsNothing);
     expect(find.text('Seu carrinho está vazio'), findsOneWidget);
+    expect(lines.read(), isEmpty);
+  });
+
+  testWidgets('o aviso do carrinho vazio rola em tela baixa', (tester) async {
+    tester.view.physicalSize = const Size(360, 220);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final lines = ProcessCartLines([line(1)]);
+    final gate = Completer<OrderSubmission>();
+    await pumpCart(
+      tester,
+      lines: lines,
+      onCreate: ({required table, required items}) => gate.future,
+    );
+
+    await tapSend(tester, 'Enviar pedido');
+    await tester.pump();
+    final remove = find.text('Remover');
+    if (remove.evaluate().isEmpty) {
+      await tester.scrollUntilVisible(remove, 120);
+    } else {
+      await tester.ensureVisible(remove);
+    }
+    await tester.tap(remove);
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Enviando pedido'), findsOneWidget);
+
+    gate.complete(
+      const OrderSubmission.failed(
+        OrderSubmission.uncertainOutcomeMessage,
+        failure: DataFailure.uncertain,
+        outcomeUncertain: true,
+      ),
+    );
+    await tester.pump();
+
+    final guidance = find.textContaining(OrderSubmissionViewModel.verifyBeforeRetryGuidance);
+    final menu = find.text('Ver cardápio');
+    if (guidance.evaluate().isEmpty) await tester.scrollUntilVisible(guidance, 80);
+    await tester.ensureVisible(guidance);
+    if (menu.evaluate().isEmpty) await tester.scrollUntilVisible(menu, 80);
+    await tester.ensureVisible(menu);
+    expect(tester.takeException(), isNull);
+    expect(find.text('Tentar novamente'), findsNothing);
     expect(lines.read(), isEmpty);
   });
 }

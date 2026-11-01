@@ -102,6 +102,7 @@ class _EmptyCart extends StatelessWidget {
           message: 'Escolha os pratos no cardápio e eles aparecem aqui para você revisar antes de enviar.',
           actionLabel: 'Ver cardápio',
           onAction: onOpenMenu,
+          centered: notice == null,
         );
         if (notice == null) {
           return SingleChildScrollView(
@@ -112,12 +113,16 @@ class _EmptyCart extends StatelessWidget {
           );
         }
         return SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 0), child: notice),
-              SizedBox(height: constraints.maxHeight, child: empty),
-            ],
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 0), child: notice),
+                empty,
+              ],
+            ),
           ),
         );
       },
