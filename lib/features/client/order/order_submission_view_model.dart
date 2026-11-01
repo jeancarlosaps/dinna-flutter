@@ -28,6 +28,12 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   /// Mensagem quando uma falha confirmada chega sem texto utilizável.
   static const unexpectedFailureMessage = 'Não foi possível enviar o pedido';
 
+  /// Orientação junto do resultado incerto. Não afirma que o pedido falhou.
+  ///
+  /// A tela mostra este texto e não oferece "Tentar novamente" no mesmo passo.
+  static const verifyBeforeRetryGuidance =
+      'Confira com o restaurante se o pedido chegou antes de tentar de novo.';
+
   OrderSubmissionStatus _status = OrderSubmissionStatus.idle;
   Order? _order;
   String? _errorMessage;
@@ -72,6 +78,16 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   /// Só a confirmação da API liga este sinal. Esta classe não apaga item.
   bool get shouldClearCart =>
       _status == OrderSubmissionStatus.succeeded && _order != null && _confirmedItems != null;
+
+  /// A View só chama [submit] quando este sinal é verdadeiro.
+  ///
+  /// Vale para o primeiro envio e para a nova tentativa depois de uma rejeição
+  /// confirmada. Fica falso durante o envio, depois do sucesso e quando o
+  /// resultado é incerto: a tela não dispara outro POST nesses casos.
+  bool get canRequestSubmit =>
+      !_disposed &&
+      !_outcomeUncertain &&
+      (_status == OrderSubmissionStatus.idle || isDefiniteFailure);
 
   /// Envia [items] para a mesa [table].
   ///

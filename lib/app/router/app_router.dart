@@ -4,6 +4,7 @@ import '../../core/domain/order.dart';
 import '../../features/client/cart/cart_lines.dart';
 import '../../features/client/cart/cart_view.dart';
 import '../../features/client/cart/cart_view_model.dart';
+import '../../features/client/order/order_submission_view_model.dart';
 import '../../features/client/table/table_view.dart';
 import '../../features/home/api_status_repository.dart';
 import '../../features/home/home_view.dart';
@@ -77,6 +78,7 @@ class AppRouter {
     required this.orderRepository,
     required this.productRepository,
     required this.cartLines,
+    required this.orderSubmission,
     required this.routeObserver,
     this.pollDelay,
   });
@@ -87,20 +89,26 @@ class AppRouter {
 
   /// Linhas da revisão. A implementação que sobrevive ao processo entra aqui.
   final CartLines cartLines;
+
+  /// Envio da sessão. Sair de `/cart` não cria outro.
+  final OrderSubmissionViewModel orderSubmission;
   final RouteObserver<PageRoute<dynamic>> routeObserver;
   final Future<void> Function(Duration duration)? pollDelay;
 
   /// Sempre devolve uma rota. Nome fora do mapa cai em [UnknownRouteView].
   Route<dynamic> onGenerateRoute(RouteSettings settings) {
-    return MaterialPageRoute(settings: settings, builder: (_) => _pageFor(settings.name));
+    return MaterialPageRoute(settings: settings, builder: (_) => _pageFor(settings));
   }
 
-  Widget _pageFor(String? name) {
+  Widget _pageFor(RouteSettings settings) {
+    final name = settings.name;
     return switch (name) {
       AppRoutes.home => HomeView(createViewModel: () => HomeViewModel(apiStatusRepository)),
       AppRoutes.table => const TableView(),
       AppRoutes.cart => CartView(
         createViewModel: () => CartViewModel(productRepository, lines: cartLines),
+        submission: orderSubmission,
+        table: _cartTable(settings.arguments),
         onOpenMenu: (context) => Navigator.of(context).pushNamed(AppRoutes.menu),
       ),
       AppRoutes.restaurant => OrdersQueueView(
@@ -114,6 +122,13 @@ class AppRouter {
       _ when name != null && _isFlowRoute(name) => RoutePlaceholder(routeName: name),
       _ => UnknownRouteView(routeName: name),
     };
+  }
+
+  /// A navegação entrega a mesa como [String]. Outro argumento não é mesa.
+  String? _cartTable(Object? arguments) {
+    if (arguments is! String) return null;
+    final table = arguments.trim();
+    return table.isEmpty ? null : table;
   }
 
   void _openOrder(BuildContext context, Order order) {

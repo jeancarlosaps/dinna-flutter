@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../features/client/cart/cart_lines.dart';
+import '../features/client/order/order_submission_view_model.dart';
 import '../features/home/api_status_repository.dart';
 import '../features/menu/product_repository.dart';
 import '../features/restaurant/order_repository.dart';
@@ -39,12 +40,20 @@ class DinnaApp extends StatefulWidget {
 class _DinnaAppState extends State<DinnaApp> {
   late final RouteObserver<PageRoute<dynamic>> _routeObserver;
   late final CartLines _cartLines;
+  late final OrderSubmissionViewModel _submission;
 
   @override
   void initState() {
     super.initState();
     _routeObserver = widget.routeObserver ?? RouteObserver<PageRoute<dynamic>>();
     _cartLines = widget.cartLines ?? ProcessCartLines();
+    _submission = OrderSubmissionViewModel(widget.orderRepository);
+  }
+
+  @override
+  void dispose() {
+    _submission.dispose();
+    super.dispose();
   }
 
   @override
@@ -60,6 +69,7 @@ class _DinnaAppState extends State<DinnaApp> {
         orderRepository: widget.orderRepository,
         productRepository: widget.productRepository,
         cartLines: _cartLines,
+        orderSubmission: _submission,
         routeObserver: _routeObserver,
         pollDelay: widget.pollDelay,
       ).onGenerateRoute,

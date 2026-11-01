@@ -6,6 +6,7 @@ import 'package:dinna/core/domain/product.dart';
 import 'package:dinna/features/client/cart/cart_lines.dart';
 import 'package:dinna/features/client/cart/cart_view.dart';
 import 'package:dinna/features/client/cart/cart_view_model.dart';
+import 'package:dinna/features/client/order/order_submission_view_model.dart';
 import 'package:dinna/features/home/api_status_repository.dart';
 import 'package:dinna/features/menu/product_repository.dart';
 import 'package:dinna/features/restaurant/order_format.dart';
@@ -46,6 +47,14 @@ void main() {
     void Function(BuildContext context)? onOpenMenu,
     TextScaler textScaler = TextScaler.noScaling,
   }) async {
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async =>
+            const OrderSubmission.failed('Não foi possível enviar o pedido'),
+      ),
+    );
+    addTearDown(submission.dispose);
     await tester.pumpWidget(
       MaterialApp(
         theme: DinnaTheme.light(),
@@ -60,6 +69,7 @@ void main() {
             FakeProductRepository(() async => products ?? ProductList.ready(const [])),
             lines: lines,
           ),
+          submission: submission,
           onOpenMenu: onOpenMenu ?? (_) {},
         ),
       ),
