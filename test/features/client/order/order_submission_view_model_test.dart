@@ -27,6 +27,7 @@ void main() {
     );
 
     expect(viewModel.status, OrderSubmissionStatus.idle);
+    expect(viewModel.canRequestSubmit, isTrue);
     expect(viewModel.isSubmitting, isFalse);
     expect(viewModel.order, isNull);
     expect(viewModel.errorMessage, isNull);
@@ -53,6 +54,7 @@ void main() {
 
     expect(viewModel.status, OrderSubmissionStatus.submitting);
     expect(viewModel.isSubmitting, isTrue);
+    expect(viewModel.canRequestSubmit, isFalse);
     expect(viewModel.order, isNull);
     expect(viewModel.shouldClearCart, isFalse);
     expect(items, hasLength(1));
@@ -72,6 +74,7 @@ void main() {
     expect(viewModel.confirmedTable, '12');
     expect(viewModel.confirmedItems, items);
     expect(viewModel.shouldClearCart, isTrue);
+    expect(viewModel.canRequestSubmit, isFalse);
     expect(items.single.quantity, 2);
   });
 
@@ -89,6 +92,7 @@ void main() {
     expect(viewModel.failure, DataFailure.validation);
     expect(viewModel.outcomeUncertain, isFalse);
     expect(viewModel.isDefiniteFailure, isTrue);
+    expect(viewModel.canRequestSubmit, isTrue);
     expect(viewModel.confirmedItems, isNull);
     expect(viewModel.shouldClearCart, isFalse);
     expect(items, hasLength(1));
@@ -174,6 +178,7 @@ void main() {
     expect(viewModel.confirmedTable, isNull);
     expect(viewModel.shouldClearCart, isFalse);
     expect(viewModel.errorMessage, OrderSubmission.uncertainOutcomeMessage);
+    expect(viewModel.canRequestSubmit, isFalse);
     expect(viewModel.errorMessage, contains('pode ter sido registrado'));
     expect(viewModel.errorMessage, isNot(contains('Connection reset')));
     expect(viewModel.errorMessage, isNot(contains('não foi criado')));

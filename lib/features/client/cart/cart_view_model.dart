@@ -23,6 +23,9 @@ final class CartRow {
 
 /// Revisão das linhas recebidas. Não envia pedido e não grava em disco.
 ///
+/// A tela lê [items] e entrega a lista ao envio. Esta classe não chama o
+/// repositório de pedidos.
+///
 /// A identidade da linha é a posição em [CartLines]. Duas linhas com o mesmo
 /// produto e a mesma observação são alteradas em separado. [CartItem] ainda
 /// não tem `lineId`; [_withQuantity] é o único lugar que copia a linha, e
@@ -84,6 +87,9 @@ class CartViewModel extends ChangeNotifier {
   }
 
   List<CartRow> get rows => [for (final item in _items) _present(item)];
+
+  /// Linhas atuais. O envio fotografa esta lista no momento do toque.
+  List<CartItem> get items => List<CartItem>.unmodifiable(_items);
 
   /// Uma consulta por instância. Carrinho vazio não chama o cardápio.
   Future<void> resolveProducts() async {

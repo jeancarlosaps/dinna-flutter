@@ -131,7 +131,7 @@ if (submission.shouldClearCart) {
 
 ## Jean — SCRUM-40
 
-`/cart` abre `CartView`. O `CartViewModel` nasce no `State`, observa com `ListenableBuilder` e morre no `dispose`. Não chama `OrderRepository` nem `submit`.
+`/cart` abre `CartView`. O `CartViewModel` nasce no `State`, observa com `ListenableBuilder` e morre no `dispose`. Não chama `OrderRepository` nem `submit`. Quem envia é a `CartView`, com um `OrderSubmissionViewModel` no mesmo `State`.
 
 ```dart
 abstract interface class CartLines {
@@ -168,7 +168,7 @@ O total da tela é a soma `priceCents * quantity`, com o rótulo "Total estimado
 
 ## Confirmação — ainda pendente
 
-`/order` segue em `RoutePlaceholder`. O envio continua no `OrderSubmissionViewModel`. A tela de confirmação, quando existir, nasce no `State`, observa com `ListenableBuilder` e usa o total do servidor. A revisão do carrinho não chama o trecho abaixo.
+`/order` segue em `RoutePlaceholder`. O envio continua no `OrderSubmissionViewModel`. A tela de confirmação, quando existir, nasce no `State`, observa com `ListenableBuilder` e usa o total do servidor. A `CartView` já chama o trecho abaixo. Não abre `/order` e não limpa as linhas.
 
 ```dart
 final submission = OrderSubmissionViewModel(orderRepository);
@@ -178,10 +178,10 @@ await submission.submit(table: table, items: List<CartItem>.of(cart));
 
 | Estado | O que mostrar |
 | --- | --- |
-| `isSubmitting` | Carregando. O botão não chama `submit` de novo. |
-| `isDefiniteFailure` | `errorMessage`. Pode tentar de novo com um toque explícito. O carrinho fica. |
-| `outcomeUncertain` | `errorMessage`. Não diga que o pedido falhou. Não limpe. Não dispare outro POST sozinho. |
-| `status == succeeded` | `order` é o pedido da API. A confirmação usa `order.id`, `order.table`, `order.items`, `order.totalCents` e `order.createdAt`. |
+| `isSubmitting` | Carregando. O botão de envio sai. `canRequestSubmit` fica falso e outro toque não chama `submit`. |
+| `isDefiniteFailure` | `errorMessage`. "Tentar novamente" chama `submit` com a mesa e as linhas atuais. O carrinho fica. |
+| `outcomeUncertain` | `errorMessage` e `OrderSubmissionViewModel.verifyBeforeRetryGuidance`. Não diga que o pedido falhou. Não mostre "Tentar novamente". Não limpe. Não dispare outro POST. |
+| `status == succeeded` | Aviso de pedido enviado. O botão de envio sai. As linhas ficam. `order` é o pedido da API; a confirmação, quando existir, usa `order.id`, `order.table`, `order.items`, `order.totalCents` e `order.createdAt`. |
 
 ```dart
 if (submission.outcomeUncertain) {
@@ -195,4 +195,4 @@ if (submission.shouldClearCart) {
 }
 ```
 
-`cartStore` **não existe**. A limpeza depois do sucesso fica na implementação de `CartLines` do João. A revisão não grava nesse momento e não chama `submit`. O `submit` recebe as linhas persistidas, com o `lineId`. Não monte outra lista só com `productId`, `quantity` e `note`: a fotografia perderia a identidade e a limpeza voltaria a apagar uma linha recriada. `openConfirmation` **não existe**: a rota é `AppRoutes.order` e o argumento ainda não foi definido. O pedido a exibir é o `Order` do ViewModel, sem novo `GET /orders`.
+`cartStore` **não existe**. A limpeza depois do sucesso fica na implementação de `CartLines` do João. A revisão não grava nesse momento. O `submit` da tela usa as linhas atuais do `CartViewModel`. Quando `lineId` existir, não monte outra lista só com `productId`, `quantity` e `note`: a fotografia perderia a identidade e a limpeza voltaria a apagar uma linha recriada. A mesa chega em `CartView.table`. A navegação passa um `String` em `RouteSettings.arguments`; outro tipo não é mesa. Sem esse argumento, a tela envia mesa vazia e a validação responde "Informe a mesa". `openConfirmation` **não existe**: a rota é `AppRoutes.order` e o argumento ainda não foi definido. O pedido a exibir é o `Order` do ViewModel, sem novo `GET /orders`.
