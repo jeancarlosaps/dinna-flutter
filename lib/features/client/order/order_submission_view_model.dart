@@ -14,10 +14,12 @@ enum OrderSubmissionStatus { idle, submitting, succeeded, failed }
 /// Envio do pedido: ViewModel → [OrderRepository.create].
 ///
 /// Cada intenção nova ganha um UUID e um body imutável, gravados antes do
-/// POST. Timeout, queda e reinício reutilizam essa intenção. Falha confirmada
-/// de validação ou ausência encerra a intenção; a tentativa seguinte, pedida
-/// pela tela, recebe outra chave e o carrinho daquele momento. Conflito de
-/// payload, chave órfã, expiração e arquivo ilegível não liberam outra chave.
+/// POST. Timeout, queda e reinício reutilizam essa intenção. O sucesso
+/// confirmado permanece no disco até a tela pedir outro pedido. Falha
+/// confirmada de validação ou ausência encerra a intenção; a tentativa
+/// seguinte, pedida pela tela, recebe outra chave e o carrinho daquele
+/// momento. Conflito de payload, chave órfã, expiração e arquivo ilegível
+/// não liberam outra chave.
 ///
 /// Não há retry automático. [shouldClearCart] fica verdadeiro só depois que a
 /// API confirma o pedido. Esta classe não apaga item.
@@ -109,6 +111,9 @@ class OrderSubmissionViewModel extends ChangeNotifier {
       _status == OrderSubmissionStatus.succeeded && _order != null && _confirmedItems != null;
 
   /// Primeiro envio, ou nova intenção depois de uma rejeição que não reteve a chave.
+  ///
+  /// Sucesso confirmado não entra aqui. O próximo pedido passa por
+  /// [beginAnotherOrder].
   bool get canRequestSubmit =>
       !_disposed &&
       !_storeBlocked &&
@@ -127,6 +132,23 @@ class OrderSubmissionViewModel extends ChangeNotifier {
         intent != null &&
         _status != OrderSubmissionStatus.submitting &&
         intent.allowsResume(_now());
+  }
+
+  /// O 201 já foi mostrado e a intenção confirmada ainda está no disco.
+  ///
+  /// Intenção incerta ou bloqueada não entra. O próximo POST só existe depois
+  /// que [beginAnotherOrder] conseguir apagar esta intenção.
+  bool get canBeginAnotherOrder {
+    final intent = _intent;
+    return !_disposed &&
+        _restored &&
+        !_storeBlocked &&
+        !_gate &&
+        !isSubmitting &&
+        _status == OrderSubmissionStatus.succeeded &&
+        intent != null &&
+        intent.phase == OrderIntentPhase.succeeded &&
+        intent.order != null;
   }
 
   /// Lê a intenção gravada. Não envia nada.
@@ -155,6 +177,17 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     if (_disposed || _gate || _status == OrderSubmissionStatus.submitting) return;
     if (_restored &&
         (_storeBlocked || _resendBlocked || _status == OrderSubmissionStatus.succeeded)) {
+      return;
+    }
+
+    final open = _intent;
+    if (confirmedResume && open != null && !open.allowsResume(_now())) {
+      _gate = true;
+      try {
+        await _persistBlock(open, OrderIntentBlock.expired);
+      } finally {
+        _gate = false;
+      }
       return;
     }
 
@@ -188,6 +221,40 @@ class OrderSubmissionViewModel extends ChangeNotifier {
         return;
       }
       await _startNew(table, snapshot);
+    } finally {
+      _gate = false;
+    }
+  }
+
+  /// Encerra a intenção confirmada para um pedido seguinte poder nascer.
+  ///
+  /// Não envia nada e não usa o carrinho. Se a limpeza do arquivo falha, a
+  /// confirmação permanece e outro POST fica bloqueado.
+  Future<void> beginAnotherOrder() async {
+    if (!canBeginAnotherOrder) return;
+    _gate = true;
+    try {
+      await _store.clear();
+      if (_disposed) return;
+      _intent = null;
+      _publish(status: OrderSubmissionStatus.idle);
+    } catch (error, stackTrace) {
+      if (_disposed) return;
+      _storeBlocked = true;
+      _resendBlocked = true;
+      _errorMessage = unreadableIntentMessage;
+      _failure = DataFailure.unavailable;
+      _notify();
+      if (kDebugMode) {
+        FlutterError.presentError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'order submission view model',
+            context: ErrorDescription('ao encerrar o pedido confirmado'),
+          ),
+        );
+      }
     } finally {
       _gate = false;
     }

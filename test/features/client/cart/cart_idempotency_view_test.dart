@@ -1,9 +1,12 @@
 import 'package:dinna/app/app.dart';
 import 'package:dinna/app/router/app_router.dart';
+import 'package:dinna/app/theme/dinna_theme.dart';
 import 'package:dinna/core/domain/cart_item.dart';
 import 'package:dinna/core/domain/data_failure.dart';
 import 'package:dinna/core/domain/product.dart';
 import 'package:dinna/features/client/cart/cart_lines.dart';
+import 'package:dinna/features/client/cart/cart_view.dart';
+import 'package:dinna/features/client/cart/cart_view_model.dart';
 import 'package:dinna/features/client/order/order_intent_store.dart';
 import 'package:dinna/features/client/order/order_submission_view_model.dart';
 import 'package:dinna/features/home/api_status_repository.dart';
@@ -131,6 +134,138 @@ void main() {
     expect(find.text('Tentar novamente'), findsNothing);
     expect(lines.read().single.quantity, 2);
     expect(lines.read().single.note, 'sem cebola');
+  });
+
+  testWidgets('depois do sucesso o pedido seguinte só nasce no botão explícito', (tester) async {
+    final lines = ProcessCartLines([line(1)]);
+    final sent = <List<CartItem>>[];
+
+    await tester.pumpWidget(
+      _app(
+        lines: lines,
+        catalog: catalog,
+        onCreate: ({required table, required items}) async {
+          sent.add(List<CartItem>.of(items));
+          return OrderSubmission.created(sampleOrder(id: 'o1'));
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await openCart(tester);
+    await tester.tap(find.text('Enviar pedido'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pedido enviado'), findsOneWidget);
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(sent, hasLength(1));
+
+    await tester.tap(find.text('Fazer outro pedido'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pedido enviado'), findsNothing);
+    expect(find.text('Enviar pedido'), findsOneWidget);
+    expect(sent, hasLength(1));
+
+    await tester.tap(find.byTooltip('Aumentar quantidade'));
+    await tester.pump();
+    await tester.tap(find.text('Enviar pedido'));
+    await tester.pumpAndSettle();
+
+    expect(sent, hasLength(2));
+    expect(sent.last.single.quantity, 2);
+    expect(find.text('Pedido enviado'), findsOneWidget);
+  });
+
+  testWidgets('o diálogo aberto ainda publica expiração e relógio para trás', (tester) async {
+    final lines = ProcessCartLines([line(1)]);
+    var now = DateTime.utc(2026, 11, 1, 12);
+    var calls = 0;
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async {
+          calls++;
+          return const OrderSubmission.failed(
+            OrderSubmission.uncertainOutcomeMessage,
+            failure: DataFailure.uncertain,
+            outcomeUncertain: true,
+          );
+        },
+      ),
+      now: () => now,
+    );
+    addTearDown(submission.dispose);
+
+    Future<void> confirmAfter(void Function() moveClock) async {
+      await tester.tap(find.text('Reenviar o mesmo pedido'));
+      await tester.pumpAndSettle();
+      moveClock();
+      await tester.tap(find.text('Reenviar'));
+      await tester.pumpAndSettle();
+    }
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: CartView(
+          createViewModel: () =>
+              CartViewModel(FakeProductRepository(() async => catalog), lines: lines),
+          submission: submission,
+          table: '12',
+          onOpenMenu: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Enviar pedido'));
+    await tester.pumpAndSettle();
+    await confirmAfter(() => now = now.add(const Duration(hours: 23)));
+
+    expect(calls, 1);
+    expect(find.text(OrderSubmissionViewModel.expiredIntentMessage), findsOneWidget);
+    expect(find.text('Enviando pedido'), findsNothing);
+    expect(submission.canRequestSubmit, isFalse);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    now = DateTime.utc(2026, 11, 1, 13);
+    calls = 0;
+    final restarted = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async {
+          calls++;
+          return const OrderSubmission.failed(
+            OrderSubmission.uncertainOutcomeMessage,
+            failure: DataFailure.uncertain,
+            outcomeUncertain: true,
+          );
+        },
+      ),
+      intentStore: MemoryOrderIntentStore(),
+      now: () => now,
+    );
+    addTearDown(restarted.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: CartView(
+          createViewModel: () =>
+              CartViewModel(FakeProductRepository(() async => catalog), lines: lines),
+          submission: restarted,
+          table: '12',
+          onOpenMenu: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Enviar pedido'));
+    await tester.pumpAndSettle();
+    await confirmAfter(() => now = now.subtract(const Duration(minutes: 1)));
+
+    expect(calls, 1);
+    expect(find.text(OrderSubmissionViewModel.expiredIntentMessage), findsOneWidget);
+    expect(find.text('Enviando pedido'), findsNothing);
   });
 }
 

@@ -457,6 +457,228 @@ void main() {
     expect(viewModel.errorMessage, OrderSubmissionViewModel.unreadableIntentMessage);
     expect(await file.readAsString(), raw);
   });
+
+  test('sucesso confirmado não reenvia no reinício e o ciclo seguinte usa outra chave', () async {
+    final ids = <String>[];
+    final store = MemoryOrderIntentStore();
+    final now = DateTime.utc(2026, 11, 1, 12);
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async =>
+          OrderSubmission.created(sampleOrder(id: 'o1')),
+    );
+    final first = open(repository: repository, store: store, ids: ids, now: () => now);
+
+    await first.submit(table: '12', items: original);
+
+    expect(first.status, OrderSubmissionStatus.succeeded);
+    expect(first.canBeginAnotherOrder, isTrue);
+    expect(first.canRequestSubmit, isFalse);
+    await first.submit(
+      table: '99',
+      items: [CartItem(productId: 'p9', quantity: 1, note: null)],
+    );
+    expect(repository.createCalls, 1);
+    expect(ids, [idAt(1)]);
+
+    final restarted = open(repository: repository, store: store, ids: ids, now: () => now);
+    await restarted.restore();
+    await restarted.submit(table: '12', items: original);
+
+    expect(repository.createCalls, 1);
+    expect(restarted.status, OrderSubmissionStatus.succeeded);
+    expect(restarted.order!.id, 'o1');
+    expect(restarted.canBeginAnotherOrder, isTrue);
+    expect(restarted.canRequestSubmit, isFalse);
+    expect((await store.load())!.id, idAt(1));
+
+    await restarted.beginAnotherOrder();
+
+    expect(await store.load(), isNull);
+    expect(restarted.status, OrderSubmissionStatus.idle);
+    expect(restarted.order, isNull);
+    expect(restarted.canRequestSubmit, isTrue);
+    expect(repository.createCalls, 1);
+
+    await restarted.submit(
+      table: '7',
+      items: [CartItem(productId: 'p1', quantity: 4, note: 'sem cebola')],
+    );
+
+    expect(repository.createCalls, 2);
+    expect(ids, [idAt(1), idAt(2)]);
+    expect(repository.lastIdempotencyKey, idAt(2));
+    expect(repository.lastBody!['table'], '7');
+    expect(repository.lastBody!['items'], [
+      {'productId': 'p1', 'quantity': 4, 'note': 'sem cebola'},
+    ]);
+  });
+
+  test('intenção incerta não é descartada ao pedir outro ciclo', () async {
+    final ids = <String>[];
+    final store = MemoryOrderIntentStore();
+    final now = DateTime.utc(2026, 11, 1, 12);
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async {
+        return const OrderSubmission.failed(
+          OrderSubmission.uncertainOutcomeMessage,
+          failure: DataFailure.uncertain,
+          outcomeUncertain: true,
+        );
+      },
+    );
+    final viewModel = open(repository: repository, store: store, ids: ids, now: () => now);
+
+    await viewModel.submit(table: '12', items: original);
+    expect(viewModel.canBeginAnotherOrder, isFalse);
+
+    await viewModel.beginAnotherOrder();
+
+    expect((await store.load())!.id, idAt(1));
+    expect(viewModel.outcomeUncertain, isTrue);
+    await viewModel.submit(
+      table: '12',
+      items: [CartItem(productId: 'p9', quantity: 3, note: null)],
+    );
+    expect(repository.createCalls, 1);
+    expect(ids, [idAt(1)]);
+  });
+
+  test('falha ao apagar o sucesso confirmado preserva a confirmação e bloqueia o POST', () async {
+    final ids = <String>[];
+    final store = MemoryOrderIntentStore();
+    final now = DateTime.utc(2026, 11, 1, 12);
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async =>
+          OrderSubmission.created(sampleOrder(id: 'o1')),
+    );
+    final viewModel = open(repository: repository, store: store, ids: ids, now: () => now);
+
+    await viewModel.submit(table: '12', items: original);
+    store.failNextSave();
+    await viewModel.beginAnotherOrder();
+
+    expect(viewModel.status, OrderSubmissionStatus.succeeded);
+    expect(viewModel.order!.id, 'o1');
+    expect(viewModel.canRequestSubmit, isFalse);
+    expect(viewModel.canBeginAnotherOrder, isFalse);
+    expect(viewModel.errorMessage, OrderSubmissionViewModel.unreadableIntentMessage);
+    expect((await store.load())!.phase, OrderIntentPhase.succeeded);
+
+    await viewModel.submit(table: '7', items: original);
+
+    expect(repository.createCalls, 1);
+    expect(ids, [idAt(1)]);
+  });
+
+  test('store indisponível não envia', () async {
+    final ids = <String>[];
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async =>
+          OrderSubmission.created(sampleOrder(id: 'o1')),
+    );
+    final viewModel = open(
+      repository: repository,
+      store: const UnavailableOrderIntentStore(),
+      ids: ids,
+      now: () => DateTime.utc(2026, 11, 1, 12),
+    );
+
+    await viewModel.restore();
+    await viewModel.submit(table: '12', items: original);
+
+    expect(repository.createCalls, 0);
+    expect(ids, isEmpty);
+    expect(viewModel.canRequestSubmit, isFalse);
+    expect(viewModel.errorMessage, OrderSubmissionViewModel.unreadableIntentMessage);
+  });
+
+  test('confirmação tardia publica a expiração e não envia', () async {
+    final ids = <String>[];
+    var now = DateTime.utc(2026, 11, 1, 12);
+    final store = MemoryOrderIntentStore();
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async {
+        return const OrderSubmission.failed(
+          OrderSubmission.uncertainOutcomeMessage,
+          failure: DataFailure.uncertain,
+          outcomeUncertain: true,
+        );
+      },
+    );
+    final viewModel = open(repository: repository, store: store, ids: ids, now: () => now);
+
+    await viewModel.submit(table: '12', items: original);
+    now = now.add(const Duration(hours: 23));
+    await viewModel.submit(
+      table: '99',
+      items: [CartItem(productId: 'p9', quantity: 8, note: 'outro')],
+      confirmedResume: true,
+    );
+
+    expect(repository.createCalls, 1);
+    expect(ids, [idAt(1)]);
+    expect(viewModel.resendBlocked, isTrue);
+    expect(viewModel.canRequestSubmit, isFalse);
+    expect(viewModel.errorMessage, OrderSubmissionViewModel.expiredIntentMessage);
+    expect((await store.load())!.block, OrderIntentBlock.expired);
+
+    now = DateTime.utc(2026, 11, 1, 12, 30);
+    final backward = open(
+      repository: repository,
+      store: MemoryOrderIntentStore(),
+      ids: ids,
+      now: () => now,
+    );
+    await backward.submit(table: '12', items: original);
+    now = now.subtract(const Duration(minutes: 1));
+    await backward.submit(table: '12', items: original, confirmedResume: true);
+
+    expect(repository.createCalls, 2);
+    expect(backward.errorMessage, OrderSubmissionViewModel.expiredIntentMessage);
+    expect(backward.canRequestSubmit, isFalse);
+  });
+
+  test('diretório inacessível não vira intenção nova', () async {
+    final directory = await Directory.systemTemp.createTemp('dinna-intent-');
+    addTearDown(() async {
+      await Process.run('chmod', ['700', directory.path]);
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final file = File('${directory.path}/order-intent.json');
+    final store = FileOrderIntentStore(file);
+    final ids = <String>[];
+    final now = DateTime.utc(2026, 11, 1, 12);
+    await store.save(
+      OrderIntent.pending(
+        id: idAt(9),
+        createdAt: now,
+        table: '12',
+        items: OrderRequest.itemMaps(original),
+      ),
+    );
+    final before = await file.readAsString();
+    expect((await Process.run('chmod', ['000', directory.path])).exitCode, 0);
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async =>
+          OrderSubmission.created(sampleOrder(id: 'o1')),
+    );
+    final viewModel = open(repository: repository, store: store, ids: ids, now: () => now);
+
+    await viewModel.restore();
+    await viewModel.submit(table: '12', items: original);
+
+    expect(repository.createCalls, 0);
+    expect(ids, isEmpty);
+    expect(viewModel.canRequestSubmit, isFalse);
+    await Process.run('chmod', ['700', directory.path]);
+    expect(await file.readAsString(), before);
+  });
 }
 
 final class _GateStore implements OrderIntentStore {

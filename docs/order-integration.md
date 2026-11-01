@@ -205,12 +205,14 @@ O body guardado é o do primeiro envio: mesa, ordem dos itens, `productId`, `qua
 | --- | --- |
 | Primeira tentativa | UUID novo, body congelado, grava, POST com o header |
 | Timeout, queda, HTTP 5xx sem prova de ausência, crash depois da gravação | Resultado incerto. A mesma chave continua. O reenvio é manual |
-| `201`, inclusive a repetição do mesmo body | Sucesso da intenção original. O carrinho fica. `/order` não abre |
+| `201`, inclusive a repetição do mesmo body | Sucesso da intenção original. O carrinho fica. `/order` não abre. "Fazer outro pedido" apaga essa intenção e só então libera um envio novo, com o carrinho daquele momento. Se a limpeza falha, a confirmação permanece e outro POST não sai |
+| Reinício com sucesso gravado | Mostra a confirmação e não envia. O pedido seguinte espera "Fazer outro pedido" |
 | `400` e `404` | A API não ficou com a chave. "Tentar novamente" é uma intenção nova, com o carrinho daquele momento |
 | `409 IDEMPOTENCY_KEY_CONFLICT`, `409` sem código depois de enviar a chave, `500 IDEMPOTENCY_STATE_INVALID` | Bloqueia reenvio e chave nova |
-| Arquivo corrompido, leitura impossível, recuperação interrompida ou item fora do domínio (como `note` acima de 200 caracteres) | Não libera outro POST |
+| Arquivo corrompido, leitura impossível, diretório inacessível, recuperação interrompida ou item fora do domínio (como `note` acima de 200 caracteres) | Não libera outro POST. Ausência só vale quando o diretório pai pôde ser listado e o nome não estava lá |
+| Falha ao preparar o diretório no arranque | O app abre. O envio fica bloqueado. Não há store em memória no lugar do arquivo |
 | Falha ao gravar e a leitura seguinte não acha intenção | Não envia. A tentativa pode ser refeita |
-| Idade de 23 horas ou mais, ou instante no futuro | Não reenvia. A proteção da API acaba só às 24 horas |
+| Idade de 23 horas ou mais, ou instante no futuro | Não reenvia, mesmo se o diálogo de confirmação já estava aberto. A proteção da API acaba só às 24 horas |
 
 A folga de 1 hora existe porque o relógio do aparelho pode estar adiantado. Expirar essa proteção, no app ou na API, não significa que o pedido deixou de existir. Relógio atrasado ainda pode fazer o app reenviar depois que o servidor já esqueceu a chave; esse risco fica registrado e não é coberto com uma chave nova automática.
 

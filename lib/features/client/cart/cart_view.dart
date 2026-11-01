@@ -61,13 +61,14 @@ class _CartViewState extends State<CartView> {
   }
 
   Future<void> _resume() {
-    if (!_submission.canResumeSameIntent) return Future<void>.value();
     return _submission.submit(
       table: widget.table ?? '',
       items: _viewModel.items,
       confirmedResume: true,
     );
   }
+
+  Future<void> _beginAnother() => _submission.beginAnotherOrder();
 
   @override
   Widget build(BuildContext context) {
@@ -81,6 +82,7 @@ class _CartViewState extends State<CartView> {
             submission: _submission,
             onSubmit: _submit,
             onResume: _resume,
+            onBeginAnother: _beginAnother,
             allowSend: hasRows,
           );
           if (!hasRows && _submission.status == OrderSubmissionStatus.idle) {
@@ -204,12 +206,14 @@ class _SubmissionSection extends StatelessWidget {
     required this.submission,
     required this.onSubmit,
     required this.onResume,
+    required this.onBeginAnother,
     required this.allowSend,
   });
 
   final OrderSubmissionViewModel submission;
   final VoidCallback onSubmit;
   final VoidCallback onResume;
+  final VoidCallback onBeginAnother;
   final bool allowSend;
 
   @override
@@ -237,6 +241,13 @@ class _SubmissionSection extends StatelessWidget {
             title: 'Pedido enviado',
             message: 'O restaurante recebeu o pedido.',
           ),
+        if (sent && submission.canBeginAnotherOrder) ...[
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: onBeginAnother,
+            child: const Text('Fazer outro pedido', textAlign: TextAlign.center),
+          ),
+        ],
         if (allowSend && submission.canRequestSubmit) ...[
           if (failed) const SizedBox(height: 12),
           FilledButton(
