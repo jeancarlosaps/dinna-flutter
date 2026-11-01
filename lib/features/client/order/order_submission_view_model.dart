@@ -143,9 +143,15 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   /// Envia [items] para a mesa [table], ou retoma a intenção ainda aberta.
   ///
   /// Ignora a chamada durante um envio, depois do sucesso, com o reenvio
-  /// bloqueado ou após o [dispose]. No resultado incerto, repete a chave e o
-  /// body guardados e não usa o carrinho vivo. Não repete o POST sozinho.
-  Future<void> submit({required String table, required List<CartItem> items}) async {
+  /// bloqueado ou após o [dispose]. [confirmedResume] é a confirmação explícita
+  /// do diálogo. Sem ela, uma intenção achada na leitura não gera POST. No
+  /// reenvio confirmado, a chave e o body guardados se repetem. O carrinho
+  /// vivo fica de fora. Não repete o POST sozinho.
+  Future<void> submit({
+    required String table,
+    required List<CartItem> items,
+    bool confirmedResume = false,
+  }) async {
     if (_disposed || _gate || _status == OrderSubmissionStatus.submitting) return;
     if (_restored &&
         (_storeBlocked || _resendBlocked || _status == OrderSubmissionStatus.succeeded)) {
@@ -162,6 +168,10 @@ class OrderSubmissionViewModel extends ChangeNotifier {
         return;
       }
       final intent = _intent;
+      if (intent != null && !confirmedResume) {
+        await _holdStored(intent);
+        return;
+      }
       if (intent != null && intent.phase == OrderIntentPhase.blocked) {
         _publishBlocked(_blockedMessage(intent.block), _blockedFailure(intent.block));
         return;
@@ -186,23 +196,27 @@ class OrderSubmissionViewModel extends ChangeNotifier {
       if (_disposed) return;
       _restored = true;
       if (intent == null) return;
-      _intent = intent;
-      if (intent.phase == OrderIntentPhase.succeeded) {
-        _publishSuccess(intent);
-        return;
-      }
-      if (intent.phase == OrderIntentPhase.blocked || !intent.allowsResume(_now())) {
-        final reason = intent.block ?? OrderIntentBlock.expired;
-        await _persistBlock(intent, reason);
-        return;
-      }
-      _publishUncertain(OrderSubmission.uncertainOutcomeMessage);
+      await _holdStored(intent);
     } on OrderIntentStoreException {
       if (_disposed) return;
       _restored = true;
       _storeBlocked = true;
       _publishBlocked(unreadableIntentMessage, DataFailure.unavailable);
     }
+  }
+
+  Future<void> _holdStored(OrderIntent intent) async {
+    _intent = intent;
+    if (intent.phase == OrderIntentPhase.succeeded) {
+      _publishSuccess(intent);
+      return;
+    }
+    if (intent.phase == OrderIntentPhase.blocked || !intent.allowsResume(_now())) {
+      final reason = intent.block ?? OrderIntentBlock.expired;
+      await _persistBlock(intent, reason);
+      return;
+    }
+    _publishUncertain(OrderSubmission.uncertainOutcomeMessage);
   }
 
   Future<void> _startNew(String table, List<CartItem> items) async {

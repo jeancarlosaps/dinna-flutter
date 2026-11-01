@@ -78,7 +78,7 @@ void main() {
     expect(viewModel.shouldClearCart, isFalse);
 
     fail = false;
-    await viewModel.submit(table: '99', items: cart);
+    await viewModel.submit(table: '99', items: cart, confirmedResume: true);
 
     expect(repository.createCalls, 2);
     expect(ids, [idAt(1)]);
@@ -161,6 +161,13 @@ void main() {
     await second.submit(
       table: '12',
       items: [CartItem(productId: 'p9', quantity: 4, note: null)],
+    );
+    expect(secondRepository.createCalls, 0);
+
+    await second.submit(
+      table: '12',
+      items: [CartItem(productId: 'p9', quantity: 4, note: null)],
+      confirmedResume: true,
     );
 
     expect(secondRepository.createCalls, 1);
@@ -378,6 +385,7 @@ void main() {
     await viewModel.submit(
       table: '8',
       items: [CartItem(productId: 'p9', quantity: 3, note: null)],
+      confirmedResume: true,
     );
 
     expect(repository.createCalls, 1);

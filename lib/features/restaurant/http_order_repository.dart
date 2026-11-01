@@ -65,7 +65,7 @@ class HttpOrderRepository implements OrderRepository {
       final response = await _apiClient.postJson('/orders', payload, headers: headers);
       return OrderSubmission.created(Order.fromJson(response));
     } on ApiException catch (error) {
-      return _fromApi(error);
+      return _fromApi(error, sentKey: headers != null);
     } on FormatException catch (error) {
       return OrderSubmission.failed(
         OrderSubmission.uncertainOutcomeMessage,
@@ -76,7 +76,7 @@ class HttpOrderRepository implements OrderRepository {
     }
   }
 
-  OrderSubmission _fromApi(ApiException error) {
+  OrderSubmission _fromApi(ApiException error, {required bool sentKey}) {
     if (error.code == idempotencyConflictCode) {
       return const OrderSubmission.blocked(
         idempotencyConflictMessage,
@@ -91,6 +91,15 @@ class HttpOrderRepository implements OrderRepository {
     }
 
     final status = error.statusCode;
+    final code = error.code?.trim();
+    // 409 sem código utilizável não prova que a chave enviada está livre.
+    if (sentKey && status == 409 && (code == null || code.isEmpty)) {
+      return const OrderSubmission.blocked(
+        idempotencyConflictMessage,
+        failure: DataFailure.conflict,
+      );
+    }
+
     final accepted = status != null && status >= 200 && status < 300;
     // 5xx com resposta não prova que o pedido deixou de ser criado.
     final unproven = status != null && status >= 500;

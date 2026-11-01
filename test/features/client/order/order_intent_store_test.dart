@@ -127,6 +127,92 @@ void main() {
     expect(await file.exists(), isFalse);
   });
 
+  test('temporário mais novo prevalece sobre o arquivo final antigo', () async {
+    final directory = await Directory.systemTemp.createTemp('dinna-intent-');
+    addTearDown(() => directory.delete(recursive: true));
+    final file = File('${directory.path}/order-intent.json');
+    final stored = intent();
+    await file.writeAsString(
+      '{"id":"${stored.id}","createdAt":"2026-11-01T15:00:00Z","phase":"pending","table":"12","items":[{"productId":"p1","quantity":2,"note":"sem cebola"},{"productId":"p2","quantity":1},{"productId":"p3","quantity":1,"note":""}]}',
+      flush: true,
+    );
+    await File('${file.path}.tmp').writeAsString(
+      '{"id":"${stored.id}","createdAt":"2026-11-01T15:00:00Z","phase":"blocked","block":"invalidState","table":"12","items":[{"productId":"p1","quantity":2,"note":"sem cebola"},{"productId":"p2","quantity":1},{"productId":"p3","quantity":1,"note":""}]}',
+      flush: true,
+    );
+    final store = FileOrderIntentStore(file);
+
+    final loaded = await store.load();
+
+    expect(loaded!.phase, OrderIntentPhase.blocked);
+    expect(loaded.block, OrderIntentBlock.invalidState);
+    expect(await File('${file.path}.tmp').exists(), isFalse);
+    expect((await file.readAsString()).contains('"phase":"blocked"'), isTrue);
+  });
+
+  test('falha ao promover o temporário preserva os dois arquivos', () async {
+    final directory = await Directory.systemTemp.createTemp('dinna-intent-');
+    addTearDown(() => directory.delete(recursive: true));
+    final file = File('${directory.path}/order-intent.json');
+    await Directory(file.path).create();
+    final stored = intent();
+    final temp = File('${file.path}.tmp');
+    await temp.writeAsString(
+      '{"id":"${stored.id}","createdAt":"2026-11-01T15:00:00Z","phase":"blocked","block":"conflict","table":"12","items":[{"productId":"p1","quantity":2,"note":"sem cebola"},{"productId":"p2","quantity":1},{"productId":"p3","quantity":1,"note":""}]}',
+      flush: true,
+    );
+    final store = FileOrderIntentStore(file);
+
+    expect(
+      store.load,
+      throwsA(
+        isA<OrderIntentStoreException>().having(
+          (error) => error.problem,
+          'problem',
+          OrderIntentStoreProblem.unreadable,
+        ),
+      ),
+    );
+    expect(await temp.exists(), isTrue);
+    expect(await Directory(file.path).exists(), isTrue);
+  });
+
+  test('UTF-8 inválido e sucesso sem pedido permanecem como corrupção', () async {
+    final directory = await Directory.systemTemp.createTemp('dinna-intent-');
+    addTearDown(() => directory.delete(recursive: true));
+    final invalidUtf8 = File('${directory.path}/invalid.json');
+    await invalidUtf8.writeAsBytes(const [0xff], flush: true);
+    final stored = intent();
+    final withoutOrder = File('${directory.path}/without-order.json');
+    await withoutOrder.writeAsString(
+      '{"id":"${stored.id}","createdAt":"2026-11-01T15:00:00Z","phase":"succeeded","table":"12","items":[{"productId":"p1","quantity":2,"note":"sem cebola"},{"productId":"p2","quantity":1},{"productId":"p3","quantity":1,"note":""}]}',
+      flush: true,
+    );
+
+    expect(
+      FileOrderIntentStore(invalidUtf8).load,
+      throwsA(
+        isA<OrderIntentStoreException>().having(
+          (error) => error.problem,
+          'problem',
+          OrderIntentStoreProblem.corrupt,
+        ),
+      ),
+    );
+    expect(await invalidUtf8.readAsBytes(), [0xff]);
+    expect(
+      FileOrderIntentStore(withoutOrder).load,
+      throwsA(
+        isA<OrderIntentStoreException>().having(
+          (error) => error.problem,
+          'problem',
+          OrderIntentStoreProblem.corrupt,
+        ),
+      ),
+    );
+    expect((await withoutOrder.readAsString()).contains('"phase":"succeeded"'), isTrue);
+  });
+
   test('sucesso gravado volta com o pedido e a limpeza só é sinalizada por ele', () async {
     final directory = await Directory.systemTemp.createTemp('dinna-intent-');
     addTearDown(() => directory.delete(recursive: true));

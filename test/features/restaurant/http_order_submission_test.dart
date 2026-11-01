@@ -362,6 +362,50 @@ void main() {
     expect(accepted.shouldClearCart, isFalse);
     expect(accepted.message, OrderSubmission.uncertainOutcomeMessage);
   });
+
+  test('409 sem código, depois de enviar a chave, não libera outra tentativa', () async {
+    const key = '00000000-0000-4000-8000-000000000001';
+    Future<OrderSubmission> post(http.Response response, {String? idempotencyKey}) {
+      return repositoryReturning(response)
+          .create(table: '12', items: _items, idempotencyKey: idempotencyKey);
+    }
+
+    final illegible = await post(http.Response('not-json', 409), idempotencyKey: key);
+    final withoutCode = await post(
+      http.Response(
+        jsonEncode({
+          'error': {'message': 'conflito'},
+        }),
+        409,
+        headers: const {'content-type': 'application/json'},
+      ),
+      idempotencyKey: key,
+    );
+    final otherCode = await post(
+      http.Response(
+        jsonEncode({
+          'error': {'code': 'X', 'message': 'outro'},
+        }),
+        409,
+        headers: const {'content-type': 'application/json'},
+      ),
+      idempotencyKey: key,
+    );
+    final withoutKey = await post(http.Response('not-json', 409));
+
+    for (final result in [illegible, withoutCode]) {
+      expect(result.resendBlocked, isTrue);
+      expect(result.outcomeUncertain, isFalse);
+      expect(result.failure, DataFailure.conflict);
+      expect(result.message, OrderSubmission.idempotencyConflictMessage);
+      expect(result.shouldClearCart, isFalse);
+    }
+    expect(otherCode.resendBlocked, isFalse);
+    expect(otherCode.failure, DataFailure.conflict);
+    expect(withoutKey.resendBlocked, isFalse);
+    expect(withoutKey.outcomeUncertain, isFalse);
+    expect(withoutKey.failure, DataFailure.conflict);
+  });
 }
 
 class _BodyStatusError extends http.BaseClient {

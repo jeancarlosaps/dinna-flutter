@@ -62,7 +62,11 @@ class _CartViewState extends State<CartView> {
 
   Future<void> _resume() {
     if (!_submission.canResumeSameIntent) return Future<void>.value();
-    return _submission.submit(table: widget.table ?? '', items: _viewModel.items);
+    return _submission.submit(
+      table: widget.table ?? '',
+      items: _viewModel.items,
+      confirmedResume: true,
+    );
   }
 
   @override

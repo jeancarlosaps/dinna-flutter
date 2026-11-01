@@ -45,6 +45,9 @@ final class OrderIntent {
     if (phase != OrderIntentPhase.blocked && block != null) {
       throw FormatException('motivo de bloqueio fora de uma intenção bloqueada');
     }
+    if (phase == OrderIntentPhase.succeeded && order == null) {
+      throw FormatException('intenção concluída sem pedido');
+    }
   }
 
   /// Janela em que a API devolve o pedido original para a mesma chave.

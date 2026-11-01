@@ -95,19 +95,18 @@ final class FileOrderIntentStore implements OrderIntentStore {
   @override
   Future<OrderIntent?> load() async {
     try {
-      if (await _file.exists()) {
-        final intent = await _read(_file);
-        await _deleteQuietly(_temp);
-        return intent;
-      }
-      if (!await _temp.exists()) return null;
-      final recovered = await _read(_temp);
-      try {
+      final hasFile = await _file.exists();
+      final hasTemp = await _temp.exists();
+      if (!hasFile && !hasTemp) return null;
+
+      // O temporário é a escrita mais nova. Ele prevalece sobre o arquivo
+      // final e só sai do disco depois que o rename conclui.
+      if (hasTemp) {
+        final recovered = await _read(_temp);
         await _temp.rename(_file.path);
-      } on FileSystemException {
-        // Os bytes já foram lidos. O próximo save tenta o arquivo final.
+        return recovered;
       }
-      return recovered;
+      return await _read(_file);
     } on OrderIntentStoreException {
       rethrow;
     } on FileSystemException {
@@ -145,21 +144,18 @@ final class FileOrderIntentStore implements OrderIntentStore {
   }
 
   Future<OrderIntent> _read(File file) async {
-    final raw = await file.readAsString();
     try {
+      final raw = await file.readAsString();
       return OrderIntent.fromJson(jsonDecode(raw));
     } on FormatException {
       throw const OrderIntentStoreException(OrderIntentStoreProblem.corrupt);
+    } on FileSystemException catch (error) {
+      if (error.osError == null && error.message.toLowerCase().contains('utf-8')) {
+        throw const OrderIntentStoreException(OrderIntentStoreProblem.corrupt);
+      }
+      rethrow;
     } on TypeError {
       throw const OrderIntentStoreException(OrderIntentStoreProblem.corrupt);
-    }
-  }
-
-  Future<void> _deleteQuietly(File file) async {
-    try {
-      if (await file.exists()) await file.delete();
-    } on FileSystemException {
-      // A sobra não autoriza outro POST. O arquivo final continua valendo.
     }
   }
 }
