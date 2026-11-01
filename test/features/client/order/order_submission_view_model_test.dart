@@ -139,6 +139,7 @@ void main() {
     });
 
     final pending = viewModel.submit(table: '12', items: cart);
+    await Future<void>.delayed(Duration.zero);
     expect(received, isNot(same(cart)));
     expect(receivedTable, '12');
     expect(received, [sent]);
@@ -215,6 +216,7 @@ void main() {
 
     final first = viewModel.submit(table: '12', items: items);
     final second = viewModel.submit(table: '12', items: items);
+    await Future<void>.delayed(Duration.zero);
 
     expect(viewModel.isSubmitting, isTrue);
     expect(repository.createCalls, 1);
@@ -350,6 +352,7 @@ void main() {
     final pending = viewModel.submit(table: '12', items: items);
     expect(viewModel.status, OrderSubmissionStatus.submitting);
     expect(notifications, 1);
+    await Future<void>.delayed(Duration.zero);
 
     viewModel.dispose();
     completer.completeError(StateError('falha interna do repository'));

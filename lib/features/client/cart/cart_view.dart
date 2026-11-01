@@ -13,9 +13,10 @@ import 'cart_view_model.dart';
 /// O [CartViewModel] nasce e morre com o State. O [OrderSubmissionViewModel]
 /// vem da sessão: esta tela observa e não descarta, para um retorno a `/cart`
 /// não começar outro POST. A lista vem de [CartLines] e cada alteração volta
-/// por `replace`. O envio usa a mesa que a navegação entregou e as linhas
-/// atuais. Falha confirmada oferece nova tentativa. Resultado incerto não
-/// reenvia. [onOpenMenu] abre o cardápio no estado vazio; a rota fica no router.
+/// por `replace`. O primeiro envio usa a mesa da navegação e as linhas atuais.
+/// Falha confirmada oferece nova tentativa. Resultado incerto só reenvia a
+/// mesma tentativa depois de uma confirmação. [onOpenMenu] abre o cardápio no
+/// estado vazio; a rota fica no router.
 class CartView extends StatefulWidget {
   const CartView({
     super.key,
@@ -59,6 +60,11 @@ class _CartViewState extends State<CartView> {
     return _submission.submit(table: widget.table ?? '', items: _viewModel.items);
   }
 
+  Future<void> _resume() {
+    if (!_submission.canResumeSameIntent) return Future<void>.value();
+    return _submission.submit(table: widget.table ?? '', items: _viewModel.items);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -70,6 +76,7 @@ class _CartViewState extends State<CartView> {
           final submission = _SubmissionSection(
             submission: _submission,
             onSubmit: _submit,
+            onResume: _resume,
             allowSend: hasRows,
           );
           if (!hasRows && _submission.status == OrderSubmissionStatus.idle) {
@@ -192,11 +199,13 @@ class _SubmissionSection extends StatelessWidget {
   const _SubmissionSection({
     required this.submission,
     required this.onSubmit,
+    required this.onResume,
     required this.allowSend,
   });
 
   final OrderSubmissionViewModel submission;
   final VoidCallback onSubmit;
+  final VoidCallback onResume;
   final bool allowSend;
 
   @override
@@ -216,6 +225,8 @@ class _SubmissionSection extends StatelessWidget {
             title: 'Envio sem confirmação',
             message: '$message\n\n${OrderSubmissionViewModel.verifyBeforeRetryGuidance}',
           ),
+        if (submission.resendBlocked && message != null)
+          DinnaBanner(tone: DinnaBannerTone.warning, title: 'Confira o pedido', message: message),
         if (sent)
           const DinnaBanner(
             tone: DinnaBannerTone.info,
@@ -229,8 +240,38 @@ class _SubmissionSection extends StatelessWidget {
             child: Text(failed ? 'Tentar novamente' : 'Enviar pedido', textAlign: TextAlign.center),
           ),
         ],
+        if (submission.canResumeSameIntent) ...[
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: () => _confirmResume(context),
+            child: const Text('Reenviar o mesmo pedido', textAlign: TextAlign.center),
+          ),
+        ],
       ],
     );
+  }
+
+  Future<void> _confirmResume(BuildContext context) async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reenviar o mesmo pedido?'),
+        content: const Text(
+          'O restaurante pode já ter recebido este pedido. O reenvio repete a mesma tentativa e não cria outro pedido.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Voltar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Reenviar'),
+          ),
+        ],
+      ),
+    );
+    if (accepted == true) onResume();
   }
 }
 

@@ -83,7 +83,7 @@ O Dinna encurta esse intervalo **sem substituir o atendimento humano**:
 
 ## 02 · Estado atual
 
-Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas da SCRUM-23 já estão na `dev`. A home em `/` continua o fluxo `GET /health`. A `TableView` do PR #3 está em `/table`: o layout e o campo da mesa aparecem, e os botões ainda não navegam. O carrinho em `/cart` revisa quantidade, remoção e o total estimado, envia o pedido e mostra o erro ou a orientação para conferir antes de tentar de novo, enquanto o app está aberto. Cardápio, produto, pedido e o painel do restaurante seguem como `RoutePlaceholder`.
+Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas da SCRUM-23 já estão na `dev`. A home em `/` continua o fluxo `GET /health`. A `TableView` do PR #3 está em `/table`: o layout e o campo da mesa aparecem, e os botões ainda não navegam. O carrinho em `/cart` revisa quantidade, remoção e o total estimado, envia o pedido e mostra o erro ou a orientação para conferir antes de tentar de novo. A intenção desse envio permanece no dispositivo depois que o processo fecha. Cardápio, produto, pedido e o painel do restaurante seguem como `RoutePlaceholder`.
 
 | Item | Situação | Onde |
 |---|---|---|
@@ -96,8 +96,8 @@ Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas d
 | Models (`Product`, `CartItem`, `Order`, `OrderItem`, `OrderStatus`, `Preference`) | ✅ Implementados em `lib/core/domain/` (SCRUM-22, PR #5 na `dev`) | [`lib/core/domain/`](lib/core/domain/) |
 | Rotas do cliente e do restaurante | ✅ SCRUM-23 concluída e mergeada pelo PR #6. Mapa em `AppRoutes`. Rota inicial `/`. `/table` abre `TableView`; as outras rotas da jornada são placeholder | [`lib/app/router/`](lib/app/router/), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Layout da mesa (`/table`) | Layout mergeado pelo PR #3. O campo da mesa é só visual: nada lê o valor. “Ver cardápio” e “Acessar o painel” usam `onPressed` vazio | [`lib/features/client/table/table_view.dart`](lib/features/client/table/table_view.dart) |
-| Dependências base (SCRUM-18) | Em andamento. HTTP pronto (`http` 1.6.0 e `ApiClient`). Armazenamento local ainda sem pacote no `pubspec` | `pubspec.yaml`, [`lib/core/network/`](lib/core/network/) |
-| Persistência local | ⬜ SCRUM-27 em andamento com João. A proposta no Jira é `sqflite`; o pacote ainda não entrou neste repositório | — |
+| Dependências base (SCRUM-18) | Em andamento. HTTP pronto (`http` 1.6.0 e `ApiClient`). A intenção de pedido usa `path_provider`; o armazenamento geral da SCRUM-27 ainda não entrou | `pubspec.yaml`, [`lib/core/network/`](lib/core/network/) |
+| Persistência local | SCRUM-90 grava a intenção do pedido num arquivo (`path_provider`). SCRUM-27, com João, segue em andamento: `sqflite` para carrinho, preferências e último pedido ainda não entrou | `lib/features/client/order/` |
 | Componentes visuais reutilizáveis | ✅ `DinnaLogo`, `DinnaBanner` e `DinnaEmptyState` (SCRUM-28) | `lib/shared/widgets/` |
 | Telas de R1, R2 e R3 | ⬜ Jornada planejada. Na `dev` só o layout da mesa está em `/table`; as outras telas seguem placeholder ou ainda não existem | — |
 
@@ -145,7 +145,7 @@ A jornada abaixo é a **R1 planejada**. Na `dev`, a etapa Mesa tem layout em `/t
 | Navegação | `onGenerateRoute` nativo | A SCRUM-23, concluída no PR #6, manteve o `Navigator` do Flutter. O mapa está em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Lint | `flutter_lints` 6.0.0 + regras em `analysis_options.yaml` | Análise estrita (`strict-casts`, `strict-raw-types`) |
 
-Dependências diretas: `http` 1.6.0 e `cupertino_icons`, que veio no template do Flutter. Nenhuma biblioteca de estado, injeção de dependência ou armazenamento foi adicionada. A SCRUM-18 segue em andamento por causa do armazenamento local. A SCRUM-27 propõe `sqflite` no Jira; essa escolha ainda não está no `pubspec`.
+Dependências diretas: `http` 1.6.0, `path_provider` e `cupertino_icons`, que veio no template do Flutter. `path_provider` só localiza o arquivo da intenção de pedido. Não há biblioteca de estado, injeção de dependência ou banco geral. A SCRUM-27 propõe `sqflite` no Jira; esse pacote não está no `pubspec`.
 
 <a id="arquitetura"></a>
 

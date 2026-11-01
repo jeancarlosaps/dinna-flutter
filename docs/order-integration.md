@@ -180,7 +180,7 @@ await submission.submit(table: table, items: List<CartItem>.of(cart));
 | --- | --- |
 | `isSubmitting` | Carregando. O botão de envio sai. `canRequestSubmit` fica falso e outro toque não chama `submit`. |
 | `isDefiniteFailure` | `errorMessage`. "Tentar novamente" chama `submit` com a mesa e as linhas atuais. O carrinho fica. |
-| `outcomeUncertain` | `errorMessage` e `OrderSubmissionViewModel.verifyBeforeRetryGuidance`. Não diga que o pedido falhou. Não mostre "Tentar novamente". Não limpe. Não dispare outro POST. |
+| `outcomeUncertain` | `errorMessage` e `OrderSubmissionViewModel.verifyBeforeRetryGuidance`. Não diga que o pedido falhou. Não mostre "Tentar novamente". Não limpe. Não dispare outro POST sozinho. "Reenviar o mesmo pedido" pede confirmação e repete a chave e o body já guardados. |
 | `status == succeeded` | Aviso de pedido enviado. O botão de envio sai. As linhas ficam. `order` é o pedido da API; a confirmação, quando existir, usa `order.id`, `order.table`, `order.items`, `order.totalCents` e `order.createdAt`. |
 
 ```dart
@@ -195,4 +195,23 @@ if (submission.shouldClearCart) {
 }
 ```
 
-`cartStore` **não existe**. A limpeza depois do sucesso fica na implementação de `CartLines` do João. A revisão não grava nesse momento. O `submit` da tela usa as linhas atuais do `CartViewModel`. Quando `lineId` existir, não monte outra lista só com `productId`, `quantity` e `note`: a fotografia perderia a identidade e a limpeza voltaria a apagar uma linha recriada. A mesa chega em `CartView.table`. A navegação passa um `String` em `RouteSettings.arguments`; outro tipo não é mesa. Sem esse argumento, a tela envia mesa vazia e a validação responde "Informe a mesa". `openConfirmation` **não existe**: a rota é `AppRoutes.order` e o argumento ainda não foi definido. O pedido a exibir é o `Order` do ViewModel, sem novo `GET /orders`.
+## Idempotência — SCRUM-90
+
+O `POST /orders` pode levar `Idempotency-Key`. A API guarda a chave por 24 horas. Sem o header, cada POST cria um pedido. O app gera um UUID v4 por intenção, grava a chave e o body e só então envia. A gravação é um JSON exclusivo dessa intenção (`order-intent.json`, via `path_provider`). Não é o banco da SCRUM-27.
+
+O body guardado é o do primeiro envio: mesa, ordem dos itens, `productId`, `quantity` e `note`. `note` omitida e `note` vazia continuam diferentes. Mudança no carrinho não altera essa cópia. Um segundo toque não cria outra chave. Sair de `/cart` não apaga a intenção. Reiniciar o app lê o arquivo e não envia sozinho.
+
+| Situação | O que acontece |
+| --- | --- |
+| Primeira tentativa | UUID novo, body congelado, grava, POST com o header |
+| Timeout, queda, HTTP 5xx sem prova de ausência, crash depois da gravação | Resultado incerto. A mesma chave continua. O reenvio é manual |
+| `201`, inclusive a repetição do mesmo body | Sucesso da intenção original. O carrinho fica. `/order` não abre |
+| `400` e `404` | A API não ficou com a chave. "Tentar novamente" é uma intenção nova, com o carrinho daquele momento |
+| `409 IDEMPOTENCY_KEY_CONFLICT`, `500 IDEMPOTENCY_STATE_INVALID` | Bloqueia reenvio e chave nova |
+| Arquivo corrompido, leitura impossível ou recuperação interrompida | Não libera outro POST |
+| Falha ao gravar e a leitura seguinte não acha intenção | Não envia. A tentativa pode ser refeita |
+| Idade de 23 horas ou mais, ou instante no futuro | Não reenvia. A proteção da API acaba só às 24 horas |
+
+A folga de 1 hora existe porque o relógio do aparelho pode estar adiantado. Expirar essa proteção, no app ou na API, não significa que o pedido deixou de existir. Relógio atrasado ainda pode fazer o app reenviar depois que o servidor já esqueceu a chave; esse risco fica registrado e não é coberto com uma chave nova automática.
+
+`cartStore` **não existe**. A limpeza depois do sucesso fica na implementação de `CartLines` do João. A revisão não grava nesse momento. O `submit` da tela usa as linhas atuais do `CartViewModel` só quando não há intenção aberta; a intenção incerta repete o body já gravado. Quando `lineId` existir, não monte outra lista só com `productId`, `quantity` e `note`: a fotografia perderia a identidade e a limpeza voltaria a apagar uma linha recriada. A mesa chega em `CartView.table`. A navegação passa um `String` em `RouteSettings.arguments`; outro tipo não é mesa. Sem esse argumento, a tela envia mesa vazia e a validação responde "Informe a mesa". `openConfirmation` **não existe**: a rota é `AppRoutes.order` e o argumento ainda não foi definido. O pedido a exibir é o `Order` do ViewModel, sem novo `GET /orders`.

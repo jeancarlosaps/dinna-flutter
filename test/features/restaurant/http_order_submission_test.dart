@@ -133,7 +133,7 @@ void main() {
     expect(() => CartItem(productId: '', quantity: 1, note: null), throwsArgumentError);
   });
 
-  test('traduz 400, 404, 409 e 500 como falha confirmada', () async {
+  test('traduz 400, 404 e 409 sem código de idempotência como falha confirmada', () async {
     Future<OrderSubmission> failed(int status, String message) {
       return repositoryReturning(
         http.Response(
@@ -149,10 +149,6 @@ void main() {
     final validation = await failed(400, 'Mesa inválida');
     final missing = await failed(404, 'Produto p9 não encontrado ou indisponível');
     final conflict = await failed(409, 'Pedido em conflito');
-    final server = await failed(500, 'Erro interno');
-    final bare = await repositoryReturning(
-      http.Response('{}', 500, headers: const {'content-type': 'application/json'}),
-    ).create(table: '12', items: _items);
 
     expect(validation.message, 'Mesa inválida');
     expect(validation.failure, DataFailure.validation);
@@ -160,18 +156,40 @@ void main() {
     expect(missing.failure, DataFailure.notFound);
     expect(conflict.message, 'Pedido em conflito');
     expect(conflict.failure, DataFailure.conflict);
-    expect(server.message, 'Erro interno');
-    expect(server.failure, DataFailure.unavailable);
-    expect(bare.message, ApiClient.httpFailureMessage);
-    expect(bare.detail, 'HTTP 500');
-    expect(bare.failure, DataFailure.unavailable);
+    expect(conflict.resendBlocked, isFalse);
 
-    for (final result in [validation, missing, conflict, server, bare]) {
+    for (final result in [validation, missing, conflict]) {
       expect(result.order, isNull);
       expect(result.outcomeUncertain, isFalse);
       expect(result.shouldClearCart, isFalse);
       expect(result.message, isNot(contains('pode ter sido registrado')));
     }
+  });
+
+  test('500 sem prova de ausência fica incerto e não libera outra chave', () async {
+    final server = await repositoryReturning(
+      http.Response(
+        jsonEncode({
+          'error': {'code': 'INTERNAL', 'message': 'Erro interno'},
+        }),
+        500,
+        headers: const {'content-type': 'application/json; charset=utf-8'},
+      ),
+    ).create(table: '12', items: _items);
+    final bare = await repositoryReturning(
+      http.Response('{}', 500, headers: const {'content-type': 'application/json'}),
+    ).create(table: '12', items: _items);
+
+    for (final result in [server, bare]) {
+      expect(result.order, isNull);
+      expect(result.outcomeUncertain, isTrue);
+      expect(result.resendBlocked, isFalse);
+      expect(result.shouldClearCart, isFalse);
+      expect(result.failure, DataFailure.uncertain);
+      expect(result.message, OrderSubmission.uncertainOutcomeMessage);
+    }
+    expect(server.detail, 'Erro interno');
+    expect(bare.detail, 'HTTP 500');
   });
 
   test('JSON inválido em 201 não afirma que o pedido falhou', () async {
@@ -200,9 +218,10 @@ void main() {
     }
     expect(notJson.detail, 'Resposta inválida da API');
 
-    expect(errorBody.outcomeUncertain, isFalse);
-    expect(errorBody.failure, DataFailure.unavailable);
-    expect(errorBody.message, ApiClient.httpFailureMessage);
+    expect(errorBody.outcomeUncertain, isTrue);
+    expect(errorBody.resendBlocked, isFalse);
+    expect(errorBody.failure, DataFailure.uncertain);
+    expect(errorBody.message, OrderSubmission.uncertainOutcomeMessage);
     expect(errorBody.detail, 'HTTP 500: corpo inválido');
     expect(errorBody.shouldClearCart, isFalse);
   });
@@ -292,9 +311,12 @@ void main() {
     expect(validation.failure, DataFailure.validation);
     expect(missing.failure, DataFailure.notFound);
     expect(conflict.failure, DataFailure.conflict);
-    expect(server.failure, DataFailure.unavailable);
+    expect(server.failure, DataFailure.uncertain);
+    expect(server.outcomeUncertain, isTrue);
+    expect(server.resendBlocked, isFalse);
+    expect(server.message, OrderSubmission.uncertainOutcomeMessage);
 
-    for (final result in [validation, missing, conflict, server]) {
+    for (final result in [validation, missing, conflict]) {
       expect(result.order, isNull);
       expect(result.outcomeUncertain, isFalse);
       expect(result.shouldClearCart, isFalse);
@@ -323,9 +345,12 @@ void main() {
     expect(validation.failure, DataFailure.validation);
     expect(missing.failure, DataFailure.notFound);
     expect(conflict.failure, DataFailure.conflict);
-    expect(server.failure, DataFailure.unavailable);
+    expect(server.failure, DataFailure.uncertain);
+    expect(server.outcomeUncertain, isTrue);
+    expect(server.resendBlocked, isFalse);
+    expect(server.message, OrderSubmission.uncertainOutcomeMessage);
 
-    for (final result in [validation, missing, conflict, server]) {
+    for (final result in [validation, missing, conflict]) {
       expect(result.order, isNull);
       expect(result.outcomeUncertain, isFalse);
       expect(result.shouldClearCart, isFalse);
