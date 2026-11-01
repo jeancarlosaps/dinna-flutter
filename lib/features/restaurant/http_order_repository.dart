@@ -92,16 +92,30 @@ class HttpOrderRepository implements OrderRepository {
 
     final status = error.statusCode;
     final code = error.code?.trim();
+    final missingCode = code == null || code.isEmpty;
     // 409 sem código utilizável não prova que a chave enviada está livre.
-    if (sentKey && status == 409 && (code == null || code.isEmpty)) {
+    if (sentKey && status == 409 && missingCode) {
       return const OrderSubmission.blocked(
         idempotencyConflictMessage,
         failure: DataFailure.conflict,
       );
     }
 
+    // O contrato só documenta chave órfã em HTTP 500 com
+    // IDEMPOTENCY_STATE_INVALID. Corpo vazio, JSON inválido ou leitura
+    // interrompida apagam esse código. Não inventamos `error.code`. Sem ele,
+    // a chave enviada não volta a ser usada e outra não é criada. 502, 503,
+    // timeout sem status e 500 com outro código ficam fora desta decisão.
+    if (sentKey && status == 500 && missingCode) {
+      return const OrderSubmission.blocked(
+        OrderSubmission.unreadableServerErrorMessage,
+        failure: DataFailure.unavailable,
+      );
+    }
+
     final accepted = status != null && status >= 200 && status < 300;
-    // 5xx com resposta não prova que o pedido deixou de ser criado.
+    // 5xx com código diferente, ou status que o contrato não usa para chave
+    // órfã, não prova que o pedido deixou de ser criado.
     final unproven = status != null && status >= 500;
     if (error.outcomeUncertain || accepted || unproven) {
       return OrderSubmission.failed(

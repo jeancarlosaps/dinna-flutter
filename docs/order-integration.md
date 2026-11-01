@@ -204,12 +204,13 @@ O body guardado é o do primeiro envio: mesa, ordem dos itens, `productId`, `qua
 | Situação | O que acontece |
 | --- | --- |
 | Primeira tentativa | UUID novo, body congelado, grava, POST com o header |
-| Timeout, queda, HTTP 5xx sem prova de ausência, crash depois da gravação | Resultado incerto. A mesma chave continua. O reenvio é manual |
+| Timeout antes dos headers, queda de conexão, `502`, `503` e `500` com código diferente de `IDEMPOTENCY_STATE_INVALID` | Resultado incerto. A mesma chave continua. O reenvio é manual. O contrato da API não emite `502` nem `503`; a chave órfã é só HTTP `500` com `IDEMPOTENCY_STATE_INVALID` |
 | `201`, inclusive a repetição do mesmo body | Sucesso da intenção original. O carrinho fica. `/order` não abre. "Fazer outro pedido" apaga essa intenção só depois que o sucesso ficou gravado e só então libera um envio novo, com o carrinho daquele momento. Se a limpeza falha, a confirmação permanece e outro POST não sai |
 | `201` ou bloqueio cuja gravação falha | Nesta execução a confirmação ou a causa do bloqueio permanece. Não há reenvio nem chave nova. O arquivo pode continuar `pending` ou `uncertain`. Reiniciar não recupera esse desfecho: a próxima abertura trata o arquivo como incerto e o reenvio manual, se houver, repete a mesma chave e o mesmo body |
 | Reinício com sucesso gravado | Mostra a confirmação e não envia. O pedido seguinte espera "Fazer outro pedido" |
 | `400` e `404` | A API não ficou com a chave. "Tentar novamente" é uma intenção nova, com o carrinho daquele momento |
 | `409 IDEMPOTENCY_KEY_CONFLICT`, `409` sem código depois de enviar a chave, `500 IDEMPOTENCY_STATE_INVALID` | Bloqueia reenvio e chave nova |
+| `500` com chave enviada e sem `error.code` utilizável (corpo vazio, JSON inválido ou leitura interrompida) | Bloqueia reenvio e chave nova. A intenção e os bytes ficam. O app não inventa o código e não afirma que o pedido existe ou que a chave está órfã: os dois são possíveis, porque `INTERNAL_ERROR` e `IDEMPOTENCY_STATE_INVALID` compartilham o HTTP 500. A tela mostra "Confira o pedido" e omite "Tentar novamente", "Reenviar o mesmo pedido" e "Fazer outro pedido". A recuperação neste aparelho só volta se o arquivo da intenção for removido fora do app. Um `500` transitório cujo corpo se perdeu fica preso do mesmo jeito |
 | Arquivo corrompido, leitura impossível, diretório inacessível, recuperação interrompida ou item fora do domínio (como `note` acima de 200 caracteres) | Não libera outro POST. Ausência só vale quando o diretório pai pôde ser listado e o nome não estava lá |
 | Falha ao preparar o diretório no arranque | O app abre. O envio fica bloqueado. Não há store em memória no lugar do arquivo |
 | Falha ao gravar e a leitura seguinte não acha intenção | Não envia. A tentativa pode ser refeita |

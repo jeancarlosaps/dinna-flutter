@@ -88,6 +88,14 @@ class OrderSubmission {
   static const idempotencyInvalidMessage =
       'Não foi possível confirmar o pedido desta tentativa. Confira com o restaurante.';
 
+  /// HTTP 500 depois de enviar a chave, sem `error.code` utilizável.
+  ///
+  /// O contrato só usa 500 para `IDEMPOTENCY_STATE_INVALID` e `INTERNAL_ERROR`.
+  /// Sem o código, os dois se confundem. Este texto não inventa o código e
+  /// não afirma que o pedido deixou de existir.
+  static const unreadableServerErrorMessage =
+      'A resposta do servidor não trouxe o código do erro. Esta tentativa não será reenviada. Confira com o restaurante.';
+
   /// `null` quando a criação falhou.
   final Order? order;
 
