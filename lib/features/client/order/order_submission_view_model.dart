@@ -19,7 +19,10 @@ enum OrderSubmissionStatus { idle, submitting, succeeded, failed }
 /// confirmada de validação ou ausência encerra a intenção; a tentativa
 /// seguinte, pedida pela tela, recebe outra chave e o carrinho daquele
 /// momento. Conflito de payload, chave órfã, expiração e arquivo ilegível
-/// não liberam outra chave.
+/// não liberam outra chave. Um 201 ou bloqueio que não couber no arquivo
+/// continua valendo nesta execução e não volta a ser reenvio. Reiniciar o
+/// processo não recupera esse desfecho: o arquivo antigo segue com a mesma
+/// chave e o mesmo body.
 ///
 /// Não há retry automático. [shouldClearCart] fica verdadeiro só depois que a
 /// API confirma o pedido. Esta classe não apaga item.
@@ -59,6 +62,12 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   static const expiredIntentMessage =
       'O prazo de proteção desta tentativa terminou. Isso não significa que o pedido deixou de existir. Confira com o restaurante.';
 
+  /// O 201 ou o bloqueio já é conhecido, mas não ficou no arquivo.
+  ///
+  /// Vale só nesta execução. Reiniciar o processo não recupera esse desfecho.
+  static const terminalNotRecordedMessage =
+      'O resultado deste envio não ficou gravado neste aparelho. Esta tela não reenvia nem começa outro pedido.';
+
   OrderSubmissionStatus _status = OrderSubmissionStatus.idle;
   Order? _order;
   String? _errorMessage;
@@ -73,6 +82,12 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   bool _restored = false;
   bool _gate = false;
   bool _disposed = false;
+
+  /// Desfecho já decidido neste processo. Não volta para pending nem uncertain.
+  OrderIntent? _terminal;
+
+  /// O [_terminal] foi lido ou gravado no arquivo. Sem isso, outro ciclo é inseguro.
+  bool _terminalStored = false;
 
   OrderSubmissionStatus get status => _status;
 
@@ -134,21 +149,22 @@ class OrderSubmissionViewModel extends ChangeNotifier {
         intent.allowsResume(_now());
   }
 
-  /// O 201 já foi mostrado e a intenção confirmada ainda está no disco.
+  /// O 201 foi gravado e a confirmação ainda está neste processo.
   ///
-  /// Intenção incerta ou bloqueada não entra. O próximo POST só existe depois
-  /// que [beginAnotherOrder] conseguir apagar esta intenção.
+  /// Intenção incerta, bloqueada ou só conhecida em memória não entra. O
+  /// próximo POST só existe depois que [beginAnotherOrder] apagar o arquivo.
   bool get canBeginAnotherOrder {
-    final intent = _intent;
+    final terminal = _terminal;
     return !_disposed &&
         _restored &&
         !_storeBlocked &&
+        _terminalStored &&
         !_gate &&
         !isSubmitting &&
         _status == OrderSubmissionStatus.succeeded &&
-        intent != null &&
-        intent.phase == OrderIntentPhase.succeeded &&
-        intent.order != null;
+        terminal != null &&
+        terminal.phase == OrderIntentPhase.succeeded &&
+        terminal.order != null;
   }
 
   /// Lê a intenção gravada. Não envia nada.
@@ -169,6 +185,7 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   /// com o reenvio bloqueado ou após o [dispose].
   Future<void> submit({required String table, required List<CartItem> items}) async {
     if (_disposed || _gate || _status == OrderSubmissionStatus.submitting) return;
+    if (_terminal != null) return;
     if (_restored &&
         (_storeBlocked || _resendBlocked || _status == OrderSubmissionStatus.succeeded)) {
       return;
@@ -181,7 +198,7 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     _enterSubmitting();
     try {
       await restore();
-      if (_disposed) return;
+      if (_disposed || _terminal != null) return;
       if (_storeBlocked) {
         _publishBlocked(unreadableIntentMessage, DataFailure.unavailable);
         return;
@@ -203,9 +220,10 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   /// pendente ou incerta, e dentro da folga. Confirmação antiga, duplicada,
   /// de intenção encerrada ou ausente não cria chave e não chama o envio novo.
   Future<void> resume(String intentId) async {
-    if (_disposed || _gate || isSubmitting) return;
+    if (_disposed || _gate || isSubmitting || _postDenied(intentId)) return;
     _gate = true;
     try {
+      if (_postDenied(intentId)) return;
       final OrderIntent? persisted;
       try {
         persisted = await _store.load();
@@ -213,19 +231,32 @@ class OrderSubmissionViewModel extends ChangeNotifier {
         if (_disposed) return;
         _restored = true;
         _storeBlocked = true;
+        if (_terminal != null) return;
         _publishBlocked(unreadableIntentMessage, DataFailure.unavailable);
         return;
       }
-      if (_disposed) return;
+      if (_disposed || _postDenied(intentId)) return;
       _restored = true;
       if (persisted == null || persisted.id != intentId) return;
-      _intent = persisted;
-      if (persisted.phase == OrderIntentPhase.succeeded) return;
-      if (persisted.phase == OrderIntentPhase.blocked || !persisted.allowsResume(_now())) {
-        await _persistBlock(persisted, persisted.block ?? OrderIntentBlock.expired);
+      if (_replaysTerminal(persisted)) return;
+      if (persisted.phase == OrderIntentPhase.succeeded) {
+        _rememberTerminal(persisted, persisted: true);
+        _publishSuccess(persisted);
         return;
       }
+      if (persisted.phase == OrderIntentPhase.blocked || !persisted.allowsResume(_now())) {
+        if (persisted.phase == OrderIntentPhase.blocked) {
+          _rememberTerminal(persisted, persisted: true);
+          _publishBlocked(_blockedMessage(persisted.block), _blockedFailure(persisted.block));
+          return;
+        }
+        await _persistBlock(persisted, OrderIntentBlock.expired);
+        return;
+      }
+      if (_postDenied(intentId)) return;
+      _intent = persisted;
       _enterSubmitting();
+      if (_postDenied(intentId)) return;
       await _dispatch(persisted);
     } finally {
       _gate = false;
@@ -242,6 +273,8 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     try {
       await _store.clear();
       if (_disposed) return;
+      _terminal = null;
+      _terminalStored = false;
       _intent = null;
       _publish(status: OrderSubmissionStatus.idle);
     } catch (error, stackTrace) {
@@ -266,11 +299,61 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     }
   }
 
+  bool _postDenied(String intentId) {
+    if (_terminal != null || _storeBlocked || _resendBlocked) return true;
+    if (_status == OrderSubmissionStatus.succeeded) return true;
+    final known = _intent;
+    return known != null &&
+        known.id == intentId &&
+        (known.phase == OrderIntentPhase.succeeded || known.phase == OrderIntentPhase.blocked);
+  }
+
+  /// O arquivo está atrás de um desfecho que esta execução já conhece.
+  bool _replaysTerminal(OrderIntent incoming) {
+    final terminal = _terminal;
+    if (terminal == null) return false;
+    if (terminal.id != incoming.id) return true;
+    return incoming.phase == OrderIntentPhase.pending ||
+        incoming.phase == OrderIntentPhase.uncertain;
+  }
+
+  void _rememberTerminal(OrderIntent intent, {required bool persisted}) {
+    final current = _terminal;
+    if (current != null) {
+      if (persisted && current.id == intent.id) _terminalStored = true;
+      return;
+    }
+    _terminal = intent;
+    _intent = intent;
+    _terminalStored = persisted;
+  }
+
+  void _keepUnrecordedTerminal() {
+    _storeBlocked = true;
+    _resendBlocked = true;
+    _errorMessage = terminalNotRecordedMessage;
+    _failure = DataFailure.unavailable;
+    _notify();
+  }
+
+  void _reportTerminalWrite(Object error, StackTrace stackTrace) {
+    if (!kDebugMode) return;
+    FlutterError.presentError(
+      FlutterErrorDetails(
+        exception: error,
+        stack: stackTrace,
+        library: 'order submission view model',
+        context: ErrorDescription('ao gravar o desfecho da intenção'),
+      ),
+    );
+  }
+
   Future<void> _readStore() async {
     try {
       final intent = await _store.load();
       if (_disposed) return;
       _restored = true;
+      if (_terminal != null) return;
       if (intent == null) return;
       await _holdStored(intent);
     } on OrderIntentStoreException {
@@ -282,20 +365,28 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   }
 
   Future<void> _holdStored(OrderIntent intent) async {
+    if (_replaysTerminal(intent)) return;
     _intent = intent;
     if (intent.phase == OrderIntentPhase.succeeded) {
+      _rememberTerminal(intent, persisted: true);
       _publishSuccess(intent);
       return;
     }
-    if (intent.phase == OrderIntentPhase.blocked || !intent.allowsResume(_now())) {
-      final reason = intent.block ?? OrderIntentBlock.expired;
-      await _persistBlock(intent, reason);
+    if (intent.phase == OrderIntentPhase.blocked) {
+      _rememberTerminal(intent, persisted: true);
+      _publishBlocked(_blockedMessage(intent.block), _blockedFailure(intent.block));
       return;
     }
+    if (!intent.allowsResume(_now())) {
+      await _persistBlock(intent, intent.block ?? OrderIntentBlock.expired);
+      return;
+    }
+    if (_terminal != null) return;
     _publishUncertain(OrderSubmission.uncertainOutcomeMessage);
   }
 
   Future<void> _startNew(String table, List<CartItem> items) async {
+    if (_terminal != null || _storeBlocked || _resendBlocked) return;
     final rejected = OrderRequest.rejection(table: table, items: items);
     if (rejected != null) {
       _publishFailure(rejected);
@@ -320,6 +411,7 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   }
 
   Future<void> _dispatch(OrderIntent intent) async {
+    if (_postDenied(intent.id)) return;
     final OrderSubmission result;
     try {
       result = await _repository.create(
@@ -360,15 +452,18 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     final order = result.order;
     if (order != null) {
       final done = intent.succeeded(order);
-      _intent = done;
+      _rememberTerminal(done, persisted: false);
       try {
         await _store.save(done);
-      } on OrderIntentStoreException {
-        // O 201 já chegou. Se o processo cair, a leitura trata a intenção
-        // pendente como incerta e o reenvio recebe o mesmo pedido.
+        _terminalStored = true;
+      } on OrderIntentStoreException catch (error, stackTrace) {
+        _terminalStored = false;
+        _storeBlocked = true;
+        _reportTerminalWrite(error, stackTrace);
       }
       if (_disposed) return;
       _publishSuccess(done);
+      if (!_terminalStored) _keepUnrecordedTerminal();
       return;
     }
 
@@ -393,6 +488,7 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   }
 
   Future<void> _markUncertain(OrderIntent intent) async {
+    if (_terminal != null) return;
     final uncertain = intent.uncertain();
     _intent = uncertain;
     try {
@@ -404,17 +500,21 @@ class OrderSubmissionViewModel extends ChangeNotifier {
 
   Future<void> _persistBlock(OrderIntent intent, OrderIntentBlock reason, {String? message}) async {
     final blocked = intent.blocked(reason);
-    _intent = blocked;
+    _rememberTerminal(blocked, persisted: false);
     try {
       await _store.save(blocked);
-    } on OrderIntentStoreException {
+      _terminalStored = true;
+    } on OrderIntentStoreException catch (error, stackTrace) {
+      _terminalStored = false;
       _storeBlocked = true;
+      _reportTerminalWrite(error, stackTrace);
     }
     if (_disposed) return;
     _publishBlocked(message ?? _blockedMessage(reason), _blockedFailure(reason));
   }
 
   Future<void> _onSaveFailed() async {
+    if (_terminal != null) return;
     try {
       final stored = await _store.load();
       if (_disposed) return;
@@ -437,6 +537,7 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   }
 
   void _enterSubmitting() {
+    if (_terminal != null) return;
     _status = OrderSubmissionStatus.submitting;
     _order = null;
     _errorMessage = null;
@@ -514,6 +615,13 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     String? confirmedTable,
   }) {
     if (_disposed) return;
+    final terminal = _terminal;
+    if (terminal != null) {
+      final reaffirmsSuccess =
+          terminal.phase == OrderIntentPhase.succeeded && status == OrderSubmissionStatus.succeeded;
+      final reaffirmsBlock = terminal.phase == OrderIntentPhase.blocked && resendBlocked;
+      if (!reaffirmsSuccess && !reaffirmsBlock) return;
+    }
     _status = status;
     _order = order;
     _errorMessage = message;

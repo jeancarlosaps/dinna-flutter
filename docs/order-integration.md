@@ -205,7 +205,8 @@ O body guardado é o do primeiro envio: mesa, ordem dos itens, `productId`, `qua
 | --- | --- |
 | Primeira tentativa | UUID novo, body congelado, grava, POST com o header |
 | Timeout, queda, HTTP 5xx sem prova de ausência, crash depois da gravação | Resultado incerto. A mesma chave continua. O reenvio é manual |
-| `201`, inclusive a repetição do mesmo body | Sucesso da intenção original. O carrinho fica. `/order` não abre. "Fazer outro pedido" apaga essa intenção e só então libera um envio novo, com o carrinho daquele momento. Se a limpeza falha, a confirmação permanece e outro POST não sai |
+| `201`, inclusive a repetição do mesmo body | Sucesso da intenção original. O carrinho fica. `/order` não abre. "Fazer outro pedido" apaga essa intenção só depois que o sucesso ficou gravado e só então libera um envio novo, com o carrinho daquele momento. Se a limpeza falha, a confirmação permanece e outro POST não sai |
+| `201` ou bloqueio cuja gravação falha | Nesta execução a confirmação ou a causa do bloqueio permanece. Não há reenvio nem chave nova. O arquivo pode continuar `pending` ou `uncertain`. Reiniciar não recupera esse desfecho: a próxima abertura trata o arquivo como incerto e o reenvio manual, se houver, repete a mesma chave e o mesmo body |
 | Reinício com sucesso gravado | Mostra a confirmação e não envia. O pedido seguinte espera "Fazer outro pedido" |
 | `400` e `404` | A API não ficou com a chave. "Tentar novamente" é uma intenção nova, com o carrinho daquele momento |
 | `409 IDEMPOTENCY_KEY_CONFLICT`, `409` sem código depois de enviar a chave, `500 IDEMPOTENCY_STATE_INVALID` | Bloqueia reenvio e chave nova |
