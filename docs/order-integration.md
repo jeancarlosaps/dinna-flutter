@@ -199,7 +199,7 @@ if (submission.shouldClearCart) {
 
 O `POST /orders` pode levar `Idempotency-Key`. A API guarda a chave por 24 horas. Sem o header, cada POST cria um pedido. O app gera um UUID v4 por intenção, grava a chave e o body e só então envia. A gravação é um JSON exclusivo dessa intenção (`order-intent.json`, via `path_provider`). Não é o banco da SCRUM-27.
 
-O body guardado é o do primeiro envio: mesa, ordem dos itens, `productId`, `quantity` e `note`. `note` omitida e `note` vazia continuam diferentes. Mudança no carrinho não altera essa cópia. Um segundo toque não cria outra chave. "Enviar pedido" enquanto a leitura inicial ainda não terminou também não reenvia: a intenção achada espera o diálogo. Sair de `/cart` não apaga a intenção. Reiniciar o app lê o arquivo e não envia sozinho. Fase `succeeded` sem o pedido da API é arquivo inválido, não confirmação.
+O body guardado é o do primeiro envio: mesa, ordem dos itens, `productId`, `quantity` e `note`. `note` omitida e `note` vazia continuam diferentes. A lista é copiada no início de `submit`, antes da leitura do arquivo, e o mapa do chamador não altera o body já gravado. Uma edição do carrinho nesse intervalo fica de fora da chave. Um segundo toque não cria outra chave. "Enviar pedido" enquanto a leitura inicial ainda não terminou também não reenvia: a intenção achada espera o diálogo. Sair de `/cart` não apaga a intenção. Reiniciar o app lê o arquivo e não envia sozinho. Fase `succeeded` sem o pedido da API é arquivo inválido, não confirmação.
 
 | Situação | O que acontece |
 | --- | --- |
@@ -208,7 +208,7 @@ O body guardado é o do primeiro envio: mesa, ordem dos itens, `productId`, `qua
 | `201`, inclusive a repetição do mesmo body | Sucesso da intenção original. O carrinho fica. `/order` não abre |
 | `400` e `404` | A API não ficou com a chave. "Tentar novamente" é uma intenção nova, com o carrinho daquele momento |
 | `409 IDEMPOTENCY_KEY_CONFLICT`, `409` sem código depois de enviar a chave, `500 IDEMPOTENCY_STATE_INVALID` | Bloqueia reenvio e chave nova |
-| Arquivo corrompido, leitura impossível ou recuperação interrompida | Não libera outro POST |
+| Arquivo corrompido, leitura impossível, recuperação interrompida ou item fora do domínio (como `note` acima de 200 caracteres) | Não libera outro POST |
 | Falha ao gravar e a leitura seguinte não acha intenção | Não envia. A tentativa pode ser refeita |
 | Idade de 23 horas ou mais, ou instante no futuro | Não reenvia. A proteção da API acaba só às 24 horas |
 

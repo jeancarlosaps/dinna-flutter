@@ -149,6 +149,8 @@ final class FileOrderIntentStore implements OrderIntentStore {
       return OrderIntent.fromJson(jsonDecode(raw));
     } on FormatException {
       throw const OrderIntentStoreException(OrderIntentStoreProblem.corrupt);
+    } on ArgumentError {
+      throw const OrderIntentStoreException(OrderIntentStoreProblem.corrupt);
     } on FileSystemException catch (error) {
       if (error.osError == null && error.message.toLowerCase().contains('utf-8')) {
         throw const OrderIntentStoreException(OrderIntentStoreProblem.corrupt);

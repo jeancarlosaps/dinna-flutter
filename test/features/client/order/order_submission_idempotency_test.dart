@@ -392,6 +392,94 @@ void main() {
     expect(repository.lastIdempotencyKey, idAt(1));
     expect(ids, [idAt(1)]);
   });
+
+  test('edição da lista durante a leitura não entra no body da chave', () async {
+    final live = <CartItem>[CartItem(productId: 'p1', quantity: 2, note: 'sem cebola')];
+    final items = List<CartItem>.unmodifiable(live);
+    final ids = <String>[];
+    final now = DateTime.utc(2026, 11, 1, 12);
+    final store = _GateStore(MemoryOrderIntentStore());
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async =>
+          OrderSubmission.created(sampleOrder(id: 'o1')),
+    );
+    final viewModel = open(repository: repository, store: store, ids: ids, now: () => now);
+    viewModel.addListener(() {
+      if (!viewModel.isSubmitting) return;
+      live
+        ..clear()
+        ..add(CartItem(productId: 'p9', quantity: 4, note: 'mudou'));
+    });
+
+    final pending = viewModel.submit(table: '12', items: items);
+    store.release();
+    await pending;
+
+    expect(repository.createCalls, 1);
+    expect(repository.lastIdempotencyKey, idAt(1));
+    expect(repository.lastBody!['items'], [
+      {'productId': 'p1', 'quantity': 2, 'note': 'sem cebola'},
+    ]);
+    expect((await store.load())!.cartItems.single.note, 'sem cebola');
+    expect(live.single.productId, 'p9');
+  });
+
+  test('note longa na intenção recuperada bloqueia o POST e preserva o arquivo', () async {
+    final ids = <String>[];
+    final now = DateTime.utc(2026, 11, 1, 12);
+    final directory = await Directory.systemTemp.createTemp('dinna-intent-');
+    addTearDown(() => directory.delete(recursive: true));
+    final file = File('${directory.path}/order-intent.json');
+    final note = 'n' * 201;
+    final raw =
+        '{"id":"${idAt(1)}","createdAt":"2026-11-01T12:00:00Z","phase":"succeeded","table":"12","items":[{"productId":"p1","quantity":2,"note":"$note"}],"order":{"id":"o1","table":"12","status":"received","items":[{"productId":"p1","quantity":2}],"totalCents":1000,"createdAt":"2026-10-16T18:00:00Z"}}';
+    await file.writeAsString(raw, flush: true);
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async =>
+          OrderSubmission.created(sampleOrder(id: 'o2')),
+    );
+    final viewModel = open(
+      repository: repository,
+      store: FileOrderIntentStore(file),
+      ids: ids,
+      now: () => now,
+    );
+
+    await viewModel.restore();
+    await viewModel.submit(table: '12', items: original);
+
+    expect(repository.createCalls, 0);
+    expect(ids, isEmpty);
+    expect(viewModel.resendBlocked, isTrue);
+    expect(viewModel.canRequestSubmit, isFalse);
+    expect(viewModel.errorMessage, OrderSubmissionViewModel.unreadableIntentMessage);
+    expect(await file.readAsString(), raw);
+  });
+}
+
+final class _GateStore implements OrderIntentStore {
+  _GateStore(this._inner);
+
+  final OrderIntentStore _inner;
+  final Completer<void> _gate = Completer<void>();
+
+  void release() {
+    if (!_gate.isCompleted) _gate.complete();
+  }
+
+  @override
+  Future<void> clear() => _inner.clear();
+
+  @override
+  Future<OrderIntent?> load() async {
+    await _gate.future;
+    return _inner.load();
+  }
+
+  @override
+  Future<void> save(OrderIntent intent) => _inner.save(intent);
 }
 
 final class _WriteThenFail implements OrderIntentStore {

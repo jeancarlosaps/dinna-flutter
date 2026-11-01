@@ -25,7 +25,9 @@ final class OrderIntent {
     this.block,
     this.order,
   }) : items = List<Map<String, Object?>>.unmodifiable([
-         for (final item in items) Map<String, Object?>.unmodifiable(item),
+         // Map.unmodifiable é uma vista. A cópia impede que o mapa do
+         // chamador altere o body ligado a esta chave.
+         for (final item in items) Map<String, Object?>.unmodifiable(Map<String, Object?>.of(item)),
        ]) {
     if (!orderIntentIdPattern.hasMatch(id) || _isNilUuid(id)) {
       throw FormatException('id de intenção inválido');
@@ -47,6 +49,10 @@ final class OrderIntent {
     }
     if (phase == OrderIntentPhase.succeeded && order == null) {
       throw FormatException('intenção concluída sem pedido');
+    }
+    for (final item in this.items) {
+      // Valida o domínio e preserva o mapa original, inclusive note omitida.
+      CartItem.fromJson(item);
     }
   }
 

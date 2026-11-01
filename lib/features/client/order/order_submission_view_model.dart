@@ -158,6 +158,9 @@ class OrderSubmissionViewModel extends ChangeNotifier {
       return;
     }
 
+    // A lista pode ser uma vista do carrinho. A cópia sai antes da notificação
+    // e do primeiro await; uma edição nesse intervalo não entra nesta chave.
+    final snapshot = List<CartItem>.unmodifiable(List<CartItem>.of(items));
     _gate = true;
     _enterSubmitting();
     try {
@@ -184,7 +187,7 @@ class OrderSubmissionViewModel extends ChangeNotifier {
         await _resume(intent);
         return;
       }
-      await _startNew(table, items);
+      await _startNew(table, snapshot);
     } finally {
       _gate = false;
     }
