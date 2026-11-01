@@ -1,8 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
 
 import 'app/app.dart';
 import 'core/config/app_config.dart';
@@ -17,8 +14,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final config = AppConfig.fromEnvironment();
   final apiClient = ApiClient(baseUrl: config.apiBaseUrl, httpClient: http.Client());
-  final support = await getApplicationSupportDirectory();
-  final intentStore = FileOrderIntentStore(File('${support.path}/order-intent.json'));
+  final intentStore = await openOrderIntentStore();
 
   runApp(
     DinnaApp(

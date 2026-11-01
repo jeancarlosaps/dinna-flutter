@@ -274,4 +274,92 @@ void main() {
     expect(loaded.order!.items.single.quantity, 2);
     expect(loaded.cartItems.first.quantity, 2);
   });
+
+  test('arquivo ausente com diretório visível é ausência comprovada', () async {
+    final directory = await Directory.systemTemp.createTemp('dinna-intent-');
+    addTearDown(() => directory.delete(recursive: true));
+    final store = FileOrderIntentStore(File('${directory.path}/order-intent.json'));
+
+    expect(await store.load(), isNull);
+    await store.clear();
+    expect(await store.load(), isNull);
+  });
+
+  test('diretório inacessível não parece ausência e a limpeza não apaga a intenção', () async {
+    final directory = await Directory.systemTemp.createTemp('dinna-intent-');
+    addTearDown(() async {
+      await Process.run('chmod', ['700', directory.path]);
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final file = File('${directory.path}/order-intent.json');
+    final stored = intent();
+    final store = FileOrderIntentStore(file);
+    await store.save(stored);
+    final before = await file.readAsString();
+    final chmod = await Process.run('chmod', ['000', directory.path]);
+    expect(chmod.exitCode, 0);
+
+    expect(
+      store.load,
+      throwsA(
+        isA<OrderIntentStoreException>().having(
+          (error) => error.problem,
+          'problem',
+          OrderIntentStoreProblem.unreadable,
+        ),
+      ),
+    );
+    expect(
+      store.clear,
+      throwsA(
+        isA<OrderIntentStoreException>().having(
+          (error) => error.problem,
+          'problem',
+          OrderIntentStoreProblem.unwritable,
+        ),
+      ),
+    );
+
+    await Process.run('chmod', ['700', directory.path]);
+    expect(await file.readAsString(), before);
+    expect((await store.load())!.id, stored.id);
+  });
+
+  test('falha ao preparar o diretório não usa memória', () async {
+    final store = await openOrderIntentStore(
+      applicationSupportDirectory: () async => throw const FileSystemException('negado'),
+    );
+
+    expect(store, isA<UnavailableOrderIntentStore>());
+    expect(
+      store.load,
+      throwsA(
+        isA<OrderIntentStoreException>().having(
+          (error) => error.problem,
+          'problem',
+          OrderIntentStoreProblem.unreadable,
+        ),
+      ),
+    );
+    expect(
+      () => store.save(intent()),
+      throwsA(
+        isA<OrderIntentStoreException>().having(
+          (error) => error.problem,
+          'problem',
+          OrderIntentStoreProblem.unwritable,
+        ),
+      ),
+    );
+    expect(
+      store.clear,
+      throwsA(
+        isA<OrderIntentStoreException>().having(
+          (error) => error.problem,
+          'problem',
+          OrderIntentStoreProblem.unwritable,
+        ),
+      ),
+    );
+  });
 }
