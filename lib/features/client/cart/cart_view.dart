@@ -10,22 +10,23 @@ import 'cart_view_model.dart';
 
 /// Revisão do carrinho, na rota `/cart`.
 ///
-/// O [CartViewModel] e o [OrderSubmissionViewModel] nascem e morrem com o
-/// State. A lista vem de [CartLines] e cada alteração volta por `replace`.
-/// O envio usa a mesa que a navegação entregou e as linhas atuais. Falha
-/// confirmada oferece nova tentativa. Resultado incerto não reenvia.
-/// [onOpenMenu] abre o cardápio no estado vazio; a rota fica no router.
+/// O [CartViewModel] nasce e morre com o State. O [OrderSubmissionViewModel]
+/// vem da sessão: esta tela observa e não descarta, para um retorno a `/cart`
+/// não começar outro POST. A lista vem de [CartLines] e cada alteração volta
+/// por `replace`. O envio usa a mesa que a navegação entregou e as linhas
+/// atuais. Falha confirmada oferece nova tentativa. Resultado incerto não
+/// reenvia. [onOpenMenu] abre o cardápio no estado vazio; a rota fica no router.
 class CartView extends StatefulWidget {
   const CartView({
     super.key,
     required this.createViewModel,
-    required this.createSubmission,
+    required this.submission,
     required this.onOpenMenu,
     this.table,
   });
 
   final CartViewModel Function() createViewModel;
-  final OrderSubmissionViewModel Function() createSubmission;
+  final OrderSubmissionViewModel submission;
   final void Function(BuildContext context) onOpenMenu;
 
   /// Mesa recebida na navegação. Ausente até a tela da mesa entregar o valor.
@@ -37,25 +38,24 @@ class CartView extends StatefulWidget {
 
 class _CartViewState extends State<CartView> {
   late final CartViewModel _viewModel;
-  late final OrderSubmissionViewModel _submission;
+
+  OrderSubmissionViewModel get _submission => widget.submission;
 
   @override
   void initState() {
     super.initState();
     _viewModel = widget.createViewModel();
-    _submission = widget.createSubmission();
     unawaited(_viewModel.resolveProducts());
   }
 
   @override
   void dispose() {
     _viewModel.dispose();
-    _submission.dispose();
     super.dispose();
   }
 
   Future<void> _submit() {
-    if (!_submission.canRequestSubmit) return Future<void>.value();
+    if (!_submission.canRequestSubmit || _viewModel.items.isEmpty) return Future<void>.value();
     return _submission.submit(table: widget.table ?? '', items: _viewModel.items);
   }
 
@@ -66,10 +66,19 @@ class _CartViewState extends State<CartView> {
       body: ListenableBuilder(
         listenable: Listenable.merge([_viewModel, _submission]),
         builder: (context, _) {
-          if (_viewModel.rows.isEmpty) {
+          final hasRows = _viewModel.rows.isNotEmpty;
+          final submission = _SubmissionSection(
+            submission: _submission,
+            onSubmit: _submit,
+            allowSend: hasRows,
+          );
+          if (!hasRows && _submission.status == OrderSubmissionStatus.idle) {
             return _EmptyCart(onOpenMenu: () => widget.onOpenMenu(context));
           }
-          return _CartBody(viewModel: _viewModel, submission: _submission, onSubmit: _submit);
+          if (!hasRows) {
+            return _EmptyCart(onOpenMenu: () => widget.onOpenMenu(context), notice: submission);
+          }
+          return _CartBody(viewModel: _viewModel, submission: submission);
         },
       ),
     );
@@ -77,24 +86,38 @@ class _CartViewState extends State<CartView> {
 }
 
 class _EmptyCart extends StatelessWidget {
-  const _EmptyCart({required this.onOpenMenu});
+  const _EmptyCart({required this.onOpenMenu, this.notice});
 
   final VoidCallback onOpenMenu;
+  final Widget? notice;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        return SingleChildScrollView(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: constraints.maxHeight),
-            child: DinnaEmptyState(
-              icon: Icons.shopping_cart_outlined,
-              title: 'Seu carrinho está vazio',
-              message: 'Escolha os pratos no cardápio e eles aparecem aqui para você revisar antes de enviar.',
-              actionLabel: 'Ver cardápio',
-              onAction: onOpenMenu,
+        final notice = this.notice;
+        final empty = DinnaEmptyState(
+          icon: Icons.shopping_cart_outlined,
+          title: 'Seu carrinho está vazio',
+          message: 'Escolha os pratos no cardápio e eles aparecem aqui para você revisar antes de enviar.',
+          actionLabel: 'Ver cardápio',
+          onAction: onOpenMenu,
+        );
+        if (notice == null) {
+          return SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: empty,
             ),
+          );
+        }
+        return SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 0), child: notice),
+              SizedBox(height: constraints.maxHeight, child: empty),
+            ],
           ),
         );
       },
@@ -103,11 +126,10 @@ class _EmptyCart extends StatelessWidget {
 }
 
 class _CartBody extends StatelessWidget {
-  const _CartBody({required this.viewModel, required this.submission, required this.onSubmit});
+  const _CartBody({required this.viewModel, required this.submission});
 
   final CartViewModel viewModel;
-  final OrderSubmissionViewModel submission;
-  final VoidCallback onSubmit;
+  final Widget submission;
 
   @override
   Widget build(BuildContext context) {
@@ -155,17 +177,22 @@ class _CartBody extends StatelessWidget {
         ],
         if (total != null) ...[const SizedBox(height: 16), _EstimatedTotal(totalCents: total)],
         const SizedBox(height: 16),
-        _SubmissionSection(submission: submission, onSubmit: onSubmit),
+        submission,
       ],
     );
   }
 }
 
 class _SubmissionSection extends StatelessWidget {
-  const _SubmissionSection({required this.submission, required this.onSubmit});
+  const _SubmissionSection({
+    required this.submission,
+    required this.onSubmit,
+    required this.allowSend,
+  });
 
   final OrderSubmissionViewModel submission;
   final VoidCallback onSubmit;
+  final bool allowSend;
 
   @override
   Widget build(BuildContext context) {
@@ -190,7 +217,7 @@ class _SubmissionSection extends StatelessWidget {
             title: 'Pedido enviado',
             message: 'O restaurante recebeu o pedido.',
           ),
-        if (submission.canRequestSubmit) ...[
+        if (allowSend && submission.canRequestSubmit) ...[
           if (failed) const SizedBox(height: 12),
           FilledButton(
             onPressed: onSubmit,

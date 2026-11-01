@@ -78,6 +78,7 @@ class AppRouter {
     required this.orderRepository,
     required this.productRepository,
     required this.cartLines,
+    required this.orderSubmission,
     required this.routeObserver,
     this.pollDelay,
   });
@@ -88,6 +89,9 @@ class AppRouter {
 
   /// Linhas da revisão. A implementação que sobrevive ao processo entra aqui.
   final CartLines cartLines;
+
+  /// Envio da sessão. Sair de `/cart` não cria outro.
+  final OrderSubmissionViewModel orderSubmission;
   final RouteObserver<PageRoute<dynamic>> routeObserver;
   final Future<void> Function(Duration duration)? pollDelay;
 
@@ -103,7 +107,7 @@ class AppRouter {
       AppRoutes.table => const TableView(),
       AppRoutes.cart => CartView(
         createViewModel: () => CartViewModel(productRepository, lines: cartLines),
-        createSubmission: () => OrderSubmissionViewModel(orderRepository),
+        submission: orderSubmission,
         table: _cartTable(settings.arguments),
         onOpenMenu: (context) => Navigator.of(context).pushNamed(AppRoutes.menu),
       ),

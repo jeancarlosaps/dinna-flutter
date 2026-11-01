@@ -131,7 +131,7 @@ if (submission.shouldClearCart) {
 
 ## Jean — SCRUM-40
 
-`/cart` abre `CartView`. O `CartViewModel` nasce no `State`, observa com `ListenableBuilder` e morre no `dispose`. Não chama `OrderRepository` nem `submit`. Quem envia é a `CartView`, com um `OrderSubmissionViewModel` no mesmo `State`.
+`/cart` abre `CartView`. O `CartViewModel` nasce no `State`, observa com `ListenableBuilder` e morre no `dispose`. Não chama `OrderRepository` nem `submit`. Quem envia é a `CartView`, observando o `OrderSubmissionViewModel` da sessão. Sair da rota não descarta esse envio e não começa outro.
 
 ```dart
 abstract interface class CartLines {
@@ -168,7 +168,7 @@ O total da tela é a soma `priceCents * quantity`, com o rótulo "Total estimado
 
 ## Confirmação — ainda pendente
 
-`/order` segue em `RoutePlaceholder`. O envio continua no `OrderSubmissionViewModel`. A tela de confirmação, quando existir, nasce no `State`, observa com `ListenableBuilder` e usa o total do servidor. A `CartView` já chama o trecho abaixo. Não abre `/order` e não limpa as linhas.
+`/order` segue em `RoutePlaceholder`. O envio continua no `OrderSubmissionViewModel`. A tela de confirmação, quando existir, nasce no `State`, observa com `ListenableBuilder` e usa o total do servidor. A `CartView` já chama o trecho abaixo. Não abre `/order` e não limpa as linhas. O ViewModel do envio fica na sessão do app: voltar e reabrir `/cart` mostra o mesmo estado, inclusive envio pendente e resultado incerto. Sem linhas, o aviso continua na tela e o botão de enviar sai.
 
 ```dart
 final submission = OrderSubmissionViewModel(orderRepository);

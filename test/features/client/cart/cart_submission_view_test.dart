@@ -46,15 +46,17 @@ void main() {
     onCreate,
     String? table = '12',
   }) async {
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(() async => OrderList.ready(const []), onCreate: onCreate),
+    );
+    addTearDown(submission.dispose);
     await tester.pumpWidget(
       MaterialApp(
         theme: DinnaTheme.light(),
         home: CartView(
           createViewModel: () =>
               CartViewModel(FakeProductRepository(() async => catalog), lines: lines),
-          createSubmission: () => OrderSubmissionViewModel(
-            FakeOrderRepository(() async => OrderList.ready(const []), onCreate: onCreate),
-          ),
+          submission: submission,
           table: table,
           onOpenMenu: (_) {},
         ),
@@ -242,5 +244,111 @@ void main() {
     expect(sentTable, '7');
     expect(find.text('Pedido enviado'), findsOneWidget);
     expect(lines.read().single.quantity, 1);
+  });
+
+  testWidgets('sair e reabrir o carrinho não dispara outro POST', (tester) async {
+    final lines = ProcessCartLines([line(1)]);
+    final gate = Completer<OrderSubmission>();
+    var calls = 0;
+    await tester.pumpWidget(
+      DinnaApp(
+        apiStatusRepository: FakeApiStatusRepository(() async => const ApiAvailability.online()),
+        orderRepository: FakeOrderRepository(
+          () async => OrderList.ready(const []),
+          onCreate: ({required table, required items}) {
+            calls++;
+            return gate.future;
+          },
+        ),
+        productRepository: FakeProductRepository(() async => catalog),
+        cartLines: lines,
+        pollDelay: (_) async {},
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    Navigator.of(tester.element(find.text('dinna'))).pushNamed(AppRoutes.cart, arguments: '12');
+    await tester.pumpAndSettle();
+    await tapSend(tester, 'Enviar pedido');
+    await tester.pump();
+
+    expect(calls, 1);
+    expect(find.text('Enviando pedido'), findsOneWidget);
+
+    Navigator.of(tester.element(find.text('Seu carrinho'))).pop();
+    await tester.pumpAndSettle();
+    Navigator.of(tester.element(find.text('dinna'))).pushNamed(AppRoutes.cart, arguments: '12');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(calls, 1);
+    expect(find.text('Enviando pedido'), findsOneWidget);
+    expect(find.text('Enviar pedido'), findsNothing);
+
+    gate.complete(
+      const OrderSubmission.failed(
+        OrderSubmission.uncertainOutcomeMessage,
+        failure: DataFailure.uncertain,
+        outcomeUncertain: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(calls, 1);
+    expect(find.text('Envio sem confirmação'), findsOneWidget);
+    expect(find.text('Tentar novamente'), findsNothing);
+
+    Navigator.of(tester.element(find.text('Seu carrinho'))).pop();
+    await tester.pumpAndSettle();
+    Navigator.of(tester.element(find.text('dinna'))).pushNamed(AppRoutes.cart, arguments: '12');
+    await tester.pumpAndSettle();
+
+    expect(calls, 1);
+    expect(find.textContaining(OrderSubmissionViewModel.verifyBeforeRetryGuidance), findsOneWidget);
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(find.text('Tentar novamente'), findsNothing);
+    expect(lines.read().single.quantity, 1);
+  });
+
+  testWidgets('remover a última linha durante o envio mantém o aviso', (tester) async {
+    final lines = ProcessCartLines([line(1)]);
+    final gate = Completer<OrderSubmission>();
+    var calls = 0;
+    await pumpCart(
+      tester,
+      lines: lines,
+      onCreate: ({required table, required items}) {
+        calls++;
+        return gate.future;
+      },
+    );
+
+    await tapSend(tester, 'Enviar pedido');
+    await tester.pump();
+    await tester.tap(find.text('Remover'));
+    await tester.pump();
+
+    expect(calls, 1);
+    expect(find.text('Seu carrinho está vazio'), findsOneWidget);
+    expect(find.text('Enviando pedido'), findsOneWidget);
+    expect(find.text('Moqueca de Peixe'), findsNothing);
+    expect(lines.read(), isEmpty);
+
+    gate.complete(
+      const OrderSubmission.failed(
+        OrderSubmission.uncertainOutcomeMessage,
+        failure: DataFailure.uncertain,
+        outcomeUncertain: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(calls, 1);
+    expect(find.text('Envio sem confirmação'), findsOneWidget);
+    expect(find.textContaining(OrderSubmissionViewModel.verifyBeforeRetryGuidance), findsOneWidget);
+    expect(find.text('Tentar novamente'), findsNothing);
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(find.text('Seu carrinho está vazio'), findsOneWidget);
+    expect(lines.read(), isEmpty);
   });
 }

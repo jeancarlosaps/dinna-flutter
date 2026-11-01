@@ -47,6 +47,14 @@ void main() {
     void Function(BuildContext context)? onOpenMenu,
     TextScaler textScaler = TextScaler.noScaling,
   }) async {
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async =>
+            const OrderSubmission.failed('Não foi possível enviar o pedido'),
+      ),
+    );
+    addTearDown(submission.dispose);
     await tester.pumpWidget(
       MaterialApp(
         theme: DinnaTheme.light(),
@@ -61,13 +69,7 @@ void main() {
             FakeProductRepository(() async => products ?? ProductList.ready(const [])),
             lines: lines,
           ),
-          createSubmission: () => OrderSubmissionViewModel(
-            FakeOrderRepository(
-              () async => OrderList.ready(const []),
-              onCreate: ({required table, required items}) async =>
-                  const OrderSubmission.failed('Não foi possível enviar o pedido'),
-            ),
-          ),
+          submission: submission,
           onOpenMenu: onOpenMenu ?? (_) {},
         ),
       ),
