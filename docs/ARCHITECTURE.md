@@ -153,7 +153,7 @@ O mesmo PR versionou dois PDFs dentro de `lib/`: `Dinna · App Cliente Marina.pd
 5. Montar a implementação concreta em `lib/main.dart` e passar o contrato pelo construtor até o `AppRouter`. No `onGenerateRoute`, a rota ganha um case próprio antes do `RoutePlaceholder`. O nome já está em `AppRoutes`; a story não cria um nome paralelo.
 6. Não adicionar `provider`, `get_it`, UseCase ou outra camada sem uma necessidade que este fluxo não cubra.
 
-A SCRUM-18 segue em andamento. O HTTP está configurado: `package:http` 1.6.0 e `ApiClient` integrado em [`lib/main.dart`](../lib/main.dart). O armazenamento local ainda não tem dependência no `pubspec`. A SCRUM-27, em andamento com João, propõe SQLite local via `sqflite` para carrinho, preferências de recomendação e último pedido confirmado. Essa escolha está no Jira e ainda não entrou neste repositório. Quando a persistência entrar, será outra fonte atrás de um Repository, não um atalho da View para o disco. O pacote e o esquema ficam no trabalho da SCRUM-27.
+A SCRUM-18 segue em andamento. O HTTP está configurado: `package:http` 1.6.0 e `ApiClient` integrado em [`lib/main.dart`](../lib/main.dart). A SCRUM-90 grava só a intenção do `POST /orders` num arquivo, com `path_provider` para achar o diretório. A SCRUM-27, em andamento com João, propõe SQLite local via `sqflite` para carrinho, preferências e último pedido confirmado. Esse pacote não entrou neste repositório. Quando a persistência do carrinho entrar, será outra fonte atrás de um Repository, não um atalho da View para o disco.
 
 ## Models de domínio
 

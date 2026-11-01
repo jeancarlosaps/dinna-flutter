@@ -55,12 +55,22 @@ class OrderSubmission {
          outcomeUncertain: outcomeUncertain,
        );
 
+  /// A chave não pode ser reenviada nem trocada por outra.
+  ///
+  /// Cobre conflito de payload, chave órfã e o mesmo bloqueio decidido no app.
+  const OrderSubmission.blocked(
+    String message, {
+    DataFailure failure = DataFailure.conflict,
+    String? detail,
+  }) : this._(message: message, failure: failure, detail: detail, resendBlocked: true);
+
   const OrderSubmission._({
     this.order,
     this.message,
     this.failure,
     this.detail,
     this.outcomeUncertain = false,
+    this.resendBlocked = false,
   });
 
   /// Texto quando o POST pode ter sido aplicado e a confirmação não chegou.
@@ -69,6 +79,22 @@ class OrderSubmission {
   /// `ApiClient.uncertainOutcomeMessage`; o client não importa esta feature.
   static const uncertainOutcomeMessage =
       'Não foi possível confirmar o envio. O pedido pode ter sido registrado.';
+
+  /// Mesma chave com outro payload. A chave continua no primeiro pedido.
+  static const idempotencyConflictMessage =
+      'Esta tentativa já está ligada a outro envio. Confira com o restaurante se o pedido chegou.';
+
+  /// A chave existe sem o pedido correspondente. Outra chave não é criada daqui.
+  static const idempotencyInvalidMessage =
+      'Não foi possível confirmar o pedido desta tentativa. Confira com o restaurante.';
+
+  /// HTTP 500 depois de enviar a chave, sem `error.code` utilizável.
+  ///
+  /// O contrato só usa 500 para `IDEMPOTENCY_STATE_INVALID` e `INTERNAL_ERROR`.
+  /// Sem o código, os dois se confundem. Este texto não inventa o código e
+  /// não afirma que o pedido deixou de existir.
+  static const unreadableServerErrorMessage =
+      'A resposta do servidor não trouxe o código do erro. Esta tentativa não será reenviada. Confira com o restaurante.';
 
   /// `null` quando a criação falhou.
   final Order? order;
@@ -84,12 +110,53 @@ class OrderSubmission {
 
   /// Verdadeiro quando não dá para afirmar se o servidor ficou com o pedido.
   ///
-  /// Cobre tempo esgotado, falha de transporte em que o body pode ter saído
-  /// e resposta 2xx que não pôde ser lida como [Order]. Não é falha definitiva.
+  /// Cobre tempo esgotado, falha de transporte em que o body pode ter saído,
+  /// resposta 2xx que não pôde ser lida como [Order] e HTTP 5xx que não prova
+  /// a ausência do pedido. Não é falha definitiva.
   final bool outcomeUncertain;
+
+  /// Verdadeiro quando outro POST, com esta chave ou com uma chave nova, é inseguro.
+  final bool resendBlocked;
 
   /// A futura tela do carrinho limpa os itens somente neste caso.
   bool get shouldClearCart => order != null;
+}
+
+/// Body e validação local de `POST /orders`, compartilhados pelo envio.
+///
+/// A validação acontece antes de gravar a intenção. O body congelado é o que
+/// segue em toda tentativa da mesma chave. `note` nula fica de fora; `note`
+/// vazia permanece.
+abstract final class OrderRequest {
+  static const emptyTableMessage = 'Informe a mesa';
+
+  static const emptyItemsMessage = 'O pedido precisa de ao menos um item';
+
+  static const invalidItemMessage = 'Item do pedido inválido';
+
+  static OrderSubmission? rejection({required String table, required List<CartItem> items}) {
+    if (table.trim().isEmpty) {
+      return const OrderSubmission.failed(emptyTableMessage, failure: DataFailure.validation);
+    }
+    if (items.isEmpty) {
+      return const OrderSubmission.failed(emptyItemsMessage, failure: DataFailure.validation);
+    }
+    for (final item in items) {
+      if (item.productId.trim().isEmpty || item.quantity < 1) {
+        return const OrderSubmission.failed(invalidItemMessage, failure: DataFailure.validation);
+      }
+    }
+    return null;
+  }
+
+  static List<Map<String, Object?>> itemMaps(List<CartItem> items) => [
+    for (final item in items) item.toOrderItem().toJson(),
+  ];
+
+  static Map<String, Object?> body({required String table, required List<CartItem> items}) => {
+    'table': table,
+    'items': <Object?>[...itemMaps(items)],
+  };
 }
 
 /// Fonte dos pedidos.
@@ -105,5 +172,14 @@ abstract interface class OrderRepository {
   /// [items] são os [CartItem] do carrinho. Mesa vazia, lista vazia,
   /// identificador em branco ou quantidade inválida voltam como
   /// [DataFailure.validation], sem chamar a API.
-  Future<OrderSubmission> create({required String table, required List<CartItem> items});
+  ///
+  /// [idempotencyKey] e [body], quando presentes, identificam uma intenção já
+  /// gravada. [body] é enviado como está. Sem os dois, o POST segue o contrato
+  /// anterior e cada chamada pode criar um pedido.
+  Future<OrderSubmission> create({
+    required String table,
+    required List<CartItem> items,
+    String? idempotencyKey,
+    Map<String, Object?>? body,
+  });
 }

@@ -11,6 +11,8 @@ class FakeOrderRepository implements OrderRepository {
   onCreate;
   int calls = 0;
   int createCalls = 0;
+  String? lastIdempotencyKey;
+  Map<String, Object?>? lastBody;
 
   @override
   Future<OrderList> list() {
@@ -19,8 +21,15 @@ class FakeOrderRepository implements OrderRepository {
   }
 
   @override
-  Future<OrderSubmission> create({required String table, required List<CartItem> items}) {
+  Future<OrderSubmission> create({
+    required String table,
+    required List<CartItem> items,
+    String? idempotencyKey,
+    Map<String, Object?>? body,
+  }) {
     createCalls++;
+    lastIdempotencyKey = idempotencyKey;
+    lastBody = body;
     final create = onCreate;
     if (create == null) {
       throw UnsupportedError('FakeOrderRepository.create não foi configurado');
