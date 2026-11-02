@@ -79,8 +79,8 @@ Os nomes são correspondência exata: sem barra no fim e sem parâmetro no camin
 | Fluxo | Constante | Nome | Argumento | Tela na `dev` |
 |---|---|---|---|---|
 | Fundação | `home` | `/` | — | `HomeView`, com `GET /health`. Rota inicial |
-| Cliente | `table` | `/table` | — | `TableView`. Layout da mesa, sem leitura do campo e sem navegação nos botões. A story de informar a mesa segue pendente |
-| Cliente | `menu` | `/menu` | — | Placeholder |
+| Cliente | `table` | `/table` | — | `TableView`. Valida a mesa e abre `/menu` com ela (SCRUM-29) |
+| Cliente | `menu` | `/menu` | mesa (`String`) | `MenuView`. Produtos por categoria, via `MenuViewModel` (SCRUM-30) |
 | Cliente | `product` | `/product` | `AppRouteId` | Placeholder |
 | Cliente | `cart` | `/cart` | — | `CartView`. Revisão no processo, via `CartLines`. |
 | Cliente | `order` | `/order` | — | Placeholder |
@@ -115,7 +115,7 @@ flowchart TD
   restaurant --> rmenu
 ```
 
-A home de fundação permanece em `/` e não ganha botão de produto. `/table` desenha a `TableView`. As outras rotas do mapa desenham `RoutePlaceholder`. Quem entra nos fluxos é o teste, por `pushNamed`. O retorno é `Navigator.pop`. O placeholder usa `AppBar`, então o botão de voltar desempilha a rota. A `TableView` não tem `AppBar`.
+A home de fundação permanece em `/` e não ganha botão de produto. `/table` desenha a `TableView` e `/menu` a `MenuView`. As outras rotas do mapa, menos `/cart`, desenham `RoutePlaceholder`. Quem entra nos fluxos é o teste, por `pushNamed`. O retorno é `Navigator.pop`. O placeholder usa `AppBar`, então o botão de voltar desempilha a rota. A `TableView` não tem `AppBar`. O `AppBar` da `MenuView` não mostra seta, como no Figma: volta-se pelo botão do sistema.
 
 ### Argumentos
 
@@ -127,14 +127,13 @@ O PR [#3](https://github.com/jeancarlosaps/dinna-flutter/pull/3) está mergeado 
 
 [`lib/app/app.dart`](../lib/app/app.dart) mantém `initialRoute: AppRoutes.home`. A entrada da fundação continua `/`, com a home e o `GET /health`. [`test/app_test.dart`](../test/app_test.dart) cobre essa rota inicial. A abertura do app em `/table` não foi adotada. Se a rota inicial passar a ser `/table`, os testes que esperam a home em `/` precisam ser adaptados.
 
-O `switch` de [`app_router.dart`](../lib/app/router/app_router.dart) devolve `const TableView()` em `AppRoutes.table`, antes do ramo de placeholder. O nome `/table` permanece em `AppRoutes.clientFlow`. As outras rotas da jornada continuam em `RoutePlaceholder`.
+O `switch` de [`app_router.dart`](../lib/app/router/app_router.dart) devolve `const TableView()` em `AppRoutes.table`, antes do ramo de placeholder. O nome `/table` permanece em `AppRoutes.clientFlow`. `AppRoutes.menu` devolve a `MenuView` com o `MenuViewModel` e a mesa lida de `settings.arguments`. As outras rotas da jornada, menos `/cart`, continuam em `RoutePlaceholder`.
 
 A `TableView` fica em [`lib/features/client/table/table_view.dart`](../lib/features/client/table/table_view.dart). O layout mostra a marca, o texto “Qual é a sua mesa?”, um campo numérico e os botões “Ver cardápio” e “Acessar o painel”. O `TableViewModel` nasce no `State` e valida o texto: vazio, zero ou não numérico deixa `errorMessage`, mostrado no `errorText` do campo. Mesa válida volta normalizada (`" 012 "` vira `"12"`) e a tela chama `Navigator.pushNamed(AppRoutes.menu, arguments: mesa)`, com a mesa como `String`. “Acessar o painel” ainda usa `onPressed` vazio. A tela não tem `AppBar`.
 
-Quando a story ligar os botões ao mapa:
+Quando a story ligar o painel ao mapa, “Acessar o painel” chama `Navigator.pushNamed(context, AppRoutes.restaurant)`.
 
-- “Ver cardápio” chama `Navigator.pushNamed(context, AppRoutes.menu)`;
-- “Acessar o painel” chama `Navigator.pushNamed(context, AppRoutes.restaurant)`.
+A `MenuView` fica em [`lib/features/menu/menu_view.dart`](../lib/features/menu/menu_view.dart). O `MenuViewModel` nasce no `State`, chama `ProductRepository.list` e expõe `loading`, `ready` e `failed`. A tela mostra uma seção por categoria, na ordem da API, e os chips filtram uma categoria (nula é “Todos”). Produto com `available == false` aparece em cinza com o selo “Esgotado”. A mesa recebida aparece no header e segue para o carrinho por `onOpenCart`, que o router liga a `AppRoutes.cart`.
 
 O remoto `feature/client-ui` foi removido depois do merge. O case de `/table` e o restante do mapa da SCRUM-23 convivem na `dev`.
 
