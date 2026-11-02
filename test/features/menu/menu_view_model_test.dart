@@ -32,6 +32,7 @@ void main() {
     expect(viewModel.status, MenuStatus.ready);
     expect(viewModel.categories, ['Pizzas', 'Saladas']);
     expect(viewModel.visibleProducts, hasLength(3));
+    expect(viewModel.productsIn('Pizzas').map((p) => p.id), ['1', '3']);
   });
 
   test('filtra pela categoria escolhida e volta para todos', () async {

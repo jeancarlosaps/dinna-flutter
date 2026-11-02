@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../app/theme/dinna_colors.dart';
 import '../../core/domain/product.dart';
 import '../../shared/widgets/dinna_empty_state.dart';
 import '../../shared/widgets/dinna_logo.dart';
@@ -92,6 +93,8 @@ class _MenuContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selected = viewModel.selectedCategory;
+    final sections = selected == null ? viewModel.categories : [selected];
+    final headingStyle = Theme.of(context).textTheme.titleMedium;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -102,37 +105,79 @@ class _MenuContent extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             children: [
-              ChoiceChip(
-                label: const Text('Todos'),
+              _CategoryChip(
+                label: 'Todos',
                 selected: selected == null,
-                onSelected: (_) => viewModel.selectCategory(null),
+                onSelected: () => viewModel.selectCategory(null),
               ),
               for (final category in viewModel.categories) ...[
                 const SizedBox(width: 8),
-                ChoiceChip(
-                  label: Text(category),
+                _CategoryChip(
+                  label: _categoryLabel(category),
                   selected: selected == category,
-                  onSelected: (_) => viewModel.selectCategory(category),
+                  onSelected: () => viewModel.selectCategory(category),
                 ),
               ],
             ],
           ),
         ),
         Expanded(
-          child: GridView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 220,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: 0.78,
-            ),
-            itemCount: viewModel.visibleProducts.length,
-            itemBuilder: (context, index) =>
-                _ProductCard(product: viewModel.visibleProducts[index]),
+          child: CustomScrollView(
+            slivers: [
+              for (final category in sections) ...[
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                  sliver: SliverToBoxAdapter(
+                    child: Text(_categoryLabel(category), style: headingStyle),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  sliver: SliverGrid.builder(
+                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 220,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                      childAspectRatio: 0.78,
+                    ),
+                    itemCount: viewModel.productsIn(category).length,
+                    itemBuilder: (context, index) =>
+                        _ProductCard(product: viewModel.productsIn(category)[index]),
+                  ),
+                ),
+              ],
+              const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            ],
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Chip do Figma: selecionado em marrom escuro com texto claro, sem o ✓ do Material.
+class _CategoryChip extends StatelessWidget {
+  const _CategoryChip({required this.label, required this.selected, required this.onSelected});
+
+  final String label;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      showCheckmark: false,
+      selectedColor: colors.onSurface,
+      backgroundColor: colors.surfaceContainerLowest,
+      labelStyle: TextStyle(
+        color: selected ? colors.surface : colors.onSurface,
+        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+      ),
+      onSelected: (_) => onSelected(),
     );
   }
 }
@@ -147,74 +192,106 @@ class _ProductCard extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final imageUrl = product.imageUrl;
-    final placeholder = ColoredBox(
-      color: colors.primaryContainer,
-      child: Icon(Icons.restaurant, color: colors.primary),
+    final (light, dark) = _placeholderFor(product.id);
+    final placeholder = DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [light, dark],
+        ),
+      ),
     );
 
-    return Opacity(
-      opacity: product.available ? 1 : 0.6,
-      child: Card(
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (imageUrl == null)
-                    placeholder
-                  else
-                    Image.network(
-                      imageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => placeholder,
-                    ),
-                  if (!product.available)
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: colors.onSurface,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          'Esgotado',
-                          style: theme.textTheme.labelSmall?.copyWith(color: colors.surface),
-                        ),
+    final available = product.available;
+    final image = imageUrl == null
+        ? placeholder
+        : Image.network(imageUrl, fit: BoxFit.cover, errorBuilder: (_, _, _) => placeholder);
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (available)
+                  image
+                else
+                  Opacity(
+                    opacity: 0.55,
+                    child: ColorFiltered(colorFilter: _grayscale, child: image),
+                  ),
+                if (!available)
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: colors.onSurface,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'Esgotado',
+                        style: theme.textTheme.labelSmall?.copyWith(color: colors.surface),
                       ),
                     ),
-                ],
-              ),
+                  ),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
+          ),
+          Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  height: 40,
+                  child: Text(
                     product.name,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    formatOrderTotal(product.priceCents),
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      color: colors.primary,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w600,
+                      color: available ? colors.onSurface : colors.onSurfaceVariant,
                     ),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  formatOrderTotal(product.priceCents),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: available ? colors.primary : colors.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
+
+/// Tira a cor da imagem do produto esgotado, como no Figma.
+const _grayscale = ColorFilter.matrix(<double>[
+  0.2126, 0.7152, 0.0722, 0, 0, //
+  0.2126, 0.7152, 0.0722, 0, 0, //
+  0.2126, 0.7152, 0.0722, 0, 0, //
+  0, 0, 0, 1, 0, //
+]);
+
+/// Mesmo produto, mesma cor: o degradê sai do id, não da posição na lista.
+(Color, Color) _placeholderFor(String productId) {
+  final palette = DinnaColors.productPlaceholders;
+  final seed = productId.codeUnits.fold(0, (sum, unit) => sum + unit);
+  return palette[seed % palette.length];
+}
+
+/// A API manda a categoria como identificador (`bebidas`); a tela mostra "Bebidas".
+String _categoryLabel(String category) =>
+    category.isEmpty ? category : category[0].toUpperCase() + category.substring(1);

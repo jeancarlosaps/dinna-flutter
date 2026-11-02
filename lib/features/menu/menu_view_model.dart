@@ -40,6 +40,10 @@ class MenuViewModel extends ChangeNotifier {
     return _products.where((product) => product.category == category).toList();
   }
 
+  /// Produtos de uma categoria, na ordem da API. Monta as seções do cardápio.
+  List<Product> productsIn(String category) =>
+      _products.where((product) => product.category == category).toList();
+
   Future<void> load() async {
     _status = MenuStatus.loading;
     _errorMessage = null;

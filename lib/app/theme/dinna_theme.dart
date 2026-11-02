@@ -59,6 +59,7 @@ abstract final class DinnaTheme {
         backgroundColor: colorScheme.surface,
         foregroundColor: colorScheme.onSurface,
         elevation: 0,
+        scrolledUnderElevation: 0,
         centerTitle: false,
       ),
       cardTheme: CardThemeData(
