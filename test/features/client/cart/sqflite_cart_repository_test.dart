@@ -161,6 +161,39 @@ void main() {
     expect(await repository.removeConfirmed([sent]), [edited]);
   });
 
+  test('linha removida e reinserida com outro lineId sobrevive à confirmação antiga', () async {
+    final repository = open();
+    final sent = await repository.add(productId: 'p1', quantity: 2, note: null);
+    expect(await repository.remove(sent.lineId!), isTrue);
+    final reinserted = await repository.add(productId: 'p1', quantity: 2, note: null);
+
+    expect(reinserted.lineId, isNot(sent.lineId));
+    final left = await repository.removeConfirmed([sent]);
+    final persisted = await open(lineIdGenerator: () => 'nao-usado').load();
+
+    expect(left, [reinserted]);
+    expect(persisted, left);
+  });
+
+  test('lineId repetido no snapshot confirmado não desconta duas vezes', () async {
+    final repository = open();
+    final sent = await repository.add(productId: 'p1', quantity: 2, note: null);
+    final increased = CartItem(
+      lineId: sent.lineId,
+      productId: sent.productId,
+      quantity: 4,
+      note: null,
+    );
+    expect(await repository.update(increased), isTrue);
+
+    final left = await repository.removeConfirmed([sent, sent]);
+    final persisted = await open(lineIdGenerator: () => 'nao-usado').load();
+    final expected = CartItem(lineId: sent.lineId, productId: 'p1', quantity: 2, note: null);
+
+    expect(left, [expected]);
+    expect(persisted, left);
+  });
+
   test('removeConfirmed desfaz a transação quando o SQLite falha', () async {
     final repository = open();
     final first = await repository.add(productId: 'p1', quantity: 1, note: null);

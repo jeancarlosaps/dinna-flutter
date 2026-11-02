@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:dinna/core/domain/cart_item.dart';
 import 'package:dinna/core/domain/order_item.dart';
+import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _withNote = '{"productId":"p1","quantity":2,"note":"sem cebola"}';
@@ -61,6 +62,18 @@ void main() {
       expect(CartItem.fromJson(item.toJson()), item);
       expect(item.toOrderItem().toJson().containsKey('lineId'), isFalse);
       expect(item.toOrderItem().toJson().keys, ['productId', 'quantity', 'note']);
+    });
+
+    test('o mesmo conteúdo com lineIds diferentes não é a mesma linha', () {
+      final first = CartItem(lineId: 'line-1', productId: 'p1', quantity: 2, note: 'sem cebola');
+      final second = CartItem(lineId: 'line-2', productId: 'p1', quantity: 2, note: 'sem cebola');
+
+      expect(first == second, isFalse);
+      expect(first.hashCode, isNot(second.hashCode));
+      final body = jsonEncode(OrderRequest.body(table: '12', items: [first, second]));
+      expect(body.contains('lineId'), isFalse);
+      expect(body.contains('line-1'), isFalse);
+      expect(body.contains('line-2'), isFalse);
     });
 
     test('rejeita lineId vazio', () {
