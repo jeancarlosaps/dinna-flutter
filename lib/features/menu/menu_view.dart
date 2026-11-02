@@ -12,7 +12,8 @@ import 'menu_view_model.dart';
 /// Cardápio do cliente, na rota `/menu`.
 ///
 /// O [MenuViewModel] nasce e morre com o State. A mesa chega pela navegação
-/// e segue para o carrinho por [onOpenCart].
+/// e segue para o carrinho por [onOpenCart]. O Figma não tem ícone de carrinho
+/// no header: o acesso volta com a barra do carrinho, ao adicionar itens (SCRUM-39).
 class MenuView extends StatefulWidget {
   const MenuView({super.key, required this.createViewModel, required this.onOpenCart, this.table});
 
@@ -45,21 +46,22 @@ class _MenuViewState extends State<MenuView> {
   @override
   Widget build(BuildContext context) {
     final table = widget.table;
+    final colors = Theme.of(context).colorScheme;
 
+    // Header do Figma: faixa branca com linha embaixo, sem seta de voltar.
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
+        titleSpacing: 16,
+        backgroundColor: colors.surfaceContainerLowest,
+        shape: Border(bottom: BorderSide(color: colors.outlineVariant)),
         title: const DinnaLogo(size: 24),
         actions: [
           if (table != null)
             Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: Chip(label: Text('Mesa $table')),
+              padding: const EdgeInsets.only(right: 16),
+              child: _TableBadge(table: table),
             ),
-          IconButton(
-            tooltip: 'Carrinho',
-            icon: const Icon(Icons.shopping_cart_outlined),
-            onPressed: () => widget.onOpenCart(context, table),
-          ),
         ],
       ),
       body: ListenableBuilder(
@@ -151,6 +153,45 @@ class _MenuContent extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Selo da mesa do Figma: fundo creme, borda e bolinha verde.
+class _TableBadge extends StatelessWidget {
+  const _TableBadge({required this.table});
+
+  final String table;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(color: colors.secondary, shape: BoxShape.circle),
+            child: const SizedBox.square(dimension: 8),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            'Mesa $table',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colors.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

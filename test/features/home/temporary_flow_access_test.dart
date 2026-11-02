@@ -66,7 +66,8 @@ void main() {
     expect(products.calls, 1);
     expect(products.findCalls, 0);
 
-    await tester.tap(find.byType(BackButton));
+    // O header do cardápio não tem seta (Figma): volta pelo botão do sistema.
+    await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
 
     await _open(tester, 'Detalhe do produto');

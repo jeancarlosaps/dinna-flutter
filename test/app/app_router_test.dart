@@ -89,7 +89,8 @@ void main() {
     expect(find.byType(MenuView), findsOneWidget);
     expect(find.byType(TableView), findsNothing);
 
-    await tester.tap(find.byType(BackButton));
+    // O header do cardápio não tem seta (Figma): volta pelo botão do sistema.
+    await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(find.byType(TableView), findsOneWidget);
 
