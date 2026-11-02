@@ -83,7 +83,7 @@ O Dinna encurta esse intervalo **sem substituir o atendimento humano**:
 
 ## 02 · Estado atual
 
-Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas da SCRUM-23 já estão na `dev`. A home em `/` continua o fluxo `GET /health`. A `TableView` do PR #3 está em `/table`: o layout e o campo da mesa aparecem, e os botões ainda não navegam. O carrinho em `/cart` revisa quantidade, remoção e o total estimado, envia o pedido e mostra o erro ou a orientação para conferir antes de tentar de novo. A intenção desse envio permanece no dispositivo depois que o processo fecha. Cardápio, produto, pedido e o painel do restaurante seguem como `RoutePlaceholder`.
+Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas da SCRUM-23 já estão na `dev`. A home em `/` continua o fluxo `GET /health`. A `TableView` do PR #3 está em `/table`: o layout e o campo da mesa aparecem, e os botões ainda não navegam. O carrinho em `/cart` revisa quantidade, remoção e o total estimado, envia o pedido e mostra o erro ou a orientação para conferir antes de tentar de novo. A intenção desse envio permanece no dispositivo depois que o processo fecha. Com o sucesso gravado, `/order` mostra a confirmação e `/order/tracking` só identifica o pedido. Cardápio e produto seguem como `RoutePlaceholder`.
 
 | Item | Situação | Onde |
 |---|---|---|
@@ -109,7 +109,7 @@ Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas d
   <img src="docs/assets/readme/flow.svg" alt="Jornada planejada para R1. Cliente: mesa, cardápio, produto, carrinho, pedido e acompanhamento. O pedido vai para a fila do restaurante, que vê detalhes, atualiza o preparo e finaliza; o status volta para o cliente. O restaurante também mantém o cardápio." width="1600" loading="lazy" />
 </p>
 
-A jornada abaixo é a **R1 planejada**. Na `dev`, a etapa Mesa tem layout em `/table` (`TableView`, PR #3). Esse layout não guarda o número da mesa e os botões não navegam, então a story de informar a mesa continua pendente. O carrinho tem View em `/cart`. Cardápio, produto, pedido, acompanhamento e o painel do restaurante ainda não têm View: o router mostra `RoutePlaceholder`. Os nomes de rota já estão no mapa da SCRUM-23, mergeado pelo PR #6.
+A jornada abaixo é a **R1 planejada**. Na `dev`, a etapa Mesa tem layout em `/table` (`TableView`, PR #3). Esse layout não guarda o número da mesa e os botões não navegam, então a story de informar a mesa continua pendente. O carrinho tem View em `/cart`. `/order` confirma o pedido gravado. `/order/tracking` não atualiza o status. Cardápio e produto ainda não têm View: o router mostra `RoutePlaceholder`. Os nomes de rota já estão no mapa da SCRUM-23, mergeado pelo PR #6.
 
 **Cliente (Marina)**
 

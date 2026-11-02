@@ -246,7 +246,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(sentTable, '7');
-    expect(find.text('Pedido enviado'), findsOneWidget);
+    expect(find.text('Pedido enviado', skipOffstage: false), findsOneWidget);
     expect(lines.read().single.quantity, 1);
   });
 

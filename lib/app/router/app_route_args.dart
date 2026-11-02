@@ -27,3 +27,13 @@ final class RestaurantOrderArgs {
   final AppRouteId id;
   final Order order;
 }
+
+/// Pedido que a API já confirmou e o envio gravou.
+///
+/// A confirmação lê este valor e não repete `POST /orders` nem `GET /orders`.
+/// O router não o interpreta: a View é quem valida.
+final class OrderConfirmationArgs {
+  const OrderConfirmationArgs({required this.order});
+
+  final Order order;
+}
