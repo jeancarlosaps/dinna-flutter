@@ -74,7 +74,7 @@ Essa função não está no app. João a implementa na persistência, junto com 
 
 A mesa e os itens ainda não saem da UI.
 
-**Pendente na mesa.** `TableView` desenha o campo e não lê o texto. Não existe ViewModel de mesa. A mesa do pedido é um `String`, o mesmo formato de `Order.table` (`"12"`). Quem ficar com o valor é a navegação até o carrinho, não o `OrderSubmissionViewModel`.
+**Mesa.** `TableViewModel` valida o campo e a `TableView` abre `AppRoutes.menu` com a mesa como `String` em `arguments`, o mesmo formato de `Order.table` (`"12"`). **Pendente:** o cardápio (SCRUM-30) repassar esse argumento até `AppRoutes.cart`. Quem fica com o valor é a navegação até o carrinho, não o `OrderSubmissionViewModel`.
 
 **Pendente no detalhe.** `ProductDetailViewModel.load` preenche `product`. Não existe método de adicionar ao carrinho. A UI monta o `CartItem` e entrega a lista a quem persistir (João). Não copie nome, preço nem imagem para o item.
 
