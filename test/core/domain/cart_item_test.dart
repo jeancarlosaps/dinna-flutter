@@ -52,6 +52,24 @@ void main() {
       expect(orderItem.toJson(), jsonDecode(_withoutNote));
     });
 
+    test('lineId fica no JSON local e sai do item enviado', () {
+      const raw = '{"lineId":"line-1","productId":"p1","quantity":2,"note":"sem cebola"}';
+      final item = CartItem.fromJson(jsonDecode(raw) as Object);
+
+      expect(item.lineId, 'line-1');
+      expect(item.toJson(), jsonDecode(raw));
+      expect(CartItem.fromJson(item.toJson()), item);
+      expect(item.toOrderItem().toJson().containsKey('lineId'), isFalse);
+      expect(item.toOrderItem().toJson().keys, ['productId', 'quantity', 'note']);
+    });
+
+    test('rejeita lineId vazio', () {
+      expect(
+        () => CartItem(lineId: '', productId: 'p1', quantity: 1, note: null),
+        throwsArgumentError,
+      );
+    });
+
     test('rejeita JSON incompatível com o contrato local', () {
       final cases = <String, Object?>{
         'não é objeto': jsonDecode('[]'),
