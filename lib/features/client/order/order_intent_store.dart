@@ -83,9 +83,25 @@ final class MemoryOrderIntentStore implements OrderIntentStore {
 /// e o nome não estava lá. `File.exists` não entra nessa decisão: com o
 /// diretório inacessível ele responde falso mesmo com o arquivo presente.
 final class FileOrderIntentStore implements OrderIntentStore {
-  FileOrderIntentStore(this._file);
+  /// [readFile] e [deleteFile] simulam acesso negado sem `chmod`.
+  /// Sem eles, a leitura e a exclusão usam o arquivo real. Erro que não
+  /// prova ausência continua falha e não apaga o que já estava no disco.
+  FileOrderIntentStore(
+    this._file, {
+    Future<String> Function(File file)? readFile,
+    Future<void> Function(File file)? deleteFile,
+  }) : _readFile = readFile ?? _readRealFile,
+       _deleteFile = deleteFile ?? _deleteRealFile;
 
   final File _file;
+  final Future<String> Function(File file) _readFile;
+  final Future<void> Function(File file) _deleteFile;
+
+  static Future<String> _readRealFile(File file) => file.readAsString();
+
+  static Future<void> _deleteRealFile(File file) async {
+    await file.delete();
+  }
 
   File get _temp => File('${_file.path}.tmp');
 
@@ -114,7 +130,7 @@ final class FileOrderIntentStore implements OrderIntentStore {
       await _file.parent.create(recursive: true);
       await temp.writeAsString(encoded, flush: true);
       await temp.rename(_file.path);
-      final written = await _file.readAsString();
+      final written = await _readFile(_file);
       if (written != encoded) {
         throw const OrderIntentStoreException(OrderIntentStoreProblem.unreadable);
       }
@@ -134,7 +150,7 @@ final class FileOrderIntentStore implements OrderIntentStore {
   /// `null` quando este caminho não existe e o diretório pai pôde ser listado.
   Future<String?> _contents(File file) async {
     try {
-      return await file.readAsString();
+      return await _readFile(file);
     } on FileSystemException catch (error) {
       if (_isCorruptEncoding(error)) {
         throw const OrderIntentStoreException(OrderIntentStoreProblem.corrupt);
@@ -146,7 +162,7 @@ final class FileOrderIntentStore implements OrderIntentStore {
 
   Future<void> _deleteIfPresent(File file) async {
     try {
-      await file.delete();
+      await _deleteFile(file);
     } on FileSystemException catch (error) {
       if (await _provenAbsent(file, error)) return;
       throw const OrderIntentStoreException(OrderIntentStoreProblem.unwritable);
