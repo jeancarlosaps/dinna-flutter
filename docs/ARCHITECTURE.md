@@ -86,7 +86,7 @@ Os nomes são correspondência exata: sem barra no fim e sem parâmetro no camin
 | Cliente | `order` | `/order` | `OrderConfirmationArgs` | `OrderConfirmationView`. Pedido já gravado, sem outro POST |
 | Cliente | `orderTracking` | `/order/tracking` | `AppRouteId` | `OrderTrackingView`. Identifica o pedido e não atualiza o status |
 | Restaurante | `restaurant` | `/restaurant` | — | `OrdersQueueView`. Fila de pedidos |
-| Restaurante | `restaurantOrder` | `/restaurant/order` | `AppRouteId` | `OrderDetailsView`. Detalhe do pedido já carregado |
+| Restaurante | `restaurantOrder` | `/restaurant/order` | `RestaurantOrderArgs` | `OrderDetailsView`. Exige o id e o pedido já carregado. Só `AppRouteId` mostra "Pedido indisponível" |
 | Restaurante | `restaurantMenu` | `/restaurant/menu` | — | Placeholder |
 
 `AppRoutes.clientFlow` e `AppRoutes.restaurantFlow` registram essa ordem. A ordem é a jornada da R1, não uma pilha obrigatória: qualquer nome do mapa abre com `Navigator.pushNamed`.
@@ -119,7 +119,7 @@ A home de fundação permanece em `/` e não ganha botão de produto. `/table` d
 
 ### Argumentos
 
-`AppRouteId` carrega o id do produto ou do pedido. O router não lê nem valida o argumento: o `MaterialPageRoute` recebe o `RouteSettings` inteiro. A View da story lê `ModalRoute.of(context)!.settings.arguments`. As rotas de detalhe são `product`, `orderTracking` e `restaurantOrder` (`AppRoutes.detailRoutes`).
+`AppRouteId` carrega o id do produto ou do acompanhamento. O router não lê nem valida o argumento: o `MaterialPageRoute` recebe o `RouteSettings` inteiro. A View da story lê `ModalRoute.of(context)!.settings.arguments`. As rotas de detalhe são `product`, `orderTracking` e `restaurantOrder` (`AppRoutes.detailRoutes`). Em `/restaurant/order`, o argumento é `RestaurantOrderArgs`: o id e o pedido que a fila já carregou. Sem esse pedido, a tela mostra "Pedido indisponível" e não consulta a API.
 
 ### TableView (PR #3)
 
