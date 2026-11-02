@@ -6,10 +6,19 @@ import '../domain/data_failure.dart';
 /// [message] é o texto para a interface. [detail] guarda a causa técnica,
 /// como o texto de uma falha de transporte, e não deve ser exibido.
 class ApiException implements Exception {
-  const ApiException(this.message, {this.statusCode, this.detail, this.outcomeUncertain = false});
+  const ApiException(
+    this.message, {
+    this.statusCode,
+    this.code,
+    this.detail,
+    this.outcomeUncertain = false,
+  });
 
   final String message;
   final int? statusCode;
+
+  /// `error.code` da API, quando o corpo trouxe um código utilizável.
+  final String? code;
 
   /// Causa técnica. Nula quando o texto da interface já é o que importa.
   final String? detail;
