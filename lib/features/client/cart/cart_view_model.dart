@@ -26,10 +26,9 @@ final class CartRow {
 /// A tela lê [items] e entrega a lista ao envio. Esta classe não chama o
 /// repositório de pedidos.
 ///
-/// A identidade da linha é a posição em [CartLines]. Duas linhas com o mesmo
-/// produto e a mesma observação são alteradas em separado. [CartItem] ainda
-/// não tem `lineId`; [_withQuantity] é o único lugar que copia a linha, e
-/// precisa repassar esse campo quando ele existir.
+/// A identidade da linha é a posição em [CartLines] e, quando existe, o
+/// [CartItem.lineId]. Duas linhas com o mesmo produto e a mesma observação
+/// são alteradas em separado. [_withQuantity] copia o `lineId` junto.
 ///
 /// Depois do [dispose], resposta pendente não altera estado nem notifica.
 class CartViewModel extends ChangeNotifier {
@@ -232,11 +231,12 @@ class CartViewModel extends ChangeNotifier {
   }
 }
 
-/// Copia a linha com outra quantidade.
-///
-/// Hoje o model só tem `productId`, `quantity` e `note`. Quando `lineId`
-/// entrar em [CartItem], o novo campo precisa ser copiado aqui. Sem essa
-/// cópia, trocar a quantidade perde a identidade da linha.
+/// Copia a linha com outra quantidade, inclusive a identidade local.
 CartItem _withQuantity(CartItem item, int quantity) {
-  return CartItem(productId: item.productId, quantity: quantity, note: item.note);
+  return CartItem(
+    lineId: item.lineId,
+    productId: item.productId,
+    quantity: quantity,
+    note: item.note,
+  );
 }

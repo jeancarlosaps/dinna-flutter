@@ -34,7 +34,7 @@ O app monta um único `HttpOrderRepository` em `lib/main.dart` e o entrega ao `A
 
 A identidade da linha é um `lineId` local, criado quando a linha entra no carrinho. Ele não vai no `POST /orders`. `productId` + `note` não identifica a linha: o usuário pode apagar a original e adicionar outra igual enquanto o envio está em andamento.
 
-`CartItem` ainda não tem `lineId`. João acrescenta o campo na linha persistida e na lista que entra em `submit`. A fotografia guarda esse id. A limpeza só mexe na linha que ainda tem o mesmo `lineId`.
+`CartItem` tem `lineId` opcional. O `SqfliteCartRepository` atribui o id ao incluir a linha. A fotografia do envio guarda esse id. A limpeza só mexe na linha que ainda tem o mesmo `lineId`.
 
 - Mesma linha e mesma observação: subtrai a quantidade enviada. Abaixo de 1, a linha sai. Quantidade aumentada durante o POST deixa a diferença.
 - Mesma linha com observação trocada: a linha fica como o usuário deixou.
@@ -64,11 +64,11 @@ List<CartItem> withoutConfirmed(List<CartItem> cart, List<CartItem> confirmed) {
 }
 ```
 
-O construtor com `lineId` ainda não existe. É a forma da linha persistida, não a de `CartItem` hoje.
+O construtor com `lineId` existe. O trecho acima é a forma da linha persistida.
 
 Exemplo: o envio levou a linha `a` (produto `p1`, observação `sem cebola`, 2 unidades). Durante o POST essa linha sai e entra a linha `b`, com o mesmo produto, a mesma observação e 1 unidade. `confirmedItems` só tem `a`. `b` permanece com 1 unidade.
 
-Essa função não está no app. João a implementa na persistência, junto com o `lineId`. Jean não reconcilia por produto e observação: no sucesso, entrega `confirmedItems` para essa limpeza.
+`SqfliteCartRepository.removeConfirmed` aplica essa regra numa transação. A tela ainda não chama o repositório: a ligação com o fluxo fica na SCRUM-69/71. A limpeza não casa por produto e observação.
 
 ## Gabriel — SCRUM-29/36/37/39
 
@@ -93,13 +93,13 @@ A inclusão usa o mesmo `CartLines`. Lê a lista, acrescenta o item e grava com 
 
 ## João — SCRUM-69/70/71
 
-Não há repositório de carrinho nem `sqflite` no projeto. **Pendente:** a persistência e o `lineId`. A revisão grava com `CartLines.replace`: a lista inteira só entra se `expected` ainda for a lista armazenada. A persistência entra no lugar de `ProcessCartLines`, em `main`, e implementa essa mesma regra. O `POST /orders` continua em `toOrderItem()`: `productId`, `quantity` e `note`. O JSON local de hoje ainda não guarda `lineId`; a linha persistida precisa guardar.
+`CartRepository` e `sqflite` já estão no projeto. A tela ainda grava com `CartLines.replace`: a lista inteira só entra se `expected` ainda for a lista armazenada. Trocar `ProcessCartLines` em `main` continua pendente na SCRUM-69/71. O `POST /orders` continua em `toOrderItem()`: `productId`, `quantity` e `note`. O JSON local do repositório guarda `lineId`.
 
-`CartItem` ainda não tem `lineId`. A troca de quantidade copia a linha em `CartViewModel._withQuantity` e hoje leva só `productId`, `quantity` e `note`. Quando o campo entrar, essa função precisa repassá-lo, e `==` / `hashCode` também. Sem a cópia, trocar a quantidade perde a identidade. Sem o `==`, `replace` não enxerga a troca de `lineId`. A tela não casa item por `productId` + `note`: a posição na lista é a identidade até o campo existir.
+`_withQuantity` copia `lineId`, e `==` / `hashCode` incluem o campo. A tela não casa item por `productId` + `note`.
 
-**Pendente na limpeza.** Gerar um `lineId` novo em cada inclusão, mesmo que produto e observação repitam uma linha apagada. Não reutilizar o id. Implementar `withoutConfirmed` pelo `lineId`, com a regra de observação e quantidade acima. Não casar por `productId` + `note`. Em falha confirmada ou resultado incerto, não rodar essa limpeza.
+**Limpeza.** `add` gera um `lineId` novo em cada inclusão, mesmo que produto e observação repitam uma linha apagada. Não reutiliza o id. `removeConfirmed` aplica a regra de observação e quantidade pelo `lineId`. Não casa por `productId` + `note`. A tela ainda não dispara essa limpeza. Em falha confirmada ou resultado incerto, a limpeza não roda.
 
-O round-trip abaixo é o de hoje, sem `lineId`. A persistência não pode parar nele: `fromJson` ignora campo que o model ainda não lê.
+O round-trip local inclui `lineId` quando a linha tem identidade. `toOrderItem()` continua sem esse campo.
 
 ```dart
 final stored = [for (final item in cart) item.toJson()];
@@ -155,12 +155,10 @@ Se `stored` for `false`, repetir a partir de um `read` novo. Não gerar `lineId`
 
 João, na persistência:
 
-- Implementar `replace` de modo que `false` não grave.
-- Ao criar `lineId`, copiá-lo em `_withQuantity` e incluí-lo em `==` e `hashCode`.
-- Não enviar `lineId` em `toOrderItem()`.
-- Testar que mudar a quantidade conserva o `lineId`.
-- Testar que `replace` devolve `false` quando a lista armazenada deixou de ser `expected`.
-- Testar o round-trip do `lineId` no JSON local e a limpeza `withoutConfirmed` por esse id.
+- `replace` devolve `false` e não grava quando a lista armazenada deixou de ser `expected`.
+- `_withQuantity` copia `lineId`. `==` e `hashCode` incluem o campo.
+- `toOrderItem()` não envia `lineId`.
+- Os testes cobrem a quantidade, o round-trip local e `removeConfirmed`.
 
 A revisão já cobre, sem `lineId`: quantidade e remoção pela posição, total estimado, estado vazio, e a recusa de gravar quando a lista mudou depois da leitura.
 
@@ -241,4 +239,4 @@ A folga local continua nesta entrega. Ela é `24 horas` menos `1 hora`. O motivo
 
 `cartStore` **não existe**. A limpeza depois do sucesso fica na implementação de `CartLines` do João, quando `lineId` existir. A revisão não grava nesse momento e a confirmação também não limpa o carrinho. Falha confirmada, conflito, bloqueio e resultado incerto não limpam o carrinho. O `submit` da tela usa as linhas atuais do `CartViewModel` só quando não há intenção aberta; a intenção incerta repete o body já gravado. Quando `lineId` existir, não monte outra lista só com `productId`, `quantity` e `note`: a fotografia perderia a identidade e a limpeza voltaria a apagar uma linha recriada. A mesa chega em `CartView.table`. A navegação passa um `String` em `RouteSettings.arguments`; outro tipo não é mesa. Sem esse argumento, a tela envia mesa vazia e a validação responde "Informe a mesa".
 
-`/order` recebe `OrderConfirmationArgs`. O `Order` é o da intenção `succeeded`, o mesmo do ViewModel, sem novo `GET /orders`. "Acompanhar pedido" abre `/order/tracking` com `AppRouteId` desse pedido. Essa rota não faz polling, não chama endpoint e não acompanha status: a SCRUM-46 continua pendente. A persistência do carrinho continua pendente na SCRUM-70. Sem o argumento esperado, as duas rotas explicam a ausência e não chamam a API.
+`/order` recebe `OrderConfirmationArgs`. O `Order` é o da intenção `succeeded`, o mesmo do ViewModel, sem novo `GET /orders`. "Acompanhar pedido" abre `/order/tracking` com `AppRouteId` desse pedido. Essa rota não faz polling, não chama endpoint e não acompanha status: a SCRUM-46 continua pendente. O repositório SQLite da SCRUM-70 existe e ainda não substitui o `CartLines` da tela. Essa ligação fica na SCRUM-69/71. Sem o argumento esperado, as duas rotas explicam a ausência e não chamam a API.

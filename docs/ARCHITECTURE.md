@@ -152,7 +152,7 @@ O mesmo PR versionou dois PDFs dentro de `lib/`: `Dinna · App Cliente Marina.pd
 5. Montar a implementação concreta em `lib/main.dart` e passar o contrato pelo construtor até o `AppRouter`. No `onGenerateRoute`, a rota ganha um case próprio antes do `RoutePlaceholder`. O nome já está em `AppRoutes`; a story não cria um nome paralelo.
 6. Não adicionar `provider`, `get_it`, UseCase ou outra camada sem uma necessidade que este fluxo não cubra.
 
-A SCRUM-18 segue em andamento. O HTTP está configurado: `package:http` 1.6.0 e `ApiClient` integrado em [`lib/main.dart`](../lib/main.dart). A SCRUM-90 grava só a intenção do `POST /orders` num arquivo, com `path_provider` para achar o diretório. A SCRUM-27, em andamento com João, propõe SQLite local via `sqflite` para carrinho, preferências e último pedido confirmado. Esse pacote não entrou neste repositório. Quando a persistência do carrinho entrar, será outra fonte atrás de um Repository, não um atalho da View para o disco.
+A SCRUM-18 segue em andamento. O HTTP está configurado: `package:http` 1.6.0 e `ApiClient` integrado em [`lib/main.dart`](../lib/main.dart). A SCRUM-70 persiste as linhas do carrinho em SQLite via `CartRepository` em [`lib/features/client/cart/`](../lib/features/client/cart/). A SCRUM-90 grava a intenção do `POST /orders` num arquivo, usando `path_provider` para localizar o diretório. Essas persistências atendem a fluxos distintos; a View não acessa diretamente o disco. Preferências e último pedido confirmado seguem fora desses escopos.
 
 ## Models de domínio
 
@@ -162,7 +162,7 @@ Os models compartilhados ficam em [`lib/core/domain/`](../lib/core/domain/). Sã
 
 **Models locais**, sem recurso nem endpoint novo: `CartItem` e `Preference`.
 
-`CartItem` guarda `productId`, `quantity` e `note` opcional. Antes de `POST /orders`, `CartItem.toOrderItem()` produz o `OrderItem` do contrato. O carrinho não copia nome, preço ou imagem e não calcula `totalCents`.
+`CartItem` guarda `productId`, `quantity`, `note` opcional e o `lineId` local opcional, atribuído ao persistir uma inclusão. O `lineId` distingue linhas mesmo quando produto e observação coincidem e nunca é enviado à API. Antes de `POST /orders`, `CartItem.toOrderItem()` produz o `OrderItem` do contrato. O carrinho não copia nome, preço ou imagem e não calcula `totalCents`.
 
 `Preference` guarda o texto livre do cliente em `{ "text": "..." }`. Não é um recurso REST, e esse JSON não é o body de `POST /ai/recommendation`. O texto preenchido alimenta o campo opcional `preferences` desse endpoint (R2). Texto vazio não envia o campo.
 

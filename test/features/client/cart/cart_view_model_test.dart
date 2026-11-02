@@ -90,6 +90,36 @@ void main() {
     expect(lines.writes, 2);
   });
 
+  test('increase e decrease preservam lineId, produto e observação', () async {
+    final identified = CartItem(lineId: 'line-1', productId: 'p1', quantity: 2, note: 'sem cebola');
+    final legacy = CartItem(productId: 'p2', quantity: 2, note: null);
+    final lines = _RecordingLines([identified, legacy]);
+    final viewModel = viewModelOf(
+      const [],
+      catalog([priced('p1', 'Moqueca', 1000), priced('p2', 'Salada', 500)]),
+      lines: lines,
+    );
+    await viewModel.resolveProducts();
+
+    viewModel.increase(0);
+    viewModel.decrease(1);
+
+    expect(lines.items.first.lineId, 'line-1');
+    expect(lines.items.first.productId, 'p1');
+    expect(lines.items.first.note, 'sem cebola');
+    expect(lines.items.first.quantity, 3);
+    expect(lines.items.last.lineId, isNull);
+    expect(lines.items.last.productId, 'p2');
+    expect(lines.items.last.note, isNull);
+    expect(lines.items.last.quantity, 1);
+
+    viewModel.decrease(0);
+    viewModel.increase(1);
+
+    expect(lines.items.first, identified);
+    expect(lines.items.last, legacy);
+  });
+
   test('quantidade 1 não diminui e não grava', () async {
     final lines = _RecordingLines([line('p1', 1)]);
     final viewModel = viewModelOf(const [], catalog([priced('p1', 'Moqueca', 4890)]), lines: lines);
