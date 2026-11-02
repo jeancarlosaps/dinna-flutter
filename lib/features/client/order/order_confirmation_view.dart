@@ -13,7 +13,8 @@ import '../../restaurant/order_format.dart';
 /// Lê [OrderConfirmationArgs]. O [Order] é a fotografia gravada no envio:
 /// mesa, itens, quantidades, total e horário vêm dele. [OrderItem] não traz
 /// nome nem preço individual; a tela mostra o `productId` e não consulta o
-/// cardápio. Sem o argumento certo, explica a ausência e não chama a API.
+/// cardápio. Sem o argumento certo, explica a ausência, usa o título "Pedido"
+/// e não chama a API. Com o pedido, o título é "Pedido recebido".
 ///
 /// Não há ViewModel: o pedido é imutável e esta tela não envia, não retoma
 /// e não observa o carrinho. [onTrack] abre o acompanhamento com o mesmo
@@ -64,7 +65,7 @@ class _OrderConfirmationViewState extends State<OrderConfirmationView> {
   Widget build(BuildContext context) {
     final order = _order;
     return Scaffold(
-      appBar: AppBar(title: const Text('Pedido recebido')),
+      appBar: AppBar(title: Text(order == null ? 'Pedido' : 'Pedido recebido')),
       body: order == null
           ? const _MissingOrder()
           : _ConfirmationBody(order: order, onTrack: () => unawaited(_track(order))),

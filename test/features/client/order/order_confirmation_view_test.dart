@@ -70,11 +70,18 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  String appBarTitle(WidgetTester tester) {
+    final title = tester.widget<AppBar>(find.byType(AppBar)).title;
+    expect(title, isA<Text>());
+    return (title! as Text).data!;
+  }
+
   testWidgets('mostra mesa, itens, quantidades, total e identificação do pedido', (tester) async {
     final order = confirmed();
     await pumpConfirmation(tester, arguments: OrderConfirmationArgs(order: order));
 
     expect(find.text('Pedido recebido'), findsWidgets);
+    expect(appBarTitle(tester), 'Pedido recebido');
     expect(find.text('O restaurante recebeu este pedido.'), findsOneWidget);
     expect(find.text('Mesa 12'), findsOneWidget);
     expect(find.text('Recebido'), findsOneWidget);
@@ -117,6 +124,8 @@ void main() {
     for (final arguments in invalid) {
       await pumpConfirmation(tester, arguments: arguments);
       expect(find.text('Pedido indisponível'), findsOneWidget, reason: '$arguments');
+      expect(appBarTitle(tester), 'Pedido', reason: '$arguments');
+      expect(find.text('Pedido recebido'), findsNothing, reason: '$arguments');
       expect(find.text('Acompanhar pedido'), findsNothing, reason: '$arguments');
       expect(find.text('Mesa 12'), findsNothing, reason: '$arguments');
     }

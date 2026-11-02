@@ -168,7 +168,7 @@ O total da tela é a soma `priceCents * quantity`, com o rótulo "Total estimado
 
 ## Confirmação
 
-O envio continua no `OrderSubmissionViewModel`. A confirmação não tem ViewModel: o `Order` é imutável e a tela não envia, não retoma e não lê o carrinho. Ela recebe `OrderConfirmationArgs` em `/order`. Não há outro `POST /orders` nem `GET /orders`. O total é `order.totalCents`.
+O envio continua no `OrderSubmissionViewModel`. A confirmação não tem ViewModel: o `Order` é imutável e a tela não envia, não retoma e não lê o carrinho. Ela recebe `OrderConfirmationArgs` em `/order`. Com o pedido, a barra mostra "Pedido recebido". Sem argumento válido, a barra mostra "Pedido" e o corpo continua "Pedido indisponível". Não há outro `POST /orders` nem `GET /orders`. O total é `order.totalCents`.
 
 `OrderItem` não traz nome nem preço. A confirmação mostra `productId`, quantidade e `note`. Não consulta `ProductRepository`, para o cardápio atual não reescrever o pedido já aceito.
 
