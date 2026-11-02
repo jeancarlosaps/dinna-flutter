@@ -1,10 +1,34 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../../../app/router/app_router.dart';
 import '../../../app/theme/dinna_theme.dart';
 import '../../../shared/widgets/dinna_logo.dart';
+import 'table_view_model.dart';
 
-class TableView extends StatelessWidget {
+class TableView extends StatefulWidget {
   const TableView({super.key});
+
+  @override
+  State<TableView> createState() => _TableViewState();
+}
+
+class _TableViewState extends State<TableView> {
+  final _tableController = TextEditingController();
+  final _viewModel = TableViewModel();
+
+  @override
+  void dispose() {
+    _tableController.dispose();
+    _viewModel.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final table = _viewModel.submit(_tableController.text);
+    if (table == null) return;
+    Navigator.of(context).pushNamed(AppRoutes.menu, arguments: table);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -58,21 +82,32 @@ class TableView extends StatelessWidget {
                                     ),
                                   ),
                                   const SizedBox(height: 16),
-                                  Semantics(
-                                    label: 'Número da mesa',
-                                    child: TextField(
-                                      keyboardType: TextInputType.number,
-                                      decoration: const InputDecoration(
-                                        prefixIcon: Padding(
-                                          padding: EdgeInsets.only(left: 16, right: 8),
-                                          child: Text('Mesa'),
+                                  ListenableBuilder(
+                                    listenable: _viewModel,
+                                    builder: (context, _) => Semantics(
+                                      label: 'Número da mesa',
+                                      child: TextField(
+                                        controller: _tableController,
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                        textInputAction: TextInputAction.go,
+                                        onSubmitted: (_) => _submit(),
+                                        decoration: InputDecoration(
+                                          prefixIcon: const Padding(
+                                            padding: EdgeInsets.only(left: 16, right: 8),
+                                            child: Text('Mesa'),
+                                          ),
+                                          prefixIconConstraints: const BoxConstraints(),
+                                          errorText: _viewModel.errorMessage,
                                         ),
-                                        prefixIconConstraints: BoxConstraints(),
                                       ),
                                     ),
                                   ),
                                   const SizedBox(height: 16),
-                                  FilledButton(onPressed: () {}, child: const Text('Ver cardápio')),
+                                  FilledButton(
+                                    onPressed: _submit,
+                                    child: const Text('Ver cardápio'),
+                                  ),
                                 ],
                               ),
                             ),
