@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -68,17 +69,21 @@ class _MenuViewState extends State<MenuView> {
         listenable: _viewModel,
         builder: (context, _) => switch (_viewModel.status) {
           MenuStatus.loading => const Center(child: CircularProgressIndicator()),
-          MenuStatus.failed => DinnaEmptyState(
-            icon: Icons.wifi_off,
-            title: 'Não foi possível carregar o cardápio',
-            message: _viewModel.errorMessage ?? MenuViewModel.fallbackErrorMessage,
-            actionLabel: 'Tentar de novo',
-            onAction: _viewModel.load,
+          MenuStatus.failed => _ScrollableStatus(
+            child: DinnaEmptyState(
+              icon: Icons.wifi_off,
+              title: 'Não foi possível carregar o cardápio',
+              message: _viewModel.errorMessage ?? MenuViewModel.fallbackErrorMessage,
+              actionLabel: 'Tentar de novo',
+              onAction: _viewModel.load,
+            ),
           ),
-          MenuStatus.ready when _viewModel.isEmpty => const DinnaEmptyState(
-            icon: Icons.restaurant_menu,
-            title: 'Cardápio vazio',
-            message: 'O restaurante ainda não cadastrou pratos.',
+          MenuStatus.ready when _viewModel.isEmpty => const _ScrollableStatus(
+            child: DinnaEmptyState(
+              icon: Icons.restaurant_menu,
+              title: 'Cardápio vazio',
+              message: 'O restaurante ainda não cadastrou pratos.',
+            ),
           ),
           MenuStatus.ready => _MenuContent(viewModel: _viewModel),
         },
@@ -98,14 +103,87 @@ class _MenuContent extends StatelessWidget {
     final sections = selected == null ? viewModel.categories : [selected];
     final headingStyle = Theme.of(context).textTheme.titleMedium;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(
-          height: 56,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _CategoryStrip(viewModel: viewModel),
+            Expanded(
+              child: CustomScrollView(
+                slivers: [
+                  for (final category in sections) ...[
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                      sliver: SliverToBoxAdapter(
+                        child: Text(_categoryLabel(category), style: headingStyle),
+                      ),
+                    ),
+                    SliverPadding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      sliver: SliverGrid.builder(
+                        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 220,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          mainAxisExtent: _cardExtent(context, constraints.maxWidth - 32),
+                        ),
+                        itemCount: viewModel.productsIn(category).length,
+                        itemBuilder: (context, index) =>
+                            _ProductCard(product: viewModel.productsIn(category)[index]),
+                      ),
+                    ),
+                  ],
+                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Erro e cardápio vazio rolam em tela baixa e ficam centralizados quando cabem.
+class _ScrollableStatus extends StatelessWidget {
+  const _ScrollableStatus({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// A faixa cresce com o chip. A rolagem continua horizontal.
+class _CategoryStrip extends StatelessWidget {
+  const _CategoryStrip({required this.viewModel});
+
+  final MenuViewModel viewModel;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = viewModel.selectedCategory;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        heightFactor: 1,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
             children: [
               _CategoryChip(
                 label: 'Todos',
@@ -123,38 +201,60 @@ class _MenuContent extends StatelessWidget {
             ],
           ),
         ),
-        Expanded(
-          child: CustomScrollView(
-            slivers: [
-              for (final category in sections) ...[
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                  sliver: SliverToBoxAdapter(
-                    child: Text(_categoryLabel(category), style: headingStyle),
-                  ),
-                ),
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  sliver: SliverGrid.builder(
-                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: 220,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: 0.78,
-                    ),
-                    itemCount: viewModel.productsIn(category).length,
-                    itemBuilder: (context, index) =>
-                        _ProductCard(product: viewModel.productsIn(category)[index]),
-                  ),
-                ),
-              ],
-              const SliverToBoxAdapter(child: SizedBox(height: 24)),
-            ],
-          ),
-        ),
-      ],
+      ),
     );
   }
+}
+
+/// Altura do card na escala 1 segue a proporção anterior. Texto ampliado
+/// aumenta o card pelo que o nome e o preço realmente ocupam.
+double _cardExtent(BuildContext context, double gridWidth) {
+  const maxTile = 220.0;
+  const spacing = 12.0;
+  const aspect = 0.78;
+  final width = math.max(gridWidth, 1);
+  var count = (width / (maxTile + spacing)).ceil();
+  count = math.max(1, count);
+  final usable = math.max(0.0, width - spacing * (count - 1));
+  final tileWidth = usable / count;
+  final base = tileWidth / aspect;
+
+  final theme = Theme.of(context);
+  final nameStyle = theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600);
+  final priceStyle = theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700);
+  final scaler = MediaQuery.textScalerOf(context);
+  final textWidth = math.max(tileWidth - 28, 1.0);
+  final extra =
+      math.max(
+        0.0,
+        _textBlock(context, nameStyle, scaler, lines: 2, maxWidth: textWidth) -
+            _textBlock(context, nameStyle, TextScaler.noScaling, lines: 2, maxWidth: textWidth),
+      ) +
+      math.max(
+        0.0,
+        _textBlock(context, priceStyle, scaler, lines: 1, maxWidth: textWidth) -
+            _textBlock(context, priceStyle, TextScaler.noScaling, lines: 1, maxWidth: textWidth),
+      );
+  // O Text fica um pouco mais alto que o TextPainter quando a escala passa de 1.
+  final scale = scaler.scale(1);
+  final slack = scale <= 1 ? 0.0 : 8 * (scale - 1);
+  return base + extra + slack;
+}
+
+double _textBlock(
+  BuildContext context,
+  TextStyle? style,
+  TextScaler scaler, {
+  required int lines,
+  required double maxWidth,
+}) {
+  final painter = TextPainter(
+    text: TextSpan(text: lines == 1 ? 'Ag' : 'Ag\nAg', style: style),
+    textDirection: Directionality.of(context),
+    textScaler: scaler,
+    maxLines: lines,
+  )..layout(maxWidth: maxWidth);
+  return painter.height;
 }
 
 /// Selo da mesa do Figma: fundo creme, borda e bolinha verde.
@@ -289,16 +389,13 @@ class _ProductCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(
-                  height: 40,
-                  child: Text(
-                    product.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: available ? colors.onSurface : colors.onSurfaceVariant,
-                    ),
+                Text(
+                  product.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: available ? colors.onSurface : colors.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 2),
