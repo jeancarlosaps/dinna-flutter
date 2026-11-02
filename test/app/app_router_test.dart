@@ -2,6 +2,7 @@ import 'package:dinna/app/app.dart';
 import 'package:dinna/app/router/app_router.dart';
 import 'package:dinna/features/client/table/table_view.dart';
 import 'package:dinna/features/home/api_status_repository.dart';
+import 'package:dinna/features/menu/menu_view.dart';
 import 'package:dinna/features/menu/product_repository.dart';
 import 'package:dinna/features/restaurant/order_details_view.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
@@ -85,7 +86,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await _push(tester, AppRoutes.menu, from: _tableTitle);
-    expect(find.text(AppRoutes.menu), findsOneWidget);
+    expect(find.byType(MenuView), findsOneWidget);
     expect(find.byType(TableView), findsNothing);
 
     await tester.tap(find.byType(BackButton));
@@ -158,6 +159,7 @@ void main() {
     final routes = [...AppRoutes.clientFlow, ...AppRoutes.restaurantFlow].where(
       (route) =>
           route != AppRoutes.table &&
+          route != AppRoutes.menu &&
           route != AppRoutes.cart &&
           route != AppRoutes.restaurant &&
           route != AppRoutes.restaurantOrder,
