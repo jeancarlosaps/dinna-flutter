@@ -67,28 +67,31 @@ class _MenuViewState extends State<MenuView> {
             ),
         ],
       ),
-      body: ListenableBuilder(
-        listenable: _viewModel,
-        builder: (context, _) => switch (_viewModel.status) {
-          MenuStatus.loading => const Center(child: CircularProgressIndicator()),
-          MenuStatus.failed => _ScrollableStatus(
-            child: DinnaEmptyState(
-              icon: Icons.wifi_off,
-              title: 'Não foi possível carregar o cardápio',
-              message: _viewModel.errorMessage ?? MenuViewModel.fallbackErrorMessage,
-              actionLabel: 'Tentar de novo',
-              onAction: _viewModel.load,
+      body: SafeArea(
+        top: false,
+        child: ListenableBuilder(
+          listenable: _viewModel,
+          builder: (context, _) => switch (_viewModel.status) {
+            MenuStatus.loading => const Center(child: CircularProgressIndicator()),
+            MenuStatus.failed => _ScrollableStatus(
+              child: DinnaEmptyState(
+                icon: Icons.wifi_off,
+                title: 'Não foi possível carregar o cardápio',
+                message: _viewModel.errorMessage ?? MenuViewModel.fallbackErrorMessage,
+                actionLabel: 'Tentar de novo',
+                onAction: _viewModel.load,
+              ),
             ),
-          ),
-          MenuStatus.ready when _viewModel.isEmpty => const _ScrollableStatus(
-            child: DinnaEmptyState(
-              icon: Icons.restaurant_menu,
-              title: 'Cardápio vazio',
-              message: 'O restaurante ainda não cadastrou pratos.',
+            MenuStatus.ready when _viewModel.isEmpty => const _ScrollableStatus(
+              child: DinnaEmptyState(
+                icon: Icons.restaurant_menu,
+                title: 'Cardápio vazio',
+                message: 'O restaurante ainda não cadastrou pratos.',
+              ),
             ),
-          ),
-          MenuStatus.ready => _MenuContent(viewModel: _viewModel),
-        },
+            MenuStatus.ready => _MenuContent(viewModel: _viewModel),
+          },
+        ),
       ),
     );
   }
@@ -239,7 +242,9 @@ double _badgeMaxWidth(BuildContext context) {
     textScaler: scaler,
     maxLines: 1,
   )..layout();
-  return math.max(48, MediaQuery.sizeOf(context).width - logo.width - 48);
+  final padding = MediaQuery.paddingOf(context);
+  final width = MediaQuery.sizeOf(context).width - padding.left - padding.right;
+  return math.max(48, width - logo.width - 48);
 }
 
 double _badgeTextHeight(BuildContext context, String table) {

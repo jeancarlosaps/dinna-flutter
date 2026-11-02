@@ -287,6 +287,36 @@ void main() {
     expect(logoTop + logo.size.height, lessThanOrEqualTo(barTop + appBar.size.height + 0.5));
   });
 
+  testWidgets('o cardápio respeita o recorte lateral da tela', (tester) async {
+    tester.view.physicalSize = const Size(800, 360);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(left: 40, right: 24);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: MenuView(
+          table: '12',
+          createViewModel: () => MenuViewModel(
+            FakeProductRepository(
+              () async => ProductList.ready([_product('1', 'Moqueca', 'pratos')]),
+            ),
+          ),
+          onOpenCart: (_, _) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final chip = tester.renderObject<RenderBox>(find.widgetWithText(ChoiceChip, 'Todos'));
+    final chipLeft = chip.localToGlobal(Offset.zero).dx;
+    final chipRight = chipLeft + chip.size.width;
+    expect(chipLeft, greaterThanOrEqualTo(40));
+    expect(chipRight, lessThanOrEqualTo(800 - 24));
+  });
+
   testWidgets('mesa longa cabe no header com texto a 300%', (tester) async {
     tester.view.physicalSize = const Size(360, 700);
     tester.view.devicePixelRatio = 1;

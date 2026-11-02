@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dinna/core/domain/product.dart';
 import 'package:dinna/features/menu/menu_view_model.dart';
 import 'package:dinna/features/menu/product_repository.dart';
@@ -64,6 +66,28 @@ void main() {
 
     expect(viewModel.status, MenuStatus.failed);
     expect(viewModel.errorMessage, 'Sem conexão');
+  });
+
+  test('resposta antiga não cobre a carga mais nova', () async {
+    final first = Completer<ProductList>();
+    final second = Completer<ProductList>();
+    var calls = 0;
+    final viewModel = MenuViewModel(
+      FakeProductRepository(() {
+        calls += 1;
+        return calls == 1 ? first.future : second.future;
+      }),
+    );
+
+    final older = viewModel.load();
+    final newer = viewModel.load();
+    second.complete(ProductList.ready([_product('nova', 'Pizzas')]));
+    await newer;
+    first.complete(const ProductList.unavailable('antiga'));
+    await older;
+
+    expect(viewModel.status, MenuStatus.ready);
+    expect(viewModel.visibleProducts.map((product) => product.id), ['nova']);
   });
 
   test('cardápio vazio é sucesso sem produtos', () async {

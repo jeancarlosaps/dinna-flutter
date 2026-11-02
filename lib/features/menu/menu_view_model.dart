@@ -22,6 +22,7 @@ class MenuViewModel extends ChangeNotifier {
   String? _errorMessage;
   String? _selectedCategory;
   bool _disposed = false;
+  int _loadGeneration = 0;
 
   MenuStatus get status => _status;
   String? get errorMessage => _errorMessage;
@@ -54,6 +55,7 @@ class MenuViewModel extends ChangeNotifier {
   }
 
   Future<void> load() async {
+    final generation = ++_loadGeneration;
     _status = MenuStatus.loading;
     _errorMessage = null;
     notifyListeners();
@@ -64,7 +66,7 @@ class MenuViewModel extends ChangeNotifier {
     } catch (_) {
       result = const ProductList.unavailable(fallbackErrorMessage);
     }
-    if (_disposed) return;
+    if (_disposed || generation != _loadGeneration) return;
 
     final products = result.products;
     if (products == null) {
