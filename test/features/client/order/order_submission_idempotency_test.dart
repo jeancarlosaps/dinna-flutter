@@ -892,12 +892,20 @@ void main() {
 
   test('diretório inacessível não vira intenção nova', () async {
     final directory = await Directory.systemTemp.createTemp('dinna-intent-');
-    addTearDown(() async {
-      await Process.run('chmod', ['700', directory.path]);
-      if (await directory.exists()) await directory.delete(recursive: true);
-    });
+    addTearDown(() => directory.delete(recursive: true));
     final file = File('${directory.path}/order-intent.json');
-    final store = FileOrderIntentStore(file);
+    var denied = false;
+    final store = FileOrderIntentStore(
+      file,
+      readFile: (target) {
+        if (denied) throw _accessDenied(target.path);
+        return target.readAsString();
+      },
+      deleteFile: (target) async {
+        if (denied) throw _accessDenied(target.path);
+        await target.delete();
+      },
+    );
     final ids = <String>[];
     final now = DateTime.utc(2026, 11, 1, 12);
     await store.save(
@@ -909,7 +917,7 @@ void main() {
       ),
     );
     final before = await file.readAsString();
-    expect((await Process.run('chmod', ['000', directory.path])).exitCode, 0);
+    denied = true;
     final repository = FakeOrderRepository(
       () async => OrderList.ready(const []),
       onCreate: ({required table, required items}) async =>
@@ -923,8 +931,10 @@ void main() {
     expect(repository.createCalls, 0);
     expect(ids, isEmpty);
     expect(viewModel.canRequestSubmit, isFalse);
-    await Process.run('chmod', ['700', directory.path]);
     expect(await file.readAsString(), before);
+
+    denied = false;
+    expect((await store.load())!.id, idAt(9));
   });
 
   test('201 sem gravar succeeded rejeita confirmação atrasada e outro UUID', () async {
@@ -1139,6 +1149,10 @@ final class _GateStore implements OrderIntentStore {
 
   @override
   Future<void> save(OrderIntent intent) => _inner.save(intent);
+}
+
+FileSystemException _accessDenied(String path) {
+  return FileSystemException('acesso negado', path, const OSError('Access is denied', 5));
 }
 
 final class _WriteThenFail implements OrderIntentStore {
