@@ -111,8 +111,10 @@ class OrderSubmission {
   /// Verdadeiro quando não dá para afirmar se o servidor ficou com o pedido.
   ///
   /// Cobre tempo esgotado, falha de transporte em que o body pode ter saído,
-  /// resposta 2xx que não pôde ser lida como [Order] e HTTP 5xx que não prova
-  /// a ausência do pedido. Não é falha definitiva.
+  /// corpo ilegível que não seja 409 ou 500 com chave enviada, 404
+  /// `NOT_FOUND`, 4xx não reconhecido depois da chave, resposta 2xx que não
+  /// pôde ser lida como [Order] e HTTP 5xx que não prova a ausência do pedido.
+  /// Não é falha definitiva e não autoriza outra chave.
   final bool outcomeUncertain;
 
   /// Verdadeiro quando outro POST, com esta chave ou com uma chave nova, é inseguro.

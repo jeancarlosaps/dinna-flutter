@@ -15,11 +15,14 @@ enum OrderSubmissionStatus { idle, submitting, succeeded, failed }
 ///
 /// Cada intenção nova ganha um UUID e um body imutável, gravados antes do
 /// POST. Timeout, queda e reinício reutilizam essa intenção. O sucesso
-/// confirmado permanece no disco até a tela pedir outro pedido. Falha
-/// confirmada de validação ou ausência encerra a intenção; a tentativa
+/// confirmado permanece no disco até a tela pedir outro pedido. O repositório
+/// só classifica como falha sem efeito o 400 `VALIDATION_ERROR` e o 404
+/// `PRODUCT_NOT_FOUND`. Esses casos encerram a intenção; a tentativa
 /// seguinte, pedida pela tela, recebe outra chave e o carrinho daquele
-/// momento. Conflito de payload, chave órfã, expiração e arquivo ilegível
-/// não liberam outra chave. Um 201 ou bloqueio que não couber no arquivo
+/// momento. 404 `NOT_FOUND` e os demais status desconhecidos preservam a
+/// chave para reenvio manual. Conflito de payload, 409 ou 500 sem código,
+/// chave órfã, expiração e arquivo ilegível não liberam outra chave. Um 201
+/// ou bloqueio que não couber no arquivo
 /// continua valendo nesta execução e não volta a ser reenvio. Reiniciar o
 /// processo não recupera esse desfecho: o arquivo antigo segue com a mesma
 /// chave e o mesmo body.
@@ -56,9 +59,11 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   static const unreadableIntentMessage =
       'Não foi possível ler o envio guardado neste aparelho. O pedido pode ter sido registrado. Confira com o restaurante antes de enviar outro.';
 
-  /// A folga de 23 horas acabou, ou o relógio local não é confiável.
+  /// A folga local de 23 horas acabou, ou o relógio local não é confiável.
   ///
-  /// Expirar a proteção não significa que o pedido deixou de existir.
+  /// A API não expira a chave. Esta proteção é conservadora e não é garantia
+  /// contra relógio incorreto. Expirar não significa que o pedido deixou de
+  /// existir. O header `Idempotency-Retention` não desliga esta regra.
   static const expiredIntentMessage =
       'O prazo de proteção desta tentativa terminou. Isso não significa que o pedido deixou de existir. Confira com o restaurante.';
 
@@ -73,13 +78,19 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   String? _errorMessage;
   DataFailure? _failure;
   bool _outcomeUncertain = false;
+
+  /// Reenvio inseguro. [_enterSubmitting] zera este sinal e não o usa como trava de arquivo.
   bool _resendBlocked = false;
+
+  /// Leitura ou limpeza impossível. Permanece durante o envio e impede outro UUID.
   bool _storeBlocked = false;
   List<CartItem>? _confirmedItems;
   String? _confirmedTable;
   OrderIntent? _intent;
   Future<void>? _restoreTask;
   bool _restored = false;
+
+  /// Serializa submit, resume e o encerramento. Sem esta trava, dois toques abrem dois POSTs.
   bool _gate = false;
   bool _disposed = false;
 
@@ -474,6 +485,8 @@ class OrderSubmissionViewModel extends ChangeNotifier {
       return;
     }
 
+    // Limpeza só da falha que o repositório já provou sem efeito. Outro
+    // status não chega aqui: vem incerto ou bloqueado e conserva a chave.
     try {
       await _store.clear();
       _intent = null;

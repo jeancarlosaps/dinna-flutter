@@ -12,9 +12,11 @@ enum OrderIntentBlock { conflict, invalidState, expired }
 /// Uma tentativa de `POST /orders`: chave, body e o instante em que nasceu.
 ///
 /// O body é imutável. Quantidade, observação e ordem dos itens ficam como
-/// estavam no primeiro envio. A retenção da API é [retention]. O app deixa
-/// de reenviar [resumeSafetyMargin] antes, porque o relógio do aparelho pode
-/// estar adiantado em relação ao servidor.
+/// estavam no primeiro envio. A API mantém a chave enquanto a linha existir
+/// em `idempotency_keys`. [retention] menos [resumeSafetyMargin] é uma folga
+/// local de 23 horas: cobre intenção anterior à retenção permanente, chave
+/// apagada por um servidor antigo e relógio adiantado. Não é prazo do
+/// servidor, não lê `Idempotency-Retention` e não garante relógio correto.
 final class OrderIntent {
   OrderIntent({
     required this.id,
@@ -56,10 +58,10 @@ final class OrderIntent {
     }
   }
 
-  /// Janela em que a API devolve o pedido original para a mesma chave.
+  /// Teto local da folga. A API atual não expira a chave neste prazo.
   static const retention = Duration(hours: 24);
 
-  /// Folga antes do fim de [retention]. Dentro dela o app não reenvia.
+  /// Folga antes do fim de [retention]. A partir dela o app não reenvia.
   static const resumeSafetyMargin = Duration(hours: 1);
 
   final String id;
@@ -102,10 +104,11 @@ final class OrderIntent {
     );
   }
 
-  /// `true` enquanto a chave ainda cabe na folga de segurança.
+  /// `true` enquanto a chave ainda cabe na folga local de 23 horas.
   ///
   /// Instante no futuro ou idade maior ou igual a [retention] menos
-  /// [resumeSafetyMargin] não autoriza outro POST.
+  /// [resumeSafetyMargin] não autoriza outro POST. O header
+  /// `Idempotency-Retention` não entra nesta conta.
   bool allowsResume(DateTime now) {
     final clock = now.toUtc();
     if (createdAt.isAfter(clock)) return false;

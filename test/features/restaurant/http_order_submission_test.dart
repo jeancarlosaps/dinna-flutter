@@ -401,7 +401,10 @@ void main() {
       expect(result.shouldClearCart, isFalse);
     }
     expect(otherCode.resendBlocked, isFalse);
-    expect(otherCode.failure, DataFailure.conflict);
+    expect(otherCode.outcomeUncertain, isTrue);
+    expect(otherCode.failure, DataFailure.uncertain);
+    expect(otherCode.message, OrderSubmission.uncertainOutcomeMessage);
+    expect(otherCode.shouldClearCart, isFalse);
     expect(withoutKey.resendBlocked, isFalse);
     expect(withoutKey.outcomeUncertain, isFalse);
     expect(withoutKey.failure, DataFailure.conflict);

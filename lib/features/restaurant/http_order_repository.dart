@@ -24,6 +24,12 @@ class HttpOrderRepository implements OrderRepository {
 
   static const invalidItemMessage = OrderRequest.invalidItemMessage;
 
+  static const validationErrorCode = 'VALIDATION_ERROR';
+
+  static const productNotFoundCode = 'PRODUCT_NOT_FOUND';
+
+  static const routeNotFoundCode = 'NOT_FOUND';
+
   static const idempotencyConflictCode = 'IDEMPOTENCY_KEY_CONFLICT';
 
   static const idempotencyInvalidCode = 'IDEMPOTENCY_STATE_INVALID';
@@ -76,48 +82,54 @@ class HttpOrderRepository implements OrderRepository {
     }
   }
 
+  /// Classifica o POST que já saiu com ou sem `Idempotency-Key`.
+  ///
+  /// Com a chave, só [validationErrorCode] em 400 e [productNotFoundCode] em
+  /// 404 provam que nada foi gravado. [routeNotFoundCode] não entra aí: pode
+  /// ser rota, proxy ou contrato incompatível. 409 sem código e 500 sem código
+  /// bloqueiam, porque o código perdido pode ser conflito ou chave órfã. O
+  /// restante preserva a chave para reenvio manual.
   OrderSubmission _fromApi(ApiException error, {required bool sentKey}) {
-    if (error.code == idempotencyConflictCode) {
+    final status = error.statusCode;
+    final code = _usableCode(error.code);
+
+    if (code == idempotencyConflictCode || (sentKey && status == 409 && code == null)) {
       return const OrderSubmission.blocked(
         idempotencyConflictMessage,
         failure: DataFailure.conflict,
       );
     }
-    if (error.code == idempotencyInvalidCode) {
+    if (code == idempotencyInvalidCode) {
       return const OrderSubmission.blocked(
         idempotencyInvalidMessage,
         failure: DataFailure.unavailable,
       );
     }
-
-    final status = error.statusCode;
-    final code = error.code?.trim();
-    final missingCode = code == null || code.isEmpty;
-    // 409 sem código utilizável não prova que a chave enviada está livre.
-    if (sentKey && status == 409 && missingCode) {
-      return const OrderSubmission.blocked(
-        idempotencyConflictMessage,
-        failure: DataFailure.conflict,
-      );
-    }
-
-    // O contrato só documenta chave órfã em HTTP 500 com
-    // IDEMPOTENCY_STATE_INVALID. Corpo vazio, JSON inválido ou leitura
-    // interrompida apagam esse código. Não inventamos `error.code`. Sem ele,
-    // a chave enviada não volta a ser usada e outra não é criada. 502, 503,
-    // timeout sem status e 500 com outro código ficam fora desta decisão.
-    if (sentKey && status == 500 && missingCode) {
+    // Corpo vazio, JSON inválido ou leitura interrompida apagam o código. Não
+    // inventamos `error.code`. Sem ele, HTTP 500 não distingue
+    // IDEMPOTENCY_STATE_INVALID de INTERNAL_ERROR. A chave enviada não volta
+    // a ser usada e outra não é criada. 502, 503, timeout sem status e 500
+    // com outro código ficam fora desta decisão.
+    if (sentKey && status == 500 && code == null) {
       return const OrderSubmission.blocked(
         OrderSubmission.unreadableServerErrorMessage,
         failure: DataFailure.unavailable,
       );
     }
 
+    if (!error.outcomeUncertain && _provenWithoutEffect(status, code)) {
+      return OrderSubmission.failed(
+        error.message,
+        failure: status == 404 ? DataFailure.notFound : DataFailure.validation,
+        detail: error.detail,
+      );
+    }
+
+    // 404 NOT_FOUND não prova ausência do pedido. Com a chave enviada, nenhum
+    // outro 4xx/5xx entra na limpeza da intenção.
     final accepted = status != null && status >= 200 && status < 300;
-    // 5xx com código diferente, ou status que o contrato não usa para chave
-    // órfã, não prova que o pedido deixou de ser criado.
     final unproven = status != null && status >= 500;
-    if (error.outcomeUncertain || accepted || unproven) {
+    if (code == routeNotFoundCode || sentKey || error.outcomeUncertain || accepted || unproven) {
       return OrderSubmission.failed(
         OrderSubmission.uncertainOutcomeMessage,
         failure: DataFailure.uncertain,
@@ -126,5 +138,16 @@ class HttpOrderRepository implements OrderRepository {
       );
     }
     return OrderSubmission.failed(error.message, failure: error.failure, detail: error.detail);
+  }
+
+  String? _usableCode(String? code) {
+    final trimmed = code?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    return trimmed;
+  }
+
+  bool _provenWithoutEffect(int? status, String? code) {
+    return (status == 400 && code == validationErrorCode) ||
+        (status == 404 && code == productNotFoundCode);
   }
 }

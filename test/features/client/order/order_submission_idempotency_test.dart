@@ -740,6 +740,93 @@ void main() {
     expect(viewModel.status, OrderSubmissionStatus.succeeded);
   });
 
+  test('resume durante o submit não cria outra intenção', () async {
+    final ids = <String>[];
+    final now = DateTime.utc(2026, 11, 1, 12);
+    final gate = Completer<OrderSubmission>();
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) => gate.future,
+    );
+    final viewModel = open(
+      repository: repository,
+      store: MemoryOrderIntentStore(),
+      ids: ids,
+      now: () => now,
+    );
+
+    final pending = viewModel.submit(table: '12', items: original);
+    await Future<void>.delayed(Duration.zero);
+    final resumed = viewModel.resume(idAt(1));
+    gate.complete(
+      const OrderSubmission.failed(
+        OrderSubmission.uncertainOutcomeMessage,
+        failure: DataFailure.uncertain,
+        outcomeUncertain: true,
+      ),
+    );
+    await Future.wait([pending, resumed]);
+
+    expect(repository.createCalls, 1);
+    expect(ids, [idAt(1)]);
+    expect(repository.lastIdempotencyKey, idAt(1));
+    expect(viewModel.intentId, idAt(1));
+    expect(viewModel.outcomeUncertain, isTrue);
+    expect(viewModel.canRequestSubmit, isFalse);
+  });
+
+  test('submit durante o resume não cria outra intenção', () async {
+    final ids = <String>[];
+    final now = DateTime.utc(2026, 11, 1, 12);
+    final gate = Completer<OrderSubmission>();
+    var waiting = false;
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) {
+        if (!waiting) {
+          return Future<OrderSubmission>.value(
+            const OrderSubmission.failed(
+              OrderSubmission.uncertainOutcomeMessage,
+              failure: DataFailure.uncertain,
+              outcomeUncertain: true,
+            ),
+          );
+        }
+        return gate.future;
+      },
+    );
+    final viewModel = open(
+      repository: repository,
+      store: MemoryOrderIntentStore(),
+      ids: ids,
+      now: () => now,
+    );
+
+    await viewModel.submit(table: '12', items: original);
+    final confirmedId = viewModel.intentId!;
+    waiting = true;
+    final resumed = viewModel.resume(confirmedId);
+    final submitted = viewModel.submit(
+      table: '9',
+      items: [CartItem(productId: 'p9', quantity: 4, note: null)],
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(repository.createCalls, 2);
+    expect(ids, [idAt(1)]);
+    expect(repository.lastIdempotencyKey, idAt(1));
+    expect(repository.lastBody!['table'], '12');
+
+    gate.complete(OrderSubmission.created(sampleOrder(id: 'o1')));
+    await Future.wait([resumed, submitted]);
+
+    expect(repository.createCalls, 2);
+    expect(ids, [idAt(1)]);
+    expect(viewModel.status, OrderSubmissionStatus.succeeded);
+    expect(viewModel.intentId, confirmedId);
+    expect(viewModel.canRequestSubmit, isFalse);
+  });
+
   test('retomada sem intenção persistida não envia', () async {
     final ids = <String>[];
     final repository = FakeOrderRepository(
