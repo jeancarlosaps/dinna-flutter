@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/domain/order.dart';
 import '../../../shared/widgets/dinna_banner.dart';
 import '../../../shared/widgets/dinna_empty_state.dart';
 import '../../restaurant/order_format.dart';
@@ -16,19 +17,24 @@ import 'cart_view_model.dart';
 /// por `replace`. O primeiro envio usa a mesa da navegação e as linhas atuais.
 /// Falha confirmada oferece nova tentativa. Resultado incerto só reenvia a
 /// mesma tentativa depois de uma confirmação. [onOpenMenu] abre o cardápio no
-/// estado vazio; a rota fica no router.
+/// estado vazio; a rota fica no router. [onOrderConfirmed] abre a confirmação
+/// com o [Order] já gravado. Sem esse callback a tela continua no carrinho.
 class CartView extends StatefulWidget {
   const CartView({
     super.key,
     required this.createViewModel,
     required this.submission,
     required this.onOpenMenu,
+    this.onOrderConfirmed,
     this.table,
   });
 
   final CartViewModel Function() createViewModel;
   final OrderSubmissionViewModel submission;
   final void Function(BuildContext context) onOpenMenu;
+
+  /// Abre `/order` com o pedido persistido. A rota fica no router.
+  final Future<void> Function(BuildContext context, Order order)? onOrderConfirmed;
 
   /// Mesa recebida na navegação. Ausente até a tela da mesa entregar o valor.
   final String? table;
@@ -39,6 +45,9 @@ class CartView extends StatefulWidget {
 
 class _CartViewState extends State<CartView> {
   late final CartViewModel _viewModel;
+  String? _presentedIntentId;
+  var _confirmationFrame = false;
+  var _confirmationOpen = false;
 
   OrderSubmissionViewModel get _submission => widget.submission;
 
@@ -47,20 +56,80 @@ class _CartViewState extends State<CartView> {
     super.initState();
     _viewModel = widget.createViewModel();
     unawaited(_viewModel.resolveProducts());
+    _submission.addListener(_onSubmission);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _scheduleAutomaticConfirmation();
+    });
   }
 
   @override
   void dispose() {
+    _submission.removeListener(_onSubmission);
     _viewModel.dispose();
     super.dispose();
   }
 
-  Future<void> _submit() {
-    if (!_submission.canRequestSubmit || _viewModel.items.isEmpty) return Future<void>.value();
-    return _submission.submit(table: widget.table ?? '', items: _viewModel.items);
+  void _onSubmission() {
+    _scheduleAutomaticConfirmation();
   }
 
-  Future<void> _resume(String intentId) => _submission.resume(intentId);
+  /// Abre a confirmação uma vez por intenção, depois que o sucesso ficou gravado.
+  ///
+  /// A notificação do 201 acontece com o envio ainda travado. A decisão espera
+  /// o próximo frame, quando [OrderSubmissionViewModel.canBeginAnotherOrder]
+  /// já reflete a gravação. Resultado incerto, bloqueio e 201 sem arquivo
+  /// não entram. Reconstrução e repetição da mesma intenção também não.
+  void _scheduleAutomaticConfirmation() {
+    if (!mounted || widget.onOrderConfirmed == null || _confirmationFrame || _confirmationOpen) {
+      return;
+    }
+    if (_submission.status != OrderSubmissionStatus.succeeded || _submission.resendBlocked) {
+      return;
+    }
+    final intentId = _submission.intentId;
+    final order = _submission.order;
+    if (intentId == null || order == null || _presentedIntentId == intentId) return;
+    _confirmationFrame = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _confirmationFrame = false;
+      if (!mounted) return;
+      unawaited(_openConfirmation(intentId, automatic: true));
+    });
+  }
+
+  Future<void> _openConfirmation(String intentId, {required bool automatic}) async {
+    if (!mounted || _confirmationOpen) return;
+    if (!_submission.canBeginAnotherOrder) return;
+    final order = _submission.order;
+    final open = widget.onOrderConfirmed;
+    if (order == null || open == null || _submission.intentId != intentId) return;
+    if (automatic && _presentedIntentId == intentId) return;
+    _confirmationOpen = true;
+    _presentedIntentId = intentId;
+    try {
+      await open(context, order);
+    } finally {
+      _confirmationOpen = false;
+    }
+  }
+
+  void _viewConfirmation() {
+    final intentId = _submission.intentId;
+    if (intentId == null) return;
+    unawaited(_openConfirmation(intentId, automatic: false));
+  }
+
+  Future<void> _submit() async {
+    if (!_submission.canRequestSubmit || _viewModel.items.isEmpty) return;
+    await _submission.submit(table: widget.table ?? '', items: _viewModel.items);
+    _scheduleAutomaticConfirmation();
+  }
+
+  Future<void> _resume(String intentId) async {
+    await _submission.resume(intentId);
+    _scheduleAutomaticConfirmation();
+  }
 
   Future<void> _beginAnother() => _submission.beginAnotherOrder();
 
@@ -77,6 +146,7 @@ class _CartViewState extends State<CartView> {
             onSubmit: _submit,
             onResume: _resume,
             onBeginAnother: _beginAnother,
+            onViewConfirmation: widget.onOrderConfirmed == null ? null : _viewConfirmation,
             allowSend: hasRows,
           );
           if (!hasRows && _submission.status == OrderSubmissionStatus.idle) {
@@ -201,6 +271,7 @@ class _SubmissionSection extends StatelessWidget {
     required this.onSubmit,
     required this.onResume,
     required this.onBeginAnother,
+    required this.onViewConfirmation,
     required this.allowSend,
   });
 
@@ -208,6 +279,7 @@ class _SubmissionSection extends StatelessWidget {
   final VoidCallback onSubmit;
   final void Function(String intentId) onResume;
   final VoidCallback onBeginAnother;
+  final VoidCallback? onViewConfirmation;
   final bool allowSend;
 
   @override
@@ -215,6 +287,7 @@ class _SubmissionSection extends StatelessWidget {
     final message = submission.errorMessage;
     final failed = submission.isDefiniteFailure;
     final sent = submission.status == OrderSubmissionStatus.succeeded;
+    final received = sent && submission.order != null && !submission.resendBlocked;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -229,12 +302,19 @@ class _SubmissionSection extends StatelessWidget {
           ),
         if (submission.resendBlocked && message != null)
           DinnaBanner(tone: DinnaBannerTone.warning, title: 'Confira o pedido', message: message),
-        if (sent)
+        if (received)
           const DinnaBanner(
             tone: DinnaBannerTone.info,
             title: 'Pedido enviado',
             message: 'O restaurante recebeu o pedido.',
           ),
+        if (received && onViewConfirmation != null) ...[
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: onViewConfirmation,
+            child: const Text('Ver confirmação', textAlign: TextAlign.center),
+          ),
+        ],
         if (sent && submission.canBeginAnotherOrder) ...[
           const SizedBox(height: 12),
           OutlinedButton(
