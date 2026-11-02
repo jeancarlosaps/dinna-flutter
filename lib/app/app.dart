@@ -1,5 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../features/client/cart/cart_lines.dart';
+import '../features/client/order/order_intent_store.dart';
+import '../features/client/order/order_submission_view_model.dart';
 import '../features/home/api_status_repository.dart';
 import '../features/menu/product_repository.dart';
 import '../features/restaurant/order_repository.dart';
@@ -12,6 +17,8 @@ class DinnaApp extends StatefulWidget {
     required this.apiStatusRepository,
     required this.orderRepository,
     required this.productRepository,
+    this.cartLines,
+    this.orderIntentStore,
     this.routeObserver,
     this.pollDelay,
   });
@@ -19,6 +26,12 @@ class DinnaApp extends StatefulWidget {
   final ApiStatusRepository apiStatusRepository;
   final OrderRepository orderRepository;
   final ProductRepository productRepository;
+
+  /// Nula cria [ProcessCartLines] neste State. Testes e o `main` podem injetar.
+  final CartLines? cartLines;
+
+  /// Nula guarda a intenção de pedido só na memória desta sessão.
+  final OrderIntentStore? orderIntentStore;
 
   /// Instância ligada à fila. Nula cria um observer estável neste State.
   final RouteObserver<PageRoute<dynamic>>? routeObserver;
@@ -33,11 +46,25 @@ class DinnaApp extends StatefulWidget {
 
 class _DinnaAppState extends State<DinnaApp> {
   late final RouteObserver<PageRoute<dynamic>> _routeObserver;
+  late final CartLines _cartLines;
+  late final OrderSubmissionViewModel _submission;
 
   @override
   void initState() {
     super.initState();
     _routeObserver = widget.routeObserver ?? RouteObserver<PageRoute<dynamic>>();
+    _cartLines = widget.cartLines ?? ProcessCartLines();
+    _submission = OrderSubmissionViewModel(
+      widget.orderRepository,
+      intentStore: widget.orderIntentStore,
+    );
+    unawaited(_submission.restore());
+  }
+
+  @override
+  void dispose() {
+    _submission.dispose();
+    super.dispose();
   }
 
   @override
@@ -52,6 +79,8 @@ class _DinnaAppState extends State<DinnaApp> {
         apiStatusRepository: widget.apiStatusRepository,
         orderRepository: widget.orderRepository,
         productRepository: widget.productRepository,
+        cartLines: _cartLines,
+        orderSubmission: _submission,
         routeObserver: _routeObserver,
         pollDelay: widget.pollDelay,
       ).onGenerateRoute,

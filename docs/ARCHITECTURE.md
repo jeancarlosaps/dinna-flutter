@@ -82,7 +82,7 @@ Os nomes são correspondência exata: sem barra no fim e sem parâmetro no camin
 | Cliente | `table` | `/table` | — | `TableView`. Layout da mesa, sem leitura do campo e sem navegação nos botões. A story de informar a mesa segue pendente |
 | Cliente | `menu` | `/menu` | — | Placeholder |
 | Cliente | `product` | `/product` | `AppRouteId` | Placeholder |
-| Cliente | `cart` | `/cart` | — | Placeholder |
+| Cliente | `cart` | `/cart` | — | `CartView`. Revisão no processo, via `CartLines`. |
 | Cliente | `order` | `/order` | — | Placeholder |
 | Cliente | `orderTracking` | `/order/tracking` | `AppRouteId` | Placeholder |
 | Restaurante | `restaurant` | `/restaurant` | — | Placeholder. Entrada do painel, na fila de pedidos |
@@ -153,7 +153,7 @@ O mesmo PR versionou dois PDFs dentro de `lib/`: `Dinna · App Cliente Marina.pd
 5. Montar a implementação concreta em `lib/main.dart` e passar o contrato pelo construtor até o `AppRouter`. No `onGenerateRoute`, a rota ganha um case próprio antes do `RoutePlaceholder`. O nome já está em `AppRoutes`; a story não cria um nome paralelo.
 6. Não adicionar `provider`, `get_it`, UseCase ou outra camada sem uma necessidade que este fluxo não cubra.
 
-A SCRUM-18 segue em andamento. O HTTP está configurado: `package:http` 1.6.0 e `ApiClient` integrado em [`lib/main.dart`](../lib/main.dart). A SCRUM-27 definiu SQLite local via `sqflite`; a SCRUM-70 implementa essa persistência para as linhas do carrinho em [`lib/features/client/cart/`](../lib/features/client/cart/). A implementação fica atrás de `CartRepository`, não é acessada diretamente pela View. O armazenamento de preferências e do último pedido confirmado continua fora do escopo da SCRUM-70.
+A SCRUM-18 segue em andamento. O HTTP está configurado: `package:http` 1.6.0 e `ApiClient` integrado em [`lib/main.dart`](../lib/main.dart). A SCRUM-70 persiste as linhas do carrinho em SQLite via `CartRepository` em [`lib/features/client/cart/`](../lib/features/client/cart/). A SCRUM-90 grava a intenção do `POST /orders` num arquivo, usando `path_provider` para localizar o diretório. Essas persistências atendem a fluxos distintos; a View não acessa diretamente o disco. Preferências e último pedido confirmado seguem fora desses escopos.
 
 ## Models de domínio
 

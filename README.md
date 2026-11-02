@@ -83,7 +83,7 @@ O Dinna encurta esse intervalo **sem substituir o atendimento humano**:
 
 ## 02 · Estado atual
 
-Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas da SCRUM-23 já estão na `dev`. A home em `/` continua o fluxo `GET /health`. A `TableView` do PR #3 está em `/table`: o layout e o campo da mesa aparecem, e os botões ainda não navegam. Cardápio, produto, carrinho, pedido e o painel do restaurante seguem como `RoutePlaceholder`.
+Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas da SCRUM-23 já estão na `dev`. A home em `/` continua o fluxo `GET /health`. A `TableView` do PR #3 está em `/table`: o layout e o campo da mesa aparecem, e os botões ainda não navegam. O carrinho em `/cart` revisa quantidade, remoção e o total estimado, envia o pedido e mostra o erro ou a orientação para conferir antes de tentar de novo. A intenção desse envio permanece no dispositivo depois que o processo fecha. Cardápio, produto, pedido e o painel do restaurante seguem como `RoutePlaceholder`.
 
 | Item | Situação | Onde |
 |---|---|---|
@@ -96,8 +96,8 @@ Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas d
 | Models (`Product`, `CartItem`, `Order`, `OrderItem`, `OrderStatus`, `Preference`) | ✅ Implementados em `lib/core/domain/` (SCRUM-22, PR #5 na `dev`) | [`lib/core/domain/`](lib/core/domain/) |
 | Rotas do cliente e do restaurante | ✅ SCRUM-23 concluída e mergeada pelo PR #6. Mapa em `AppRoutes`. Rota inicial `/`. `/table` abre `TableView`; as outras rotas da jornada são placeholder | [`lib/app/router/`](lib/app/router/), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Layout da mesa (`/table`) | Layout mergeado pelo PR #3. O campo da mesa é só visual: nada lê o valor. “Ver cardápio” e “Acessar o painel” usam `onPressed` vazio | [`lib/features/client/table/table_view.dart`](lib/features/client/table/table_view.dart) |
-| Dependências base (SCRUM-18) | Em andamento. HTTP pronto (`http` 1.6.0 e `ApiClient`); `sqflite` configurado para a persistência do carrinho | `pubspec.yaml`, [`lib/core/network/`](lib/core/network/) |
-| Persistência local | SCRUM-27 definiu SQLite local; SCRUM-70 implementa o repositório do carrinho com `sqflite` | [`lib/features/client/cart/`](lib/features/client/cart/) |
+| Dependências base (SCRUM-18) | Em andamento. HTTP pronto (`http` 1.6.0 e `ApiClient`); `sqflite` persiste o carrinho e `path_provider` localiza o arquivo da intenção do pedido | `pubspec.yaml`, [`lib/core/network/`](lib/core/network/) |
+| Persistência local | SCRUM-70 implementa o repositório SQLite do carrinho; SCRUM-90 persiste a intenção do pedido em arquivo. Preferências e último pedido confirmado seguem fora desses escopos | [`lib/features/client/cart/`](lib/features/client/cart/), [`lib/features/client/order/`](lib/features/client/order/) |
 | Componentes visuais reutilizáveis | ✅ `DinnaLogo`, `DinnaBanner` e `DinnaEmptyState` (SCRUM-28) | `lib/shared/widgets/` |
 | Telas de R1, R2 e R3 | ⬜ Jornada planejada. Na `dev` só o layout da mesa está em `/table`; as outras telas seguem placeholder ou ainda não existem | — |
 
@@ -109,7 +109,7 @@ Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas d
   <img src="docs/assets/readme/flow.svg" alt="Jornada planejada para R1. Cliente: mesa, cardápio, produto, carrinho, pedido e acompanhamento. O pedido vai para a fila do restaurante, que vê detalhes, atualiza o preparo e finaliza; o status volta para o cliente. O restaurante também mantém o cardápio." width="1600" loading="lazy" />
 </p>
 
-A jornada abaixo é a **R1 planejada**. Na `dev`, a etapa Mesa tem layout em `/table` (`TableView`, PR #3). Esse layout não guarda o número da mesa e os botões não navegam, então a story de informar a mesa continua pendente. Cardápio, produto, carrinho, pedido, acompanhamento e o painel do restaurante ainda não têm View: o router mostra `RoutePlaceholder`. Os nomes de rota já estão no mapa da SCRUM-23, mergeado pelo PR #6.
+A jornada abaixo é a **R1 planejada**. Na `dev`, a etapa Mesa tem layout em `/table` (`TableView`, PR #3). Esse layout não guarda o número da mesa e os botões não navegam, então a story de informar a mesa continua pendente. O carrinho tem View em `/cart`. Cardápio, produto, pedido, acompanhamento e o painel do restaurante ainda não têm View: o router mostra `RoutePlaceholder`. Os nomes de rota já estão no mapa da SCRUM-23, mergeado pelo PR #6.
 
 **Cliente (Marina)**
 
@@ -145,7 +145,7 @@ A jornada abaixo é a **R1 planejada**. Na `dev`, a etapa Mesa tem layout em `/t
 | Navegação | `onGenerateRoute` nativo | A SCRUM-23, concluída no PR #6, manteve o `Navigator` do Flutter. O mapa está em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Lint | `flutter_lints` 6.0.0 + regras em `analysis_options.yaml` | Análise estrita (`strict-casts`, `strict-raw-types`) |
 
-Dependências diretas: `http` 1.6.0, `sqflite` 2.4.5, `path` 1.9.1 e `cupertino_icons`, que veio no template do Flutter. Nenhuma biblioteca de estado ou injeção de dependência foi adicionada. A SCRUM-18 segue em andamento enquanto as demais necessidades de armazenamento local são integradas; a SCRUM-70 entrega o armazenamento do carrinho.
+Dependências diretas: `http` 1.6.0, `sqflite` 2.4.5, `path` 1.9.1, `path_provider` 2.1.6 e `cupertino_icons`, que veio no template do Flutter. `sqflite` persiste as linhas do carrinho e `path_provider` localiza o arquivo da intenção de pedido. Nenhuma biblioteca de estado ou injeção de dependência foi adicionada. A SCRUM-18 segue em andamento enquanto as demais necessidades de armazenamento local são integradas.
 
 <a id="arquitetura"></a>
 
