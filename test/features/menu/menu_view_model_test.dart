@@ -19,7 +19,11 @@ void main() {
   test('carrega o cardápio e lista as categorias sem repetir', () async {
     final viewModel = MenuViewModel(
       FakeProductRepository(
-        () async => ProductList.ready([_product('1', 'Pizzas'), _product('2', 'Saladas'), _product('3', 'Pizzas')]),
+        () async => ProductList.ready([
+          _product('1', 'Pizzas'),
+          _product('2', 'Saladas'),
+          _product('3', 'Pizzas'),
+        ]),
       ),
     );
 
@@ -32,7 +36,9 @@ void main() {
 
   test('filtra pela categoria escolhida e volta para todos', () async {
     final viewModel = MenuViewModel(
-      FakeProductRepository(() async => ProductList.ready([_product('1', 'Pizzas'), _product('2', 'Saladas')])),
+      FakeProductRepository(
+        () async => ProductList.ready([_product('1', 'Pizzas'), _product('2', 'Saladas')]),
+      ),
     );
     await viewModel.load();
 

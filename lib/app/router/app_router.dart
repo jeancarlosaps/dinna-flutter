@@ -9,6 +9,8 @@ import '../../features/client/table/table_view.dart';
 import '../../features/home/api_status_repository.dart';
 import '../../features/home/home_view.dart';
 import '../../features/home/home_view_model.dart';
+import '../../features/menu/menu_view.dart';
+import '../../features/menu/menu_view_model.dart';
 import '../../features/menu/product_repository.dart';
 import '../../features/restaurant/order_details_view.dart';
 import '../../features/restaurant/order_details_view_model.dart';
@@ -105,10 +107,16 @@ class AppRouter {
     return switch (name) {
       AppRoutes.home => HomeView(createViewModel: () => HomeViewModel(apiStatusRepository)),
       AppRoutes.table => const TableView(),
+      AppRoutes.menu => MenuView(
+        createViewModel: () => MenuViewModel(productRepository),
+        table: _tableArgument(settings.arguments),
+        onOpenCart: (context, table) =>
+            Navigator.of(context).pushNamed(AppRoutes.cart, arguments: table),
+      ),
       AppRoutes.cart => CartView(
         createViewModel: () => CartViewModel(productRepository, lines: cartLines),
         submission: orderSubmission,
-        table: _cartTable(settings.arguments),
+        table: _tableArgument(settings.arguments),
         onOpenMenu: (context) => Navigator.of(context).pushNamed(AppRoutes.menu),
       ),
       AppRoutes.restaurant => OrdersQueueView(
@@ -125,7 +133,7 @@ class AppRouter {
   }
 
   /// A navegação entrega a mesa como [String]. Outro argumento não é mesa.
-  String? _cartTable(Object? arguments) {
+  String? _tableArgument(Object? arguments) {
     if (arguments is! String) return null;
     final table = arguments.trim();
     return table.isEmpty ? null : table;
