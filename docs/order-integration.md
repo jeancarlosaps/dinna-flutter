@@ -172,9 +172,11 @@ O envio continua no `OrderSubmissionViewModel`. A confirmação não tem ViewMod
 
 `OrderItem` não traz nome nem preço. A confirmação mostra `productId`, quantidade e `note`. Não consulta `ProductRepository`, para o cardápio atual não reescrever o pedido já aceito.
 
-A `CartView` observa o envio da sessão. Abre `/order` uma vez por intenção, no frame seguinte ao 201, só quando `canBeginAnotherOrder` é verdadeiro — o sucesso já está no arquivo. Notificação repetida, reconstrução e o 201 da mesma chave não empilham outra rota. Voltar é `pop`: a tela de envio continua atrás e não cria outra intenção. "Ver confirmação" abre de novo o mesmo `Order` sem POST. "Fazer outro pedido" continua sendo o único jeito de apagar a intenção gravada.
+A `CartView` observa o envio da sessão. Abre `/order` uma vez por intenção, no frame seguinte ao 201, só quando `canViewPersistedConfirmation` é verdadeiro e a rota do carrinho ainda é a atual. Sair durante o POST não abre a confirmação por cima da tela anterior. O comprovante continua gravado e aparece na próxima abertura de `/cart`. Notificação repetida, reconstrução e o 201 da mesma chave não empilham outra rota. Voltar da confirmação é `pop` e não cria outra intenção. "Ver confirmação" abre de novo o mesmo `Order` sem POST.
 
-Resultado incerto, bloqueio e 201 cuja gravação falhou não abrem `/order` e não mostram o aviso de pedido enviado. Sem linhas, o aviso que restar continua na tela e o botão de enviar sai. O ViewModel do envio fica na sessão: sair e reabrir `/cart` mostra o mesmo estado. Se a intenção gravada for `succeeded`, essa reabertura mostra a confirmação de novo e não envia.
+`canViewPersistedConfirmation` é o comprovante gravado. `canBeginAnotherOrder` é a autorização para apagar essa intenção e começar outro envio. "Fazer outro pedido" continua sendo o único jeito de apagar a intenção. Se essa limpeza falha, o aviso e "Ver confirmação" permanecem, e outro POST continua bloqueado.
+
+Resultado incerto, bloqueio e 201 cuja gravação inicial falhou não abrem `/order` e não mostram o aviso de pedido enviado. Sem linhas, o aviso que restar continua na tela e o botão de enviar sai. O ViewModel do envio fica na sessão: sair e reabrir `/cart` mostra o mesmo estado. Se a intenção gravada for `succeeded`, essa reabertura mostra a confirmação de novo e não envia.
 
 ```dart
 final submission = OrderSubmissionViewModel(orderRepository);
@@ -220,7 +222,7 @@ O reenvio é manual. O diálogo mostra o ID da intenção daquele momento e `res
 | --- | --- |
 | Primeira tentativa | UUID novo, body congelado, grava, POST com o header |
 | Timeout antes dos headers, queda de conexão, corpo ilegível que não seja 409 ou 500 com chave, `502`, `503`, `500 INTERNAL_ERROR` e outro 4xx/5xx não reconhecido como falha sem efeito | Resultado incerto. A mesma chave e o mesmo body continuam. O reenvio é manual. O contrato da API não emite `502` nem `503` |
-| `201`, inclusive a repetição do mesmo body | Sucesso da intenção original. O carrinho fica. `/order` abre uma vez com o pedido gravado. A repetição não abre outra rota e não cria outra chave. "Fazer outro pedido" apaga essa intenção só depois que o sucesso ficou gravado e só então libera um envio novo, com o carrinho daquele momento. Se a limpeza falha, a confirmação permanece e outro POST não sai |
+| `201`, inclusive a repetição do mesmo body | Sucesso da intenção original. O carrinho fica. `/order` abre uma vez com o pedido gravado, se o carrinho ainda for a rota atual. A repetição não abre outra rota e não cria outra chave. "Fazer outro pedido" apaga essa intenção só depois que o sucesso ficou gravado e só então libera um envio novo, com o carrinho daquele momento. Se a limpeza falha, o comprovante gravado continua visível e outro POST não sai |
 | `201` ou bloqueio cuja gravação falha | Nesta execução a confirmação ou a causa do bloqueio permanece. Não há reenvio nem chave nova. O arquivo pode continuar `pending` ou `uncertain`. Reiniciar não recupera esse desfecho: a próxima abertura trata o arquivo como incerto e o reenvio manual, se houver, repete a mesma chave e o mesmo body |
 | Reinício com intenção pendente ou incerta | Mostra o resultado incerto e não envia. O POST seguinte espera o diálogo |
 | Reinício com sucesso gravado | Mostra a confirmação e não envia. O pedido seguinte espera "Fazer outro pedido" |

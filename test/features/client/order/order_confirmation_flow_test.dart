@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dinna/app/app.dart';
 import 'package:dinna/app/router/app_router.dart';
 import 'package:dinna/app/theme/dinna_theme.dart';
@@ -370,5 +372,155 @@ void main() {
     expect(find.text('Ver confirmação'), findsNothing);
     expect(lines.read().single.quantity, 1);
     expect((await store.load())!.phase.name, 'pending');
+  });
+
+  testWidgets('voltar durante o POST não abre a confirmação na tela anterior', (tester) async {
+    final lines = ProcessCartLines([line(1)]);
+    final gate = Completer<OrderSubmission>();
+    var calls = 0;
+    await tester.pumpWidget(
+      app(
+        lines: lines,
+        onCreate: ({required table, required items}) {
+          calls++;
+          return gate.future;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await openCart(tester);
+    await tester.tap(find.text('Enviar pedido'));
+    await tester.pump();
+
+    final cart = tester.element(find.byType(CartView));
+    Navigator.of(cart).pop();
+    await tester.pump();
+
+    final leaving = tester.element(find.byType(CartView, skipOffstage: false));
+    final route = ModalRoute.of(leaving)!;
+    expect(route.isCurrent, isFalse);
+    expect(
+      tester.state<State<StatefulWidget>>(find.byType(CartView, skipOffstage: false)).mounted,
+      isTrue,
+    );
+
+    gate.complete(OrderSubmission.created(confirmedOrder()));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(calls, 1);
+    expect(find.byType(OrderConfirmationView, skipOffstage: false), findsNothing);
+    expect(find.text('dinna', skipOffstage: false), findsOneWidget);
+
+    await tester.pumpAndSettle();
+    expect(find.byType(CartView, skipOffstage: false), findsNothing);
+    expect(find.byType(OrderConfirmationView, skipOffstage: false), findsNothing);
+    expect(calls, 1);
+
+    await openCart(tester);
+
+    expect(calls, 1);
+    expect(find.byType(OrderConfirmationView), findsOneWidget);
+    expect(find.text('order-real'), findsOneWidget);
+    expect(lines.read().single.quantity, 1);
+  });
+
+  testWidgets('falha ao apagar o sucesso mantém o comprovante e bloqueia outro envio', (
+    tester,
+  ) async {
+    final lines = ProcessCartLines([line(1)]);
+    final store = MemoryOrderIntentStore();
+    final ids = <String>[];
+    var calls = 0;
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async {
+          calls++;
+          return OrderSubmission.created(confirmedOrder());
+        },
+      ),
+      intentStore: store,
+      newIntentId: () {
+        final id = '00000000-0000-4000-8000-${(ids.length + 1).toString().padLeft(12, '0')}';
+        ids.add(id);
+        return id;
+      },
+    );
+    addTearDown(submission.dispose);
+    var opened = 0;
+    Order? shown;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: CartView(
+          createViewModel: () =>
+              CartViewModel(FakeProductRepository(() async => catalog), lines: lines),
+          submission: submission,
+          table: '12',
+          onOpenMenu: (_) {},
+          onOrderConfirmed: (context, order) async {
+            opened++;
+            shown = order;
+            await Navigator.of(context)
+                .pushNamed(AppRoutes.order, arguments: OrderConfirmationArgs(order: order));
+          },
+        ),
+        onGenerateRoute: (settings) {
+          return MaterialPageRoute<void>(
+            settings: settings,
+            builder: (_) => OrderConfirmationView(onTrack: (_, _) async {}),
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Enviar pedido'));
+    await tester.pumpAndSettle();
+    await tester.pump();
+
+    expect(opened, 1);
+    expect(find.byType(OrderConfirmationView), findsOneWidget);
+    expect(submission.canViewPersistedConfirmation, isTrue);
+
+    Navigator.of(tester.element(find.byType(OrderConfirmationView))).pop();
+    await tester.pumpAndSettle();
+    await tester.pump();
+
+    expect(opened, 1);
+    expect(find.text('Pedido enviado'), findsOneWidget);
+    expect(find.text('Ver confirmação'), findsOneWidget);
+
+    store.failNextSave();
+    await tester.tap(find.text('Fazer outro pedido'));
+    await tester.pumpAndSettle();
+
+    expect(submission.canViewPersistedConfirmation, isTrue);
+    expect(submission.canBeginAnotherOrder, isFalse);
+    expect(submission.canRequestSubmit, isFalse);
+    expect(find.text('Pedido enviado'), findsOneWidget);
+    expect(find.text('Ver confirmação'), findsOneWidget);
+    expect(find.text('Fazer outro pedido'), findsNothing);
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(calls, 1);
+    expect(ids, hasLength(1));
+    expect((await store.load())!.phase.name, 'succeeded');
+
+    await tester.tap(find.text('Ver confirmação'));
+    await tester.pumpAndSettle();
+
+    expect(opened, 2);
+    expect(shown!.id, 'order-real');
+    expect(find.text('order-real'), findsOneWidget);
+    expect(find.byType(OrderConfirmationView), findsOneWidget);
+
+    await submission.submit(table: '7', items: lines.read());
+    await tester.pump();
+
+    expect(calls, 1);
+    expect(ids, hasLength(1));
+    expect(submission.canRequestSubmit, isFalse);
+    expect(find.byType(OrderConfirmationView), findsOneWidget);
   });
 }

@@ -554,6 +554,7 @@ void main() {
 
     expect(viewModel.status, OrderSubmissionStatus.succeeded);
     expect(viewModel.order!.id, 'o1');
+    expect(viewModel.canViewPersistedConfirmation, isTrue);
     expect(viewModel.canRequestSubmit, isFalse);
     expect(viewModel.canBeginAnotherOrder, isFalse);
     expect(viewModel.errorMessage, OrderSubmissionViewModel.unreadableIntentMessage);
@@ -563,6 +564,10 @@ void main() {
 
     expect(repository.createCalls, 1);
     expect(ids, [idAt(1)]);
+
+    viewModel.dispose();
+    expect(viewModel.canViewPersistedConfirmation, isFalse);
+    expect(viewModel.canBeginAnotherOrder, isFalse);
   });
 
   test('store indisponível não envia', () async {
@@ -956,6 +961,7 @@ void main() {
     expect(repository.createCalls, 1);
     expect(viewModel.status, OrderSubmissionStatus.succeeded);
     expect(viewModel.order!.id, 'o1');
+    expect(viewModel.canViewPersistedConfirmation, isFalse);
     expect(viewModel.canBeginAnotherOrder, isFalse);
     expect(viewModel.canRequestSubmit, isFalse);
     expect(viewModel.errorMessage, OrderSubmissionViewModel.terminalNotRecordedMessage);

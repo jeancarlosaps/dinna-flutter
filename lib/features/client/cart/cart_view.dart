@@ -74,33 +74,45 @@ class _CartViewState extends State<CartView> {
     _scheduleAutomaticConfirmation();
   }
 
+  /// A rota do carrinho ainda está no topo e pode receber outra rota.
+  ///
+  /// Durante o retorno, o [State] continua [State.mounted] enquanto a
+  /// transição reversa não termina. [ModalRoute.isCurrent] é que diz se um
+  /// push cairia sobre esta tela. A intenção gravada não depende desta decisão.
+  bool _cartRouteCanPresent() {
+    if (!mounted) return false;
+    final route = ModalRoute.of(context);
+    if (route == null || !route.isActive || !route.isCurrent) return false;
+    final animation = route.animation;
+    return animation == null || animation.status != AnimationStatus.reverse;
+  }
+
   /// Abre a confirmação uma vez por intenção, depois que o sucesso ficou gravado.
   ///
-  /// A notificação do 201 acontece com o envio ainda travado. A decisão espera
-  /// o próximo frame, quando [OrderSubmissionViewModel.canBeginAnotherOrder]
-  /// já reflete a gravação. Resultado incerto, bloqueio e 201 sem arquivo
-  /// não entram. Reconstrução e repetição da mesma intenção também não.
+  /// A notificação do 201 pode acontecer com o envio ainda travado. A decisão
+  /// espera o próximo frame e só segue se o carrinho continuar sendo a rota
+  /// atual. [OrderSubmissionViewModel.canViewPersistedConfirmation] exige o
+  /// arquivo. Resultado incerto, bloqueio e 201 sem arquivo não entram.
+  /// Reconstrução e repetição da mesma intenção também não.
   void _scheduleAutomaticConfirmation() {
     if (!mounted || widget.onOrderConfirmed == null || _confirmationFrame || _confirmationOpen) {
       return;
     }
-    if (_submission.status != OrderSubmissionStatus.succeeded || _submission.resendBlocked) {
-      return;
-    }
+    if (!_cartRouteCanPresent() || !_submission.canViewPersistedConfirmation) return;
     final intentId = _submission.intentId;
     final order = _submission.order;
     if (intentId == null || order == null || _presentedIntentId == intentId) return;
     _confirmationFrame = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _confirmationFrame = false;
-      if (!mounted) return;
+      if (!mounted || !_cartRouteCanPresent()) return;
       unawaited(_openConfirmation(intentId, automatic: true));
     });
   }
 
   Future<void> _openConfirmation(String intentId, {required bool automatic}) async {
-    if (!mounted || _confirmationOpen) return;
-    if (!_submission.canBeginAnotherOrder) return;
+    if (!mounted || _confirmationOpen || !_cartRouteCanPresent()) return;
+    if (!_submission.canViewPersistedConfirmation) return;
     final order = _submission.order;
     final open = widget.onOrderConfirmed;
     if (order == null || open == null || _submission.intentId != intentId) return;
@@ -287,7 +299,7 @@ class _SubmissionSection extends StatelessWidget {
     final message = submission.errorMessage;
     final failed = submission.isDefiniteFailure;
     final sent = submission.status == OrderSubmissionStatus.succeeded;
-    final received = sent && submission.order != null && !submission.resendBlocked;
+    final received = submission.canViewPersistedConfirmation;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
