@@ -7,6 +7,7 @@ import 'package:dinna/core/domain/product.dart';
 import 'package:dinna/features/client/cart/cart_lines.dart';
 import 'package:dinna/features/client/cart/cart_view.dart';
 import 'package:dinna/features/client/cart/cart_view_model.dart';
+import 'package:dinna/features/client/order/order_confirmation_view.dart';
 import 'package:dinna/features/client/order/order_intent_store.dart';
 import 'package:dinna/features/client/order/order_submission_view_model.dart';
 import 'package:dinna/features/home/api_status_repository.dart';
@@ -91,7 +92,7 @@ void main() {
     expect(sent, hasLength(2));
     expect(sent.last.single.quantity, 1);
     expect(sent.last.single.note, 'sem cebola');
-    expect(find.text('Pedido enviado'), findsOneWidget);
+    expect(find.text('Pedido enviado', skipOffstage: false), findsOneWidget);
     expect(lines.read().single.quantity, 2);
   });
 
@@ -128,6 +129,7 @@ void main() {
     await openCart(tester);
 
     expect(calls, 0);
+    expect(find.byType(OrderConfirmationView), findsNothing);
     expect(find.text('Envio sem confirmação'), findsOneWidget);
     expect(find.textContaining(OrderSubmissionViewModel.verifyBeforeRetryGuidance), findsOneWidget);
     expect(find.text('Enviar pedido'), findsNothing);
@@ -155,10 +157,13 @@ void main() {
     await tester.tap(find.text('Enviar pedido'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Pedido enviado'), findsOneWidget);
+    expect(find.text('Pedido enviado', skipOffstage: false), findsOneWidget);
     expect(find.text('Enviar pedido'), findsNothing);
+    expect(find.byType(OrderConfirmationView), findsOneWidget);
     expect(sent, hasLength(1));
 
+    Navigator.of(tester.element(find.byType(OrderConfirmationView))).pop();
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Fazer outro pedido'));
     await tester.pumpAndSettle();
 
@@ -173,7 +178,7 @@ void main() {
 
     expect(sent, hasLength(2));
     expect(sent.last.single.quantity, 2);
-    expect(find.text('Pedido enviado'), findsOneWidget);
+    expect(find.text('Pedido enviado', skipOffstage: false), findsOneWidget);
   });
 
   testWidgets('o diálogo aberto ainda publica expiração e relógio para trás', (tester) async {

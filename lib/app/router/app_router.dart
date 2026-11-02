@@ -4,7 +4,9 @@ import '../../core/domain/order.dart';
 import '../../features/client/cart/cart_lines.dart';
 import '../../features/client/cart/cart_view.dart';
 import '../../features/client/cart/cart_view_model.dart';
+import '../../features/client/order/order_confirmation_view.dart';
 import '../../features/client/order/order_submission_view_model.dart';
+import '../../features/client/order/order_tracking_view.dart';
 import '../../features/client/table/table_view.dart';
 import '../../features/home/api_status_repository.dart';
 import '../../features/home/home_view.dart';
@@ -24,9 +26,10 @@ export 'app_route_args.dart';
 ///
 /// A home (`/`) é a rota inicial da fundação e o fluxo `GET /health`.
 /// [clientFlow] e [restaurantFlow] nomeiam a jornada da R1, na ordem do
-/// produto. A home, a mesa, o carrinho (`/cart`), a fila (`/restaurant`) e o
-/// detalhe do pedido (`/restaurant/order`) têm tela. O restante ainda usa
-/// [RoutePlaceholder].
+/// produto. A home, a mesa, o carrinho (`/cart`), a confirmação (`/order`),
+/// o acompanhamento (`/order/tracking`), a fila (`/restaurant`) e o detalhe
+/// do pedido (`/restaurant/order`) têm tela. O acompanhamento não consulta
+/// status. O restante ainda usa [RoutePlaceholder].
 ///
 /// A entrada do cliente é [table] (`/table`), o mesmo nome da `TableView`
 /// na branch `feature/client-ui`. A integração coloca essa tela num case
@@ -46,10 +49,12 @@ abstract final class AppRoutes {
   /// Carrinho do cliente.
   static const cart = '/cart';
 
-  /// Confirmação do pedido enviado pela mesa.
+  /// Confirmação do pedido já gravado. Argumento: [OrderConfirmationArgs].
   static const order = '/order';
 
   /// Acompanhamento do pedido. Argumento: [AppRouteId].
+  ///
+  /// A tela identifica o pedido e não atualiza o status.
   static const orderTracking = '/order/tracking';
 
   /// Fila de pedidos. Entrada do restaurante (painel).
@@ -110,7 +115,10 @@ class AppRouter {
         submission: orderSubmission,
         table: _cartTable(settings.arguments),
         onOpenMenu: (context) => Navigator.of(context).pushNamed(AppRoutes.menu),
+        onOrderConfirmed: _openConfirmation,
       ),
+      AppRoutes.order => OrderConfirmationView(onTrack: _openTracking),
+      AppRoutes.orderTracking => const OrderTrackingView(),
       AppRoutes.restaurant => OrdersQueueView(
         createViewModel: () => OrdersQueueViewModel(orderRepository, delay: pollDelay),
         routeObserver: routeObserver,
@@ -129,6 +137,15 @@ class AppRouter {
     if (arguments is! String) return null;
     final table = arguments.trim();
     return table.isEmpty ? null : table;
+  }
+
+  Future<void> _openConfirmation(BuildContext context, Order order) async {
+    await Navigator.of(context)
+        .pushNamed(AppRoutes.order, arguments: OrderConfirmationArgs(order: order));
+  }
+
+  Future<void> _openTracking(BuildContext context, Order order) async {
+    await Navigator.of(context).pushNamed(AppRoutes.orderTracking, arguments: AppRouteId(order.id));
   }
 
   void _openOrder(BuildContext context, Order order) {

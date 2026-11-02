@@ -167,15 +167,32 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   bool get canBeginAnotherOrder {
     final terminal = _terminal;
     return !_disposed &&
-        _restored &&
         !_storeBlocked &&
-        _terminalStored &&
         !_gate &&
-        !isSubmitting &&
-        _status == OrderSubmissionStatus.succeeded &&
+        canViewPersistedConfirmation &&
         terminal != null &&
         terminal.phase == OrderIntentPhase.succeeded &&
         terminal.order != null;
+  }
+
+  /// O comprovante gravado pode ser mostrado de novo.
+  ///
+  /// Não autoriza outro POST nem depende de [canBeginAnotherOrder]. Falha ao
+  /// apagar a intenção deixa este sinal ligado. Um 201 que não coube no
+  /// arquivo fica de fora: esse sucesso só existe nesta execução.
+  bool get canViewPersistedConfirmation {
+    if (_disposed || !_restored || !_terminalStored || isSubmitting) return false;
+    if (_status != OrderSubmissionStatus.succeeded) return false;
+    final terminal = _terminal;
+    final intent = _intent;
+    final order = _order;
+    if (terminal == null || intent == null || order == null) return false;
+    final recorded = terminal.order;
+    return terminal.phase == OrderIntentPhase.succeeded &&
+        intent.id == terminal.id &&
+        intent.phase == OrderIntentPhase.succeeded &&
+        recorded != null &&
+        recorded == order;
   }
 
   /// Lê a intenção gravada. Não envia nada.

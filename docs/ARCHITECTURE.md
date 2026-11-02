@@ -83,8 +83,8 @@ Os nomes são correspondência exata: sem barra no fim e sem parâmetro no camin
 | Cliente | `menu` | `/menu` | — | Placeholder |
 | Cliente | `product` | `/product` | `AppRouteId` | Placeholder |
 | Cliente | `cart` | `/cart` | — | `CartView`. Revisão no processo, via `CartLines`. |
-| Cliente | `order` | `/order` | — | Placeholder |
-| Cliente | `orderTracking` | `/order/tracking` | `AppRouteId` | Placeholder |
+| Cliente | `order` | `/order` | `OrderConfirmationArgs` | `OrderConfirmationView`. Pedido já gravado, sem outro POST |
+| Cliente | `orderTracking` | `/order/tracking` | `AppRouteId` | `OrderTrackingView`. Identifica o pedido e não atualiza o status |
 | Restaurante | `restaurant` | `/restaurant` | — | Placeholder. Entrada do painel, na fila de pedidos |
 | Restaurante | `restaurantOrder` | `/restaurant/order` | `AppRouteId` | Placeholder |
 | Restaurante | `restaurantMenu` | `/restaurant/menu` | — | Placeholder |
