@@ -92,12 +92,12 @@ Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas d
 | Tema Dinna (Material 3) | ✅ Paleta, tipografia (Inter e Source Serif 4) e botões e raios do Figma | `lib/app/theme/`, `assets/fonts/` |
 | URL da API por ambiente | ✅ `--dart-define=API_BASE_URL` com padrão por plataforma | `lib/core/config/` |
 | Cliente HTTP + erro uniforme | ✅ `ApiClient` + `ApiException` | `lib/core/network/` |
-| Testes, lint, format, CI | ✅ 289 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
+| Testes, lint, format, CI | ✅ 322 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
 | Models (`Product`, `CartItem`, `Order`, `OrderItem`, `OrderStatus`, `Preference`) | ✅ Implementados em `lib/core/domain/` (SCRUM-22, PR #5 na `dev`) | [`lib/core/domain/`](lib/core/domain/) |
 | Rotas do cliente e do restaurante | ✅ SCRUM-23 concluída e mergeada pelo PR #6. Mapa em `AppRoutes`. Rota inicial `/`. `/table` abre `TableView`; as outras rotas da jornada são placeholder | [`lib/app/router/`](lib/app/router/), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Mesa (`/table`) | SCRUM-29. `TableViewModel` valida a mesa (vazia, zero ou não numérica mostra erro abaixo do campo). “Ver cardápio” abre `AppRoutes.menu` com a mesa como `String` em `arguments`. “Acessar o painel” ainda usa `onPressed` vazio | [`lib/features/client/table/table_view.dart`](lib/features/client/table/table_view.dart) |
-| Dependências base (SCRUM-18) | Em andamento. HTTP pronto (`http` 1.6.0 e `ApiClient`). A intenção de pedido usa `path_provider`; o armazenamento geral da SCRUM-27 ainda não entrou | `pubspec.yaml`, [`lib/core/network/`](lib/core/network/) |
-| Persistência local | SCRUM-90 grava a intenção do pedido num arquivo (`path_provider`). SCRUM-27, com João, segue em andamento: `sqflite` para carrinho, preferências e último pedido ainda não entrou | `lib/features/client/order/` |
+| Dependências base (SCRUM-18) | Em andamento. HTTP pronto (`http` 1.6.0 e `ApiClient`); `sqflite` persiste o carrinho e `path_provider` localiza o arquivo da intenção do pedido | `pubspec.yaml`, [`lib/core/network/`](lib/core/network/) |
+| Persistência local | SCRUM-70 implementa o repositório SQLite do carrinho; SCRUM-90 persiste a intenção do pedido em arquivo. Preferências e último pedido confirmado seguem fora desses escopos | [`lib/features/client/cart/`](lib/features/client/cart/), [`lib/features/client/order/`](lib/features/client/order/) |
 | Componentes visuais reutilizáveis | ✅ `DinnaLogo`, `DinnaBanner` e `DinnaEmptyState` (SCRUM-28) | `lib/shared/widgets/` |
 | Telas de R1, R2 e R3 | ⬜ Jornada planejada. Na `dev` só o layout da mesa está em `/table`; as outras telas seguem placeholder ou ainda não existem | — |
 
@@ -145,7 +145,7 @@ A jornada abaixo é a **R1 planejada**. Na `dev`, a etapa Mesa tem layout em `/t
 | Navegação | `onGenerateRoute` nativo | A SCRUM-23, concluída no PR #6, manteve o `Navigator` do Flutter. O mapa está em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Lint | `flutter_lints` 6.0.0 + regras em `analysis_options.yaml` | Análise estrita (`strict-casts`, `strict-raw-types`) |
 
-Dependências diretas: `http` 1.6.0, `path_provider` e `cupertino_icons`, que veio no template do Flutter. `path_provider` só localiza o arquivo da intenção de pedido. Não há biblioteca de estado, injeção de dependência ou banco geral. A SCRUM-27 propõe `sqflite` no Jira; esse pacote não está no `pubspec`.
+Dependências diretas: `http` 1.6.0, `sqflite` 2.4.5, `path` 1.9.1, `path_provider` 2.1.6 e `cupertino_icons`, que veio no template do Flutter. `sqflite` persiste as linhas do carrinho e `path_provider` localiza o arquivo da intenção de pedido. Nenhuma biblioteca de estado ou injeção de dependência foi adicionada. A SCRUM-18 segue em andamento enquanto as demais necessidades de armazenamento local são integradas.
 
 <a id="arquitetura"></a>
 
@@ -210,7 +210,7 @@ lib/
 │       └── home_view_model.dart
 └── shared/
     └── widgets/                      # DinnaLogo, DinnaBanner, DinnaEmptyState
-test/                                 # espelha lib/ (289 testes)
+test/                                 # espelha lib/ (322 testes)
 docs/ARCHITECTURE.md                  # contrato das camadas MVVM
 docs/assets/readme/                   # ilustrações deste README
 ```
@@ -310,18 +310,19 @@ Na tela inicial, toque em **“Verificar conexão com a API”**: com a API no a
 | `dart format .` | Formata o código (largura 100) |
 | `dart format --output=none --set-exit-if-changed .` | Só verifica a formatação, como na CI |
 
-O que os 289 testes cobrem hoje (`flutter test` nesta branch):
+O que os 322 testes cobrem hoje (`flutter test` nesta branch):
 
 | Arquivo | Cobre |
 |---|---|
 | `test/app_test.dart` | O app inicia com o tema Dinna; o fluxo View → ViewModel → Repository |
 | `test/app/app_router_test.dart` | Rota inicial `/`, `/table` com `TableView`, placeholder nas outras rotas do mapa, ida e volta, rota desconhecida e `GET /health` depois do retorno |
-| `test/core/domain/` | `fromJson` e `toJson` de `Product`, `Order`, `OrderItem`, `CartItem` e `Preference` |
+| `test/core/domain/` | `fromJson` e `toJson` de `Product`, `Order`, `OrderItem`, `CartItem` e `Preference`. `lineId` fica no JSON local e não entra no item de `POST /orders` |
 | `test/core/app_config_test.dart` | URL padrão por plataforma e prioridade do `API_BASE_URL` |
 | `test/core/api_client_test.dart` | Montagem da URL, erro da API, falha de rede e corpo que não é JSON |
 | `test/features/home/api_status_repository_test.dart` | Tradução de `/health`: ok, payload inesperado, rede e HTTP inválido |
 | `test/features/home/home_view_model_test.dart` | `checking` antes da resposta, success, error, exceção inesperada e `dispose` |
 | `test/features/client/table/` | Validação da mesa (vazia, zero, letras, normalização) e navegação para `/menu` com a mesa |
+| `test/features/client/cart/sqflite_cart_repository_test.dart` | Esquema do carrinho, `lineId`, reabertura, `removeConfirmed` e falha de SQLite sem tratar o carrinho como vazio |
 | `test/shared/widgets/` | `DinnaBanner` com e sem título; `DinnaEmptyState` com e sem ação |
 
 ### `flutter analyze` em pastas com acento
@@ -376,16 +377,16 @@ Situação das tasks R0 que tocam este repositório. A coluna **Jira** é o stat
 | Issue | Task | Jira | Código |
 |---|---|---|---|
 | SCRUM-16 | Criar e configurar o projeto Flutter | Concluído | Executa no Android e no iOS; estrutura de pastas definida |
-| SCRUM-18 | Configurar dependências base (HTTP e armazenamento local) | Em andamento | HTTP pronto: `http` 1.6.0 e `ApiClient` em `lib/core/network/`. Armazenamento local ainda sem dependência |
+| SCRUM-18 | Configurar dependências base (HTTP e armazenamento local) | Em andamento | HTTP pronto: `http` 1.6.0 e `ApiClient`; `sqflite` e `path` adicionados para persistência local do carrinho |
 | SCRUM-19 | Estruturar a arquitetura MVVM | Concluído | Implementada. Contrato em `docs/ARCHITECTURE.md`; `GET /health` é o fluxo de referência |
 | SCRUM-22 | Definir os models principais | Concluído | Implementados em `lib/core/domain/` e mergeados na `dev` pelo PR #5 |
 | SCRUM-23 | Configurar a navegação base | Concluído | Mergeada na `dev` pelo PR #6. Mapa em `AppRoutes`. Rota inicial `/`. `/table` abre `TableView`; as outras rotas da jornada são placeholder |
 | SCRUM-24 | Definir o contrato inicial da API REST | Concluído | Contrato aceito. O app consome `GET /health`. Os outros endpoints do contrato ainda não são chamados daqui |
 | SCRUM-26 | Configurar o cliente HTTP | Concluído | `ApiClient` centralizado com erro uniforme, revisado e concluído |
-| SCRUM-27 | Definir a persistência local | Em andamento | Sem código neste repositório. O Jira propõe `sqflite` para carrinho, preferências e último pedido; o pacote não está no `pubspec` |
+| SCRUM-27 | Definir a persistência local | Em andamento | Decisão registrada no Jira: SQLite local via `sqflite`; implementação do carrinho está na SCRUM-70 |
 | SCRUM-28 | Estrutura visual base | Em análise | Tema pronto na `dev`. Componentes reutilizáveis ainda sem merge, na branch `feature/SCRUM-28-tipografia-componentes` |
 
-A entrega acadêmica é 14/11/2026. As releases R1, R2 e R3 seguem sem data própria no Jira. A SCRUM-23 está concluída no Jira e na `dev`. A SCRUM-18 está em andamento: HTTP pronto, armazenamento local pendente. A SCRUM-27 está em andamento e ainda não tem persistência neste repositório.
+A entrega acadêmica é 14/11/2026. As releases R1, R2 e R3 seguem sem data própria no Jira. A SCRUM-23 está concluída no Jira e na `dev`. A SCRUM-18 está em andamento: HTTP pronto e persistência do carrinho em implementação na SCRUM-70. A situação histórica das tasks R0 abaixo registra o Jira em 25/10/2026.
 
 ---
 

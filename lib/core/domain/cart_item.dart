@@ -9,7 +9,10 @@ const _noteMaxLength = 200;
 /// [toOrderItem] produz o `OrderItem` de `POST /orders`. O total do pedido
 /// continua sendo calculado pela API.
 final class CartItem {
-  CartItem({required this.productId, required this.quantity, required this.note}) {
+  CartItem({this.lineId, required this.productId, required this.quantity, required this.note}) {
+    if (lineId != null && lineId!.isEmpty) {
+      throw ArgumentError.value(lineId, 'lineId', 'lineId deve ter ao menos 1 caractere');
+    }
     if (productId.isEmpty) {
       throw ArgumentError.value(productId, 'productId', 'productId deve ter ao menos 1 caractere');
     }
@@ -31,12 +34,17 @@ final class CartItem {
     return parseModel(() {
       final map = readJsonObject(json, 'CartItem');
       return CartItem(
+        lineId: readOptionalString(map, 'lineId'),
         productId: readRequiredString(map, 'productId'),
         quantity: readRequiredInt(map, 'quantity', min: 1),
         note: readOptionalString(map, 'note', maxLength: _noteMaxLength),
       );
     });
   }
+
+  /// Identidade local da linha. Só existe depois que a linha entra no
+  /// repositório persistido; não é enviada para a API.
+  final String? lineId;
 
   final String productId;
 
@@ -51,6 +59,7 @@ final class CartItem {
 
   /// Omite `note` quando ela é nula.
   Map<String, Object?> toJson() => {
+    if (lineId != null) 'lineId': lineId,
     'productId': productId,
     'quantity': quantity,
     if (note != null) 'note': note,
@@ -60,14 +69,15 @@ final class CartItem {
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
     return other is CartItem &&
+        other.lineId == lineId &&
         other.productId == productId &&
         other.quantity == quantity &&
         other.note == note;
   }
 
   @override
-  int get hashCode => Object.hash(productId, quantity, note);
+  int get hashCode => Object.hash(lineId, productId, quantity, note);
 
   @override
-  String toString() => 'CartItem(productId: $productId, quantity: $quantity)';
+  String toString() => 'CartItem(lineId: $lineId, productId: $productId, quantity: $quantity)';
 }
