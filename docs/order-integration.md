@@ -1,6 +1,6 @@
 # Envio de pedido — handoff
 
-Contrato para Gabriel, João e Jean trabalharem em paralelo. O `POST /orders` já está na camada de dados. `/cart` revisa as linhas recebidas. Ainda não há confirmação, persistência nem leitura da mesa.
+Contrato para Gabriel, João e Jean trabalharem em paralelo. O `POST /orders` já está na camada de dados. `/cart` revisa as linhas recebidas e, quando o sucesso fica gravado, abre `/order`. Ainda não há leitura da mesa.
 
 O app monta um único `HttpOrderRepository` em `lib/main.dart` e o entrega ao `AppRouter.orderRepository`. Ninguém cria outro cliente HTTP para pedido.
 
@@ -20,7 +20,7 @@ O app monta um único `HttpOrderRepository` em `lib/main.dart` e o entrega ao `A
 | `ProcessCartLines` | o mesmo arquivo | Lista só do processo. João substitui esta classe. |
 | `CartViewModel` | `lib/features/client/cart/cart_view_model.dart` | Quantidade, remoção e total estimado. Não envia o pedido. |
 
-`AppRoutes.order` (`/order`) ainda cai em `RoutePlaceholder`. **Pendente:** a tela de confirmação.
+`AppRoutes.order` (`/order`) mostra o `Order` gravado. O argumento é `OrderConfirmationArgs`. `/order/tracking` só identifica o pedido e não atualiza o status.
 
 ## Regras comuns
 
@@ -166,9 +166,15 @@ A revisão já cobre, sem `lineId`: quantidade e remoção pela posição, total
 
 O total da tela é a soma `priceCents * quantity`, com o rótulo "Total estimado". Não é `order.totalCents` e não inclui taxa de serviço. Se o cardápio falhar ou faltar preço, o total estimado fica ausente e as linhas permanecem. Sem itens, a tela mostra o estado vazio e abre `AppRoutes.menu`.
 
-## Confirmação — ainda pendente
+## Confirmação
 
-`/order` segue em `RoutePlaceholder`. O envio continua no `OrderSubmissionViewModel`. A tela de confirmação, quando existir, nasce no `State`, observa com `ListenableBuilder` e usa o total do servidor. A `CartView` já chama o trecho abaixo. Não abre `/order` e não limpa as linhas. O ViewModel do envio fica na sessão do app: voltar e reabrir `/cart` mostra o mesmo estado, inclusive envio pendente e resultado incerto. Sem linhas, o aviso continua na tela e o botão de enviar sai.
+O envio continua no `OrderSubmissionViewModel`. A confirmação não tem ViewModel: o `Order` é imutável e a tela não envia, não retoma e não lê o carrinho. Ela recebe `OrderConfirmationArgs` em `/order`. Não há outro `POST /orders` nem `GET /orders`. O total é `order.totalCents`.
+
+`OrderItem` não traz nome nem preço. A confirmação mostra `productId`, quantidade e `note`. Não consulta `ProductRepository`, para o cardápio atual não reescrever o pedido já aceito.
+
+A `CartView` observa o envio da sessão. Abre `/order` uma vez por intenção, no frame seguinte ao 201, só quando `canBeginAnotherOrder` é verdadeiro — o sucesso já está no arquivo. Notificação repetida, reconstrução e o 201 da mesma chave não empilham outra rota. Voltar é `pop`: a tela de envio continua atrás e não cria outra intenção. "Ver confirmação" abre de novo o mesmo `Order` sem POST. "Fazer outro pedido" continua sendo o único jeito de apagar a intenção gravada.
+
+Resultado incerto, bloqueio e 201 cuja gravação falhou não abrem `/order` e não mostram o aviso de pedido enviado. Sem linhas, o aviso que restar continua na tela e o botão de enviar sai. O ViewModel do envio fica na sessão: sair e reabrir `/cart` mostra o mesmo estado. Se a intenção gravada for `succeeded`, essa reabertura mostra a confirmação de novo e não envia.
 
 ```dart
 final submission = OrderSubmissionViewModel(orderRepository);
@@ -181,7 +187,7 @@ await submission.submit(table: table, items: List<CartItem>.of(cart));
 | `isSubmitting` | Carregando. O botão de envio sai. `canRequestSubmit` fica falso e outro toque não chama `submit`. |
 | `isDefiniteFailure` | `errorMessage`. "Tentar novamente" chama `submit` com a mesa e as linhas atuais. O carrinho fica. |
 | `outcomeUncertain` | `errorMessage` e `OrderSubmissionViewModel.verifyBeforeRetryGuidance`. Não diga que o pedido falhou. Não mostre "Tentar novamente". Não limpe. Não dispare outro POST sozinho. "Reenviar o mesmo pedido" abre o diálogo com o ID da intenção daquele momento. Confirmar chama `resume` com esse ID. Só há POST se ele ainda for a intenção persistida. |
-| `status == succeeded` | Aviso de pedido enviado. O botão de envio sai. As linhas ficam. `order` é o pedido da API; a confirmação, quando existir, usa `order.id`, `order.table`, `order.items`, `order.totalCents` e `order.createdAt`. |
+| `status == succeeded` e o arquivo tem o pedido | Aviso de pedido enviado e `/order` com `order.id`, `order.table`, `order.items`, `order.totalCents` e `order.createdAt`. As linhas ficam. O botão de envio sai. |
 
 ```dart
 if (submission.outcomeUncertain) {
@@ -191,9 +197,10 @@ if (submission.outcomeUncertain) {
 if (submission.shouldClearCart) {
   final confirmed = submission.confirmedItems!;
   await cartStore.save(withoutConfirmed(await cartStore.load(), confirmed));
-  openConfirmation(submission.order!);
 }
 ```
+
+A `CartView` já abre `/order` nesse sucesso. O trecho acima é só a limpeza futura do carrinho. Não dispare outro POST para mostrar a confirmação.
 
 ## Idempotência — SCRUM-90
 
@@ -213,7 +220,7 @@ O reenvio é manual. O diálogo mostra o ID da intenção daquele momento e `res
 | --- | --- |
 | Primeira tentativa | UUID novo, body congelado, grava, POST com o header |
 | Timeout antes dos headers, queda de conexão, corpo ilegível que não seja 409 ou 500 com chave, `502`, `503`, `500 INTERNAL_ERROR` e outro 4xx/5xx não reconhecido como falha sem efeito | Resultado incerto. A mesma chave e o mesmo body continuam. O reenvio é manual. O contrato da API não emite `502` nem `503` |
-| `201`, inclusive a repetição do mesmo body | Sucesso da intenção original. O carrinho fica. `/order` não abre. "Fazer outro pedido" apaga essa intenção só depois que o sucesso ficou gravado e só então libera um envio novo, com o carrinho daquele momento. Se a limpeza falha, a confirmação permanece e outro POST não sai |
+| `201`, inclusive a repetição do mesmo body | Sucesso da intenção original. O carrinho fica. `/order` abre uma vez com o pedido gravado. A repetição não abre outra rota e não cria outra chave. "Fazer outro pedido" apaga essa intenção só depois que o sucesso ficou gravado e só então libera um envio novo, com o carrinho daquele momento. Se a limpeza falha, a confirmação permanece e outro POST não sai |
 | `201` ou bloqueio cuja gravação falha | Nesta execução a confirmação ou a causa do bloqueio permanece. Não há reenvio nem chave nova. O arquivo pode continuar `pending` ou `uncertain`. Reiniciar não recupera esse desfecho: a próxima abertura trata o arquivo como incerto e o reenvio manual, se houver, repete a mesma chave e o mesmo body |
 | Reinício com intenção pendente ou incerta | Mostra o resultado incerto e não envia. O POST seguinte espera o diálogo |
 | Reinício com sucesso gravado | Mostra a confirmação e não envia. O pedido seguinte espera "Fazer outro pedido" |
@@ -230,4 +237,6 @@ O reenvio é manual. O diálogo mostra o ID da intenção daquele momento e `res
 
 A folga local continua nesta entrega. Ela é `24 horas` menos `1 hora`. O motivo é conservador: podem existir intenções criadas antes da retenção permanente, uma chave eliminada pelo servidor antigo não volta, uma resposta perdida não diz qual versão atendeu o POST, e o relógio do aparelho pode estar adiantado. Isso não é garantia absoluta contra relógio incorreto. Relógio atrasado ainda pode autorizar um reenvio quando o aparelho acredita estar dentro das 23 horas. Não há migração de intenção baseada só nesse relógio, e o header `Idempotency-Retention` não autoriza desligar a folga. Expirar a proteção não significa que o pedido deixou de existir.
 
-`cartStore` **não existe**. A limpeza depois do sucesso fica na implementação de `CartLines` do João, quando `lineId` existir. A revisão não grava nesse momento. Falha confirmada, conflito, bloqueio e resultado incerto não limpam o carrinho. O `submit` da tela usa as linhas atuais do `CartViewModel` só quando não há intenção aberta; a intenção incerta repete o body já gravado. Quando `lineId` existir, não monte outra lista só com `productId`, `quantity` e `note`: a fotografia perderia a identidade e a limpeza voltaria a apagar uma linha recriada. A mesa chega em `CartView.table`. A navegação passa um `String` em `RouteSettings.arguments`; outro tipo não é mesa. Sem esse argumento, a tela envia mesa vazia e a validação responde "Informe a mesa". `openConfirmation` **não existe**: a rota é `AppRoutes.order` e o argumento ainda não foi definido. O pedido a exibir é o `Order` do ViewModel, sem novo `GET /orders`.
+`cartStore` **não existe**. A limpeza depois do sucesso fica na implementação de `CartLines` do João, quando `lineId` existir. A revisão não grava nesse momento e a confirmação também não limpa o carrinho. Falha confirmada, conflito, bloqueio e resultado incerto não limpam o carrinho. O `submit` da tela usa as linhas atuais do `CartViewModel` só quando não há intenção aberta; a intenção incerta repete o body já gravado. Quando `lineId` existir, não monte outra lista só com `productId`, `quantity` e `note`: a fotografia perderia a identidade e a limpeza voltaria a apagar uma linha recriada. A mesa chega em `CartView.table`. A navegação passa um `String` em `RouteSettings.arguments`; outro tipo não é mesa. Sem esse argumento, a tela envia mesa vazia e a validação responde "Informe a mesa".
+
+`/order` recebe `OrderConfirmationArgs`. O `Order` é o da intenção `succeeded`, o mesmo do ViewModel, sem novo `GET /orders`. "Acompanhar pedido" abre `/order/tracking` com `AppRouteId` desse pedido. Essa rota não faz polling, não chama endpoint e não acompanha status: a SCRUM-46 continua pendente. Mesa, cardápio e a persistência do carrinho também continuam pendentes, nas stories do Gabriel e do João. Sem o argumento esperado, as duas rotas explicam a ausência e não chamam a API.
