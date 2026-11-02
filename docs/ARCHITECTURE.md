@@ -129,7 +129,7 @@ O PR [#3](https://github.com/jeancarlosaps/dinna-flutter/pull/3) está mergeado 
 
 O `switch` de [`app_router.dart`](../lib/app/router/app_router.dart) devolve `const TableView()` em `AppRoutes.table`, antes do ramo de placeholder. O nome `/table` permanece em `AppRoutes.clientFlow`. As outras rotas da jornada continuam em `RoutePlaceholder`.
 
-A `TableView` fica em [`lib/features/client/table/table_view.dart`](../lib/features/client/table/table_view.dart). O layout mostra a marca, o texto “Qual é a sua mesa?”, um campo numérico e os botões “Ver cardápio” e “Acessar o painel”. Nenhuma camada lê o campo. Os dois botões usam `onPressed` vazio e não chamam `Navigator.pushNamed`. A tela não tem `AppBar`. Esse layout não conclui a story de informar a mesa nem a ida ao cardápio.
+A `TableView` fica em [`lib/features/client/table/table_view.dart`](../lib/features/client/table/table_view.dart). O layout mostra a marca, o texto “Qual é a sua mesa?”, um campo numérico e os botões “Ver cardápio” e “Acessar o painel”. O `TableViewModel` nasce no `State` e valida o texto: vazio, zero ou não numérico deixa `errorMessage`, mostrado no `errorText` do campo. Mesa válida volta normalizada (`" 012 "` vira `"12"`) e a tela chama `Navigator.pushNamed(AppRoutes.menu, arguments: mesa)`, com a mesa como `String`. “Acessar o painel” ainda usa `onPressed` vazio. A tela não tem `AppBar`.
 
 Quando a story ligar os botões ao mapa:
 
