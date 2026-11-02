@@ -88,7 +88,10 @@ class _TableViewState extends State<TableView> {
                                       label: 'Número da mesa',
                                       child: TextField(
                                         controller: _tableController,
-                                        keyboardType: TextInputType.number,
+                                        // `signed` abre no iOS o teclado com tecla de retorno; o filtro mantém só dígitos.
+                                        keyboardType: const TextInputType.numberWithOptions(
+                                          signed: true,
+                                        ),
                                         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                                         textInputAction: TextInputAction.go,
                                         onSubmitted: (_) => _submit(),
