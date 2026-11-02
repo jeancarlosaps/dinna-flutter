@@ -40,12 +40,11 @@ void main() {
     expect(pushed?.arguments, '12');
   });
 
-    testWidgets('teclado numérico com tecla de envio', (tester) async {
+  testWidgets('teclado numérico com tecla de envio', (tester) async {
     await pumpTable(tester);
 
     final field = tester.widget<TextField>(find.byType(TextField));
     expect(field.keyboardType, const TextInputType.numberWithOptions(signed: true));
     expect(field.textInputAction, TextInputAction.go);
   });
-
 }
