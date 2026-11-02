@@ -58,7 +58,7 @@ O contrato `ApiStatusRepository` não importa o Service. Quem implementa (`HttpA
 
 ## Navegação
 
-O app usa um único `Navigator`, o do `MaterialApp`. [`lib/app/app.dart`](../lib/app/app.dart) define `initialRoute: AppRoutes.home` (`/`) e `onGenerateRoute`. O mapa fica em [`lib/app/router/app_router.dart`](../lib/app/router/app_router.dart). A SCRUM-23 está concluída e mergeada pelo PR #6: manteve o `onGenerateRoute` nativo. Os nomes da R1 ficam em `AppRoutes.clientFlow` e `AppRoutes.restaurantFlow`. O `switch` abre `HomeView` em `/` e `TableView` em `/table`; os outros nomes dessas listas caem no `RoutePlaceholder`. A dependência continua entrando pelo construtor.
+O app usa um único `Navigator`, o do `MaterialApp`. [`lib/app/app.dart`](../lib/app/app.dart) define `initialRoute: AppRoutes.home` (`/`) e `onGenerateRoute`. O mapa fica em [`lib/app/router/app_router.dart`](../lib/app/router/app_router.dart). A SCRUM-23 está concluída e mergeada pelo PR #6: manteve o `onGenerateRoute` nativo. Os nomes da R1 ficam em `AppRoutes.clientFlow` e `AppRoutes.restaurantFlow`. O `switch` abre `HomeView`, `TableView`, `MenuView`, `CartView`, a confirmação e o acompanhamento. Os outros nomes dessas listas caem no `RoutePlaceholder`. A dependência continua entrando pelo construtor.
 
 ### Responsabilidades
 
@@ -82,9 +82,9 @@ Os nomes são correspondência exata: sem barra no fim e sem parâmetro no camin
 | Cliente | `table` | `/table` | — | `TableView`. Valida a mesa e abre `/menu` com ela (SCRUM-29) |
 | Cliente | `menu` | `/menu` | mesa (`String`) | `MenuView`. Produtos por categoria, via `MenuViewModel` (SCRUM-30) |
 | Cliente | `product` | `/product` | `AppRouteId` | Placeholder |
-| Cliente | `cart` | `/cart` | — | `CartView`. Revisão no processo, via `CartLines`. |
-| Cliente | `order` | `/order` | — | Placeholder |
-| Cliente | `orderTracking` | `/order/tracking` | `AppRouteId` | Placeholder |
+| Cliente | `cart` | `/cart` | mesa (`String`) | `CartView`. Revisão no processo, via `CartLines`. |
+| Cliente | `order` | `/order` | `OrderConfirmationArgs` | `OrderConfirmationView`. Pedido já gravado, sem outro POST |
+| Cliente | `orderTracking` | `/order/tracking` | `AppRouteId` | `OrderTrackingView`. Identifica o pedido e não atualiza o status |
 | Restaurante | `restaurant` | `/restaurant` | — | Placeholder. Entrada do painel, na fila de pedidos |
 | Restaurante | `restaurantOrder` | `/restaurant/order` | `AppRouteId` | Placeholder |
 | Restaurante | `restaurantMenu` | `/restaurant/menu` | — | Placeholder |
@@ -115,7 +115,7 @@ flowchart TD
   restaurant --> rmenu
 ```
 
-A home de fundação permanece em `/` e não ganha botão de produto. `/table` desenha a `TableView` e `/menu` a `MenuView`. As outras rotas do mapa, menos `/cart`, desenham `RoutePlaceholder`. Quem entra nos fluxos é o teste, por `pushNamed`. O retorno é `Navigator.pop`. O placeholder usa `AppBar`, então o botão de voltar desempilha a rota. A `TableView` não tem `AppBar`. O `AppBar` da `MenuView` não mostra seta, como no Figma: volta-se pelo botão do sistema.
+A home de fundação permanece em `/` e não ganha botão de produto. `/table` desenha a `TableView`, `/menu` a `MenuView`, `/cart` a `CartView`, `/order` a confirmação e `/order/tracking` o acompanhamento. As outras rotas do mapa desenham `RoutePlaceholder`. Quem entra nos fluxos é o teste, por `pushNamed`. O retorno é `Navigator.pop`. O placeholder usa `AppBar`, então o botão de voltar desempilha a rota. A `TableView` não tem `AppBar`. O `AppBar` da `MenuView` não mostra seta, como no Figma: volta-se pelo botão do sistema.
 
 ### Argumentos
 
@@ -127,7 +127,7 @@ O PR [#3](https://github.com/jeancarlosaps/dinna-flutter/pull/3) está mergeado 
 
 [`lib/app/app.dart`](../lib/app/app.dart) mantém `initialRoute: AppRoutes.home`. A entrada da fundação continua `/`, com a home e o `GET /health`. [`test/app_test.dart`](../test/app_test.dart) cobre essa rota inicial. A abertura do app em `/table` não foi adotada. Se a rota inicial passar a ser `/table`, os testes que esperam a home em `/` precisam ser adaptados.
 
-O `switch` de [`app_router.dart`](../lib/app/router/app_router.dart) devolve `const TableView()` em `AppRoutes.table`, antes do ramo de placeholder. O nome `/table` permanece em `AppRoutes.clientFlow`. `AppRoutes.menu` devolve a `MenuView` com o `MenuViewModel` e a mesa lida de `settings.arguments`. As outras rotas da jornada, menos `/cart`, continuam em `RoutePlaceholder`.
+O `switch` de [`app_router.dart`](../lib/app/router/app_router.dart) devolve `const TableView()` em `AppRoutes.table`, antes do ramo de placeholder. O nome `/table` permanece em `AppRoutes.clientFlow`. `AppRoutes.menu` devolve a `MenuView` com o `MenuViewModel` e a mesa lida de `settings.arguments`. `/cart`, `/order` e `/order/tracking` também têm tela própria. As outras rotas da jornada continuam em `RoutePlaceholder`.
 
 A `TableView` fica em [`lib/features/client/table/table_view.dart`](../lib/features/client/table/table_view.dart). O layout mostra a marca, o texto “Qual é a sua mesa?”, um campo numérico e os botões “Ver cardápio” e “Acessar o painel”. O `TableViewModel` nasce no `State` e valida o texto: vazio, zero ou não numérico deixa `errorMessage`, mostrado no `errorText` do campo. Mesa válida volta normalizada (`" 012 "` vira `"12"`) e a tela chama `Navigator.pushNamed(AppRoutes.menu, arguments: mesa)`, com a mesa como `String`. “Acessar o painel” ainda usa `onPressed` vazio. A tela não tem `AppBar`.
 

@@ -1,5 +1,7 @@
 import 'package:dinna/app/app.dart';
 import 'package:dinna/app/router/app_router.dart';
+import 'package:dinna/features/client/order/order_confirmation_view.dart';
+import 'package:dinna/features/client/order/order_tracking_view.dart';
 import 'package:dinna/features/client/table/table_view.dart';
 import 'package:dinna/features/home/api_status_repository.dart';
 import 'package:dinna/features/menu/menu_view.dart';
@@ -162,6 +164,8 @@ void main() {
           route != AppRoutes.table &&
           route != AppRoutes.menu &&
           route != AppRoutes.cart &&
+          route != AppRoutes.order &&
+          route != AppRoutes.orderTracking &&
           route != AppRoutes.restaurant &&
           route != AppRoutes.restaurantOrder,
     );
@@ -183,12 +187,44 @@ void main() {
       await _push(tester, route, arguments: id);
 
       final context = tester.element(
-        route == AppRoutes.restaurantOrder ? find.byType(OrderDetailsView) : find.text(route),
+        route == AppRoutes.restaurantOrder
+            ? find.byType(OrderDetailsView)
+            : route == AppRoutes.orderTracking
+            ? find.byType(OrderTrackingView)
+            : find.text(route),
       );
       final modalRoute = ModalRoute.of(context)!;
       expect(modalRoute.settings.name, route, reason: route);
       expect(modalRoute.settings.arguments, id, reason: route);
     }
+  });
+
+  testWidgets('a confirmação e o acompanhamento sem argumento não consultam a API', (tester) async {
+    final orders = FakeOrderRepository(() async => OrderList.ready(const []));
+    final products = FakeProductRepository(() async => ProductList.ready(const []));
+    await tester.pumpWidget(
+      DinnaApp(
+        apiStatusRepository: FakeApiStatusRepository(() async => const ApiAvailability.online()),
+        orderRepository: orders,
+        productRepository: products,
+        pollDelay: pendingPollDelay,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _push(tester, AppRoutes.order);
+    expect(find.byType(OrderConfirmationView), findsOneWidget);
+    expect(find.text('Pedido indisponível'), findsOneWidget);
+    expect(find.text('Tela ainda não implementada.'), findsNothing);
+
+    await _push(tester, AppRoutes.orderTracking, from: 'Pedido indisponível');
+    expect(find.byType(OrderTrackingView), findsOneWidget);
+    expect(find.text('Acompanhamento indisponível'), findsOneWidget);
+    expect(find.text('Tela ainda não implementada.'), findsNothing);
+    expect(orders.calls, 0);
+    expect(orders.createCalls, 0);
+    expect(products.calls, 0);
+    expect(products.findCalls, 0);
   });
 
   testWidgets('a home e o GET /health continuam válidos depois de ir e voltar', (tester) async {
