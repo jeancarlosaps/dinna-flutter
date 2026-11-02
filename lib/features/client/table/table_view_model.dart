@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 /// Valida o número da mesa digitado na entrada do cliente.
 class TableViewModel extends ChangeNotifier {
+  static final _digitsOnly = RegExp(r'^\d+$');
   String? _errorMessage;
 
   /// Mensagem para mostrar abaixo do campo. Nula quando não há erro.
@@ -10,7 +11,7 @@ class TableViewModel extends ChangeNotifier {
   /// Devolve a mesa normalizada (ex.: "12") se for válida; senão guarda o erro e devolve null.
   String? submit(String input) {
     final text = input.trim();
-    final number = int.tryParse(text);
+    final number = _digitsOnly.hasMatch(text) ? int.parse(text) : null;
 
     if (text.isEmpty) {
       _errorMessage = 'Informe o número da mesa.';

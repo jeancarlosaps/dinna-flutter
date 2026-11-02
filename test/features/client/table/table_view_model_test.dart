@@ -17,6 +17,9 @@ void main() {
 
     expect(viewModel.submit('abc'), isNull);
     expect(viewModel.errorMessage, 'Número de mesa inválido.');
+    expect(viewModel.submit('0x12'), isNull);
+    expect(viewModel.submit('+12'), isNull);
+    expect(viewModel.errorMessage, 'Número de mesa inválido.');
   });
 
   test('mesa válida devolve o número normalizado e limpa o erro', () {
