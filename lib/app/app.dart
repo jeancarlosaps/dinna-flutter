@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../features/client/cart/cart_lines.dart';
+import '../features/client/order/order_intent_store.dart';
 import '../features/client/order/order_submission_view_model.dart';
 import '../features/home/api_status_repository.dart';
 import '../features/menu/product_repository.dart';
@@ -15,6 +18,7 @@ class DinnaApp extends StatefulWidget {
     required this.orderRepository,
     required this.productRepository,
     this.cartLines,
+    this.orderIntentStore,
     this.routeObserver,
     this.pollDelay,
   });
@@ -25,6 +29,9 @@ class DinnaApp extends StatefulWidget {
 
   /// Nula cria [ProcessCartLines] neste State. Testes e o `main` podem injetar.
   final CartLines? cartLines;
+
+  /// Nula guarda a intenção de pedido só na memória desta sessão.
+  final OrderIntentStore? orderIntentStore;
 
   /// Instância ligada à fila. Nula cria um observer estável neste State.
   final RouteObserver<PageRoute<dynamic>>? routeObserver;
@@ -47,7 +54,11 @@ class _DinnaAppState extends State<DinnaApp> {
     super.initState();
     _routeObserver = widget.routeObserver ?? RouteObserver<PageRoute<dynamic>>();
     _cartLines = widget.cartLines ?? ProcessCartLines();
-    _submission = OrderSubmissionViewModel(widget.orderRepository);
+    _submission = OrderSubmissionViewModel(
+      widget.orderRepository,
+      intentStore: widget.orderIntentStore,
+    );
+    unawaited(_submission.restore());
   }
 
   @override

@@ -52,13 +52,16 @@ class ApiClient {
   ///
   /// [http.Client.send] só retorna quando os headers chegam. Uma exceção aí
   /// não prova que o servidor deixou de receber o body e marca
-  /// [ApiException.outcomeUncertain]. Se os headers já chegaram, 4xx e 5xx
-  /// continuam falha confirmada mesmo com o corpo ilegível; 2xx ilegível
-  /// permanece incerto. Não há nova tentativa. [getJson] não usa este sinal.
-  Future<Object?> postJson(String path, Object? jsonBody) async {
+  /// [ApiException.outcomeUncertain]. Se os headers já chegaram, o status
+  /// fica na exceção e o corpo ilegível não marca incerteza: 2xx ilegível
+  /// permanece incerto, e 4xx/5xx ilegível conserva o status sem `error.code`.
+  /// Quem decide se isso libera, bloqueia ou reenvia a chave é o repositório
+  /// do pedido. Não há nova tentativa. [getJson] não usa este sinal.
+  Future<Object?> postJson(String path, Object? jsonBody, {Map<String, String>? headers}) async {
     final request = http.Request('POST', baseUrl.resolve(path))
-      ..headers.addAll(const {'Accept': 'application/json', 'Content-Type': 'application/json'})
-      ..body = jsonEncode(jsonBody);
+      ..headers.addAll(const {'Accept': 'application/json', 'Content-Type': 'application/json'});
+    if (headers != null) request.headers.addAll(headers);
+    request.body = jsonEncode(jsonBody);
 
     final deadline = DateTime.now().add(timeout);
     Duration remaining() {
@@ -169,6 +172,7 @@ class ApiClient {
     throw ApiException(
       message ?? httpFailureMessage,
       statusCode: response.statusCode,
+      code: _errorCode(body),
       detail: message == null ? 'HTTP ${response.statusCode}' : null,
     );
   }
@@ -197,6 +201,14 @@ class ApiClient {
   String? _errorMessage(Object? body) {
     if (body case {'error': {'message': final String message}} when message.trim().isNotEmpty) {
       return message;
+    }
+    return null;
+  }
+
+  /// Código estável da API. Mensagem vazia não impede o código de existir.
+  String? _errorCode(Object? body) {
+    if (body case {'error': {'code': final String code}} when code.trim().isNotEmpty) {
+      return code;
     }
     return null;
   }
