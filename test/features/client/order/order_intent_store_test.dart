@@ -287,8 +287,66 @@ void main() {
 
   test('diretório inacessível não parece ausência e a limpeza não apaga a intenção', () async {
     final directory = await Directory.systemTemp.createTemp('dinna-intent-');
+    addTearDown(() => directory.delete(recursive: true));
+    final file = File('${directory.path}/order-intent.json');
+    final stored = intent();
+    var denied = false;
+    var deniedCode = 5;
+    final store = FileOrderIntentStore(
+      file,
+      readFile: (target) {
+        if (denied) throw _accessDenied(target.path, deniedCode);
+        return target.readAsString();
+      },
+      deleteFile: (target) async {
+        if (denied) throw _accessDenied(target.path, deniedCode);
+        await target.delete();
+      },
+    );
+    await store.save(stored);
+    final before = await file.readAsString();
+
+    // 5 é acesso negado no Windows. 13 é EACCES no POSIX. Nenhum dos dois é
+    // "arquivo inexistente" (2 ou 3), então a intenção tem de permanecer.
+    for (final code in const [5, 13]) {
+      denied = true;
+      deniedCode = code;
+
+      expect(
+        store.load,
+        throwsA(
+          isA<OrderIntentStoreException>().having(
+            (error) => error.problem,
+            'problem',
+            OrderIntentStoreProblem.unreadable,
+          ),
+        ),
+      );
+      expect(
+        store.clear,
+        throwsA(
+          isA<OrderIntentStoreException>().having(
+            (error) => error.problem,
+            'problem',
+            OrderIntentStoreProblem.unwritable,
+          ),
+        ),
+      );
+      expect(await file.readAsString(), before);
+    }
+
+    denied = false;
+    expect((await store.load())!.id, stored.id);
+  });
+
+  test('permissão POSIX negada não parece ausência e a limpeza não apaga a intenção', () async {
+    final directory = await Directory.systemTemp.createTemp('dinna-intent-');
     addTearDown(() async {
-      await Process.run('chmod', ['700', directory.path]);
+      try {
+        await Process.run('chmod', ['700', directory.path]);
+      } on ProcessException {
+        // Sem chmod o diretório segue removível.
+      }
       if (await directory.exists()) await directory.delete(recursive: true);
     });
     final file = File('${directory.path}/order-intent.json');
@@ -296,8 +354,10 @@ void main() {
     final store = FileOrderIntentStore(file);
     await store.save(stored);
     final before = await file.readAsString();
-    final chmod = await Process.run('chmod', ['000', directory.path]);
-    expect(chmod.exitCode, 0);
+    if (!await _denyPosixDirectory(directory)) {
+      markTestSkipped('chmod não torna o diretório inacessível neste sistema');
+      return;
+    }
 
     expect(
       store.load,
@@ -362,4 +422,24 @@ void main() {
       ),
     );
   });
+}
+
+FileSystemException _accessDenied(String path, int errorCode) {
+  return FileSystemException('acesso negado', path, OSError('Access is denied', errorCode));
+}
+
+/// `true` só quando `chmod 000` impede criar um arquivo dentro do diretório.
+Future<bool> _denyPosixDirectory(Directory directory) async {
+  try {
+    final chmod = await Process.run('chmod', ['000', directory.path]);
+    if (chmod.exitCode != 0) return false;
+  } on ProcessException {
+    return false;
+  }
+  try {
+    await File('${directory.path}${Platform.pathSeparator}probe').writeAsString('x', flush: true);
+  } on FileSystemException {
+    return true;
+  }
+  return false;
 }
