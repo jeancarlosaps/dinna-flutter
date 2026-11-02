@@ -122,7 +122,9 @@ class AppRouter {
         createViewModel: () => CartViewModel(productRepository, lines: cartLines),
         submission: orderSubmission,
         table: _tableArgument(settings.arguments),
-        onOpenMenu: (context) => Navigator.of(context).pushNamed(AppRoutes.menu),
+        onOpenMenu: (context) =>
+            Navigator.of(context)
+                .pushNamed(AppRoutes.menu, arguments: _tableArgument(settings.arguments)),
         onOrderConfirmed: _openConfirmation,
       ),
       AppRoutes.order => OrderConfirmationView(onTrack: _openTracking),

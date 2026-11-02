@@ -63,7 +63,7 @@ class _MenuViewState extends State<MenuView> {
           if (table != null)
             Padding(
               padding: const EdgeInsets.only(right: 16),
-              child: _TableBadge(table: table),
+              child: _TableBadge(table: table, maxWidth: _badgeMaxWidth(context)),
             ),
         ],
       ),
@@ -210,20 +210,47 @@ class _CategoryStrip extends StatelessWidget {
   }
 }
 
-/// Altura do header: 56 px na escala normal. Com texto ampliado, cabe o selo.
+/// Altura do header: 56 px na escala normal. Com texto ampliado, cabe a marca e o selo.
 double _toolbarHeight(BuildContext context, String? table) {
-  const base = kToolbarHeight;
-  if (table == null) return base;
+  final scaler = MediaQuery.textScalerOf(context);
+  final logoHeight = scaler.scale(24);
+  var needed = logoHeight + 8;
+  if (table != null) {
+    final badge = _badgeTextHeight(context, table) + 14;
+    needed = math.max(needed, badge + 8);
+  }
+  return math.max(kToolbarHeight, needed);
+}
+
+/// Largura restante do header depois da marca, do espaçamento e do padding.
+double _badgeMaxWidth(BuildContext context) {
+  final scaler = MediaQuery.textScalerOf(context);
+  final logo = TextPainter(
+    text: const TextSpan(
+      text: 'dinna.',
+      style: TextStyle(
+        fontSize: 24,
+        height: 1,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 24 * -0.035,
+      ),
+    ),
+    textDirection: Directionality.of(context),
+    textScaler: scaler,
+    maxLines: 1,
+  )..layout();
+  return math.max(48, MediaQuery.sizeOf(context).width - logo.width - 48);
+}
+
+double _badgeTextHeight(BuildContext context, String table) {
   final style = Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600);
+  final inner = math.max(1.0, _badgeMaxWidth(context) - 40);
   final painter = TextPainter(
     text: TextSpan(text: 'Mesa $table', style: style),
     textDirection: Directionality.of(context),
     textScaler: MediaQuery.textScalerOf(context),
-    maxLines: 1,
-  )..layout();
-  // Padding vertical do selo, borda e folga para o texto não encostar na faixa.
-  final needed = painter.height + 22;
-  return math.max(base, needed);
+  )..layout(maxWidth: inner);
+  return painter.height;
 }
 
 /// Colunas e altura do card. Na escala 1 a proporção segue o limite de 220 px.
@@ -292,38 +319,45 @@ double _textBlock(
 
 /// Selo da mesa do Figma: fundo creme, borda e bolinha verde.
 class _TableBadge extends StatelessWidget {
-  const _TableBadge({required this.table});
+  const _TableBadge({required this.table, required this.maxWidth});
 
   final String table;
+  final double maxWidth;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: colors.outlineVariant),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          DecoratedBox(
-            decoration: BoxDecoration(color: colors.secondary, shape: BoxShape.circle),
-            child: const SizedBox.square(dimension: 8),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            'Mesa $table',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: colors.onSurface,
-              fontWeight: FontWeight.w600,
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: colors.outlineVariant),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(color: colors.secondary, shape: BoxShape.circle),
+              child: const SizedBox.square(dimension: 8),
             ),
-          ),
-        ],
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                'Mesa $table',
+                softWrap: true,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colors.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -80,6 +80,17 @@ void main() {
     expect(ModalRoute.of(context)!.settings.name, AppRoutes.cart);
   });
 
+  testWidgets('o carrinho devolve a mesa ao cardápio', (tester) async {
+    await _pumpApp(tester);
+    await _push(tester, AppRoutes.cart, arguments: '12');
+
+    await tester.tap(find.text('Ver cardápio'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MenuView), findsOneWidget);
+    expect(find.text('Mesa 12'), findsOneWidget);
+  });
+
   testWidgets('navega para o cardápio e volta até a home', (tester) async {
     await _pumpApp(tester);
 

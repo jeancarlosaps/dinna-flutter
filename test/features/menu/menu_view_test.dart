@@ -3,6 +3,7 @@ import 'package:dinna/core/domain/product.dart';
 import 'package:dinna/features/menu/menu_view.dart';
 import 'package:dinna/features/menu/menu_view_model.dart';
 import 'package:dinna/features/menu/product_repository.dart';
+import 'package:dinna/shared/widgets/dinna_logo.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -250,5 +251,79 @@ void main() {
     expect(soldLeft, greaterThanOrEqualTo(cardLeft - 0.5));
     expect(soldLeft + soldBox.size.width, lessThanOrEqualTo(cardLeft + soldCard.size.width + 0.5));
     expect(find.text('R\$ 10,00'), findsWidgets);
+  });
+
+  testWidgets('a marca cabe no header sem mesa com texto a 300%', (tester) async {
+    tester.view.physicalSize = const Size(360, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(3)),
+          child: child!,
+        ),
+        home: MenuView(
+          createViewModel: () => MenuViewModel(
+            FakeProductRepository(
+              () async => ProductList.ready([_product('1', 'Moqueca', 'pratos')]),
+            ),
+          ),
+          onOpenCart: (_, _) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final logo = tester.renderObject<RenderBox>(find.byType(DinnaLogo));
+    final appBar = tester.renderObject<RenderBox>(find.byType(AppBar));
+    final logoTop = logo.localToGlobal(Offset.zero).dy;
+    final barTop = appBar.localToGlobal(Offset.zero).dy;
+    expect(appBar.size.height, greaterThan(56));
+    expect(logoTop, greaterThanOrEqualTo(barTop - 0.5));
+    expect(logoTop + logo.size.height, lessThanOrEqualTo(barTop + appBar.size.height + 0.5));
+  });
+
+  testWidgets('mesa longa cabe no header com texto a 300%', (tester) async {
+    tester.view.physicalSize = const Size(360, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(3)),
+          child: child!,
+        ),
+        home: MenuView(
+          table: '999999999',
+          createViewModel: () => MenuViewModel(
+            FakeProductRepository(
+              () async => ProductList.ready([_product('1', 'Moqueca', 'pratos')]),
+            ),
+          ),
+          onOpenCart: (_, _) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final mesa = tester.renderObject<RenderBox>(
+      find.byWidgetPredicate((widget) => widget is Text && widget.data == 'Mesa 999999999'),
+    );
+    final appBar = tester.renderObject<RenderBox>(find.byType(AppBar));
+    final mesaTop = mesa.localToGlobal(Offset.zero).dy;
+    final mesaLeft = mesa.localToGlobal(Offset.zero).dx;
+    final barTop = appBar.localToGlobal(Offset.zero).dy;
+    final barLeft = appBar.localToGlobal(Offset.zero).dx;
+    expect(mesaTop, greaterThanOrEqualTo(barTop - 0.5));
+    expect(mesaTop + mesa.size.height, lessThanOrEqualTo(barTop + appBar.size.height + 0.5));
+    expect(mesaLeft, greaterThanOrEqualTo(barLeft - 0.5));
+    expect(mesaLeft + mesa.size.width, lessThanOrEqualTo(barLeft + appBar.size.width + 0.5));
   });
 }
