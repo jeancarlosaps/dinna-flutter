@@ -33,6 +33,11 @@ void main() {
     expect(viewModel.categories, ['Pizzas', 'Saladas']);
     expect(viewModel.visibleProducts, hasLength(3));
     expect(viewModel.productsIn('Pizzas').map((p) => p.id), ['1', '3']);
+    final grouped = viewModel.groupedProducts();
+    expect(grouped.keys, ['Pizzas', 'Saladas']);
+    expect(grouped['Pizzas']!.map((p) => p.id), ['1', '3']);
+    expect(grouped['Saladas']!.map((p) => p.id), ['2']);
+    expect(grouped.values.fold<int>(0, (total, items) => total + items.length), 3);
   });
 
   test('filtra pela categoria escolhida e volta para todos', () async {

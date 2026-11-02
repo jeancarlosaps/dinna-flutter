@@ -204,6 +204,20 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
+    final mesa = tester.renderObject<RenderBox>(
+      find.byWidgetPredicate((widget) => widget is Text && widget.data == 'Mesa 12'),
+    );
+    final appBar = tester.renderObject<RenderBox>(find.byType(AppBar));
+    final mesaTop = mesa.localToGlobal(Offset.zero).dy;
+    final barTop = appBar.localToGlobal(Offset.zero).dy;
+    final mesaLeft = mesa.localToGlobal(Offset.zero).dx;
+    final barLeft = appBar.localToGlobal(Offset.zero).dx;
+    expect(appBar.size.height, greaterThan(56));
+    expect(mesaTop, greaterThanOrEqualTo(barTop - 0.5));
+    expect(mesaTop + mesa.size.height, lessThanOrEqualTo(barTop + appBar.size.height + 0.5));
+    expect(mesaLeft, greaterThanOrEqualTo(barLeft - 0.5));
+    expect(mesaLeft + mesa.size.width, lessThanOrEqualTo(barLeft + appBar.size.width + 0.5));
+
     final name = tester.renderObject<RenderBox>(find.text('Moqueca'));
     final card = tester.renderObject<RenderBox>(find.byType(Card).first);
     final nameTop = name.localToGlobal(Offset.zero).dy;
@@ -219,7 +233,22 @@ void main() {
         matching: find.byType(Scrollable),
       ),
     );
-    expect(find.text('Esgotado'), findsWidgets);
+    final sold = find.byWidgetPredicate((widget) => widget is Text && widget.data == 'Esgotado');
+    final soldBox = tester.renderObject<RenderBox>(sold);
+    final soldCard = tester.renderObject<RenderBox>(
+      find.ancestor(of: sold, matching: find.byType(Card)),
+    );
+    final soldTop = soldBox.localToGlobal(Offset.zero).dy;
+    final soldLeft = soldBox.localToGlobal(Offset.zero).dx;
+    final soldCardTop = soldCard.localToGlobal(Offset.zero).dy;
+    final cardLeft = soldCard.localToGlobal(Offset.zero).dx;
+    expect(soldTop, greaterThanOrEqualTo(soldCardTop - 0.5));
+    expect(
+      soldTop + soldBox.size.height,
+      lessThanOrEqualTo(soldCardTop + soldCard.size.height + 0.5),
+    );
+    expect(soldLeft, greaterThanOrEqualTo(cardLeft - 0.5));
+    expect(soldLeft + soldBox.size.width, lessThanOrEqualTo(cardLeft + soldCard.size.width + 0.5));
     expect(find.text('R\$ 10,00'), findsWidgets);
   });
 }

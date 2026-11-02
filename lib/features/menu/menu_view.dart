@@ -50,8 +50,10 @@ class _MenuViewState extends State<MenuView> {
     final colors = Theme.of(context).colorScheme;
 
     // Header do Figma: faixa branca com linha embaixo, sem seta de voltar.
+    // A altura acompanha o selo quando o texto da mesa cresce.
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: _toolbarHeight(context, table),
         automaticallyImplyLeading: false,
         titleSpacing: 16,
         backgroundColor: colors.surfaceContainerLowest,
@@ -105,6 +107,8 @@ class _MenuContent extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        final grouped = viewModel.groupedProducts();
+        final grid = _gridMetrics(context, constraints.maxWidth - 32);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -122,15 +126,15 @@ class _MenuContent extends StatelessWidget {
                     SliverPadding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       sliver: SliverGrid.builder(
-                        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 220,
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: grid.count,
                           mainAxisSpacing: 12,
                           crossAxisSpacing: 12,
-                          mainAxisExtent: _cardExtent(context, constraints.maxWidth - 32),
+                          mainAxisExtent: grid.extent,
                         ),
-                        itemCount: viewModel.productsIn(category).length,
+                        itemCount: (grouped[category] ?? const []).length,
                         itemBuilder: (context, index) =>
-                            _ProductCard(product: viewModel.productsIn(category)[index]),
+                            _ProductCard(product: grouped[category]![index]),
                       ),
                     ),
                   ],
@@ -206,23 +210,52 @@ class _CategoryStrip extends StatelessWidget {
   }
 }
 
-/// Altura do card na escala 1 segue a proporção anterior. Texto ampliado
-/// aumenta o card pelo que o nome e o preço realmente ocupam.
-double _cardExtent(BuildContext context, double gridWidth) {
+/// Altura do header: 56 px na escala normal. Com texto ampliado, cabe o selo.
+double _toolbarHeight(BuildContext context, String? table) {
+  const base = kToolbarHeight;
+  if (table == null) return base;
+  final style = Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600);
+  final painter = TextPainter(
+    text: TextSpan(text: 'Mesa $table', style: style),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: 1,
+  )..layout();
+  // Padding vertical do selo, borda e folga para o texto não encostar na faixa.
+  final needed = painter.height + 22;
+  return math.max(base, needed);
+}
+
+/// Colunas e altura do card. Na escala 1 a proporção segue o limite de 220 px.
+/// Texto ampliado reduz colunas até o selo "Esgotado" caber na largura.
+({int count, double extent}) _gridMetrics(BuildContext context, double gridWidth) {
   const maxTile = 220.0;
   const spacing = 12.0;
   const aspect = 0.78;
-  final width = math.max(gridWidth, 1);
+  final width = math.max(gridWidth, 1.0);
+  final theme = Theme.of(context);
+  final scaler = MediaQuery.textScalerOf(context);
+  final badge = TextPainter(
+    text: TextSpan(text: 'Esgotado', style: theme.textTheme.labelSmall),
+    textDirection: Directionality.of(context),
+    textScaler: scaler,
+    maxLines: 1,
+  )..layout();
+  final minTile = badge.width + 32;
+
   var count = (width / (maxTile + spacing)).ceil();
   count = math.max(1, count);
+  while (count > 1) {
+    final tile = (width - spacing * (count - 1)) / count;
+    if (tile + 0.5 >= minTile) break;
+    count -= 1;
+  }
   final usable = math.max(0.0, width - spacing * (count - 1));
   final tileWidth = usable / count;
   final base = tileWidth / aspect;
 
-  final theme = Theme.of(context);
   final nameStyle = theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600);
   final priceStyle = theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700);
-  final scaler = MediaQuery.textScalerOf(context);
   final textWidth = math.max(tileWidth - 28, 1.0);
   final extra =
       math.max(
@@ -238,7 +271,7 @@ double _cardExtent(BuildContext context, double gridWidth) {
   // O Text fica um pouco mais alto que o TextPainter quando a escala passa de 1.
   final scale = scaler.scale(1);
   final slack = scale <= 1 ? 0.0 : 8 * (scale - 1);
-  return base + extra + slack;
+  return (count: count, extent: base + extra + slack);
 }
 
 double _textBlock(
@@ -369,15 +402,20 @@ class _ProductCard extends StatelessWidget {
                   Positioned(
                     top: 8,
                     left: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: colors.onSurface,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        'Esgotado',
-                        style: theme.textTheme.labelSmall?.copyWith(color: colors.surface),
+                    right: 8,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: colors.onSurface,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          'Esgotado',
+                          softWrap: true,
+                          style: theme.textTheme.labelSmall?.copyWith(color: colors.surface),
+                        ),
                       ),
                     ),
                   ),

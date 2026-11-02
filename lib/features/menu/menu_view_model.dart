@@ -40,9 +40,18 @@ class MenuViewModel extends ChangeNotifier {
     return _products.where((product) => product.category == category).toList();
   }
 
-  /// Produtos de uma categoria, na ordem da API. Monta as seções do cardápio.
+  /// Produtos de uma categoria, na ordem da API.
   List<Product> productsIn(String category) =>
       _products.where((product) => product.category == category).toList();
+
+  /// Uma passagem pela lista, na ordem da API. A tela reutiliza cada grupo na seção.
+  Map<String, List<Product>> groupedProducts() {
+    final grouped = <String, List<Product>>{};
+    for (final product in _products) {
+      grouped.putIfAbsent(product.category, () => []).add(product);
+    }
+    return grouped;
+  }
 
   Future<void> load() async {
     _status = MenuStatus.loading;
