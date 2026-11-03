@@ -3,6 +3,7 @@ import 'package:dinna/app/router/app_router.dart';
 import 'package:dinna/features/client/table/table_view.dart';
 import 'package:dinna/features/home/api_status_repository.dart';
 import 'package:dinna/features/home/temporary_flow_access.dart';
+import 'package:dinna/features/menu/menu_view.dart';
 import 'package:dinna/features/menu/product_repository.dart';
 import 'package:dinna/features/restaurant/order_details_view.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
@@ -31,7 +32,7 @@ void main() {
     expect(find.text('Detalhe do produto'), findsOneWidget);
     expect(find.text('Carrinho'), findsOneWidget);
     expect(find.text('Fila de pedidos'), findsOneWidget);
-    expect(find.text('pendente'), findsNWidgets(2));
+    expect(find.text('pendente'), findsOneWidget);
     expect(find.text('O detalhe do pedido abre ao tocar um item da fila.'), findsOneWidget);
   });
 
@@ -52,24 +53,28 @@ void main() {
     expect(find.byType(TemporaryFlowAccess), findsOneWidget);
   });
 
-  testWidgets('cardápio e detalhe de produto seguem no placeholder', (tester) async {
+  testWidgets('o cardápio abre a tela real e o detalhe de produto segue no placeholder', (
+    tester,
+  ) async {
     final products = FakeProductRepository(() async => ProductList.ready(const []));
     await _pumpApp(tester, products: products);
 
     await _open(tester, 'Cardápio');
-    expect(find.text(AppRoutes.menu), findsOneWidget);
-    expect(find.text('Tela ainda não implementada.'), findsOneWidget);
-    expect(products.calls, 0);
+    expect(find.byType(MenuView), findsOneWidget);
+    expect(find.text('Cardápio vazio'), findsOneWidget);
+    expect(find.text('Tela ainda não implementada.'), findsNothing);
+    expect(products.calls, 1);
     expect(products.findCalls, 0);
 
-    await tester.tap(find.byType(BackButton));
+    // O header do cardápio não tem seta (Figma): volta pelo botão do sistema.
+    await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
 
     await _open(tester, 'Detalhe do produto');
     expect(find.text(AppRoutes.product), findsOneWidget);
     expect(find.text('Tela ainda não implementada.'), findsOneWidget);
     expect(find.text('Página não encontrada'), findsNothing);
-    expect(products.calls, 0);
+    expect(products.calls, 1);
     expect(products.findCalls, 0);
 
     final context = tester.element(find.text('Tela ainda não implementada.'));
@@ -88,8 +93,8 @@ void main() {
     await tester.tap(find.text('Ver cardápio'));
     await tester.pumpAndSettle();
 
-    expect(find.text(AppRoutes.menu), findsOneWidget);
-    expect(find.text('Tela ainda não implementada.'), findsOneWidget);
+    expect(find.byType(MenuView), findsOneWidget);
+    expect(find.text('Tela ainda não implementada.'), findsNothing);
   });
 
   testWidgets('a fila abre o detalhe de um pedido já existente', (tester) async {

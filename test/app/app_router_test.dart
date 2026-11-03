@@ -4,6 +4,7 @@ import 'package:dinna/features/client/order/order_confirmation_view.dart';
 import 'package:dinna/features/client/order/order_tracking_view.dart';
 import 'package:dinna/features/client/table/table_view.dart';
 import 'package:dinna/features/home/api_status_repository.dart';
+import 'package:dinna/features/menu/menu_view.dart';
 import 'package:dinna/features/menu/product_repository.dart';
 import 'package:dinna/features/restaurant/order_details_view.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
@@ -79,6 +80,17 @@ void main() {
     expect(ModalRoute.of(context)!.settings.name, AppRoutes.cart);
   });
 
+  testWidgets('o carrinho devolve a mesa ao cardápio', (tester) async {
+    await _pumpApp(tester);
+    await _push(tester, AppRoutes.cart, arguments: '12');
+
+    await tester.tap(find.text('Ver cardápio'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MenuView), findsOneWidget);
+    expect(find.text('Mesa 12'), findsOneWidget);
+  });
+
   testWidgets('navega para o cardápio e volta até a home', (tester) async {
     await _pumpApp(tester);
 
@@ -87,10 +99,11 @@ void main() {
     await tester.pumpAndSettle();
 
     await _push(tester, AppRoutes.menu, from: _tableTitle);
-    expect(find.text(AppRoutes.menu), findsOneWidget);
+    expect(find.byType(MenuView), findsOneWidget);
     expect(find.byType(TableView), findsNothing);
 
-    await tester.tap(find.byType(BackButton));
+    // O header do cardápio não tem seta (Figma): volta pelo botão do sistema.
+    await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(find.byType(TableView), findsOneWidget);
 
@@ -160,6 +173,7 @@ void main() {
     final routes = [...AppRoutes.clientFlow, ...AppRoutes.restaurantFlow].where(
       (route) =>
           route != AppRoutes.table &&
+          route != AppRoutes.menu &&
           route != AppRoutes.cart &&
           route != AppRoutes.order &&
           route != AppRoutes.orderTracking &&
