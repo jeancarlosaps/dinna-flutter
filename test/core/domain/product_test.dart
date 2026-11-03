@@ -121,6 +121,8 @@ void main() {
         'ingredients número': _productMap()..['ingredients'] = [1],
         'ingredients string vazia': _productMap()..['ingredients'] = [''],
         'ingredients só espaços': _productMap()..['ingredients'] = ['   '],
+        'ingredients espaço de largura zero': _productMap()..['ingredients'] = ['\u200B'],
+        'ingredients caractere de controle': _productMap()..['ingredients'] = ['\u0000'],
         'ingredients com espaço no início': _productMap()..['ingredients'] = [' Pão'],
         'ingredients com espaço no fim': _productMap()..['ingredients'] = ['Pão '],
         'ingredients acima de 80': _productMap()..['ingredients'] = ['a' * 81],

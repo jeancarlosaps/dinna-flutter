@@ -8,6 +8,9 @@ const _maxIngredientLength = 80;
 /// Nome curto, sem espaço nas pontas. Espaço interno e a grafia permanecem.
 final _ingredientName = RegExp(r'^\S(?:.*\S)?$');
 
+/// Controle e formato invisível. Letra, número, acento e emoji continuam válidos.
+final _disallowedIngredientCharacter = RegExp(r'\p{C}', unicode: true);
+
 /// Produto do cardápio, no formato de resposta da API.
 ///
 /// `priceCents` é inteiro de centavos. O body de `POST`/`PUT` não é este
@@ -155,7 +158,9 @@ void _requireIngredients(List<String> ingredients) {
   }
   for (var index = 0; index < ingredients.length; index++) {
     final item = ingredients[index];
-    if (item.runes.length > _maxIngredientLength || !_ingredientName.hasMatch(item)) {
+    if (item.runes.length > _maxIngredientLength ||
+        !_ingredientName.hasMatch(item) ||
+        _disallowedIngredientCharacter.hasMatch(item)) {
       throw ArgumentError.value(
         item,
         'ingredients[$index]',
