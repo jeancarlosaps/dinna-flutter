@@ -226,6 +226,21 @@ void main() {
       expect(left, isNot(reordered));
     });
 
+    test('conta pontos de código Unicode no limite do ingrediente', () {
+      final accepted = '${'a' * 79}🥖';
+      final rejected = '${'a' * 80}🥖';
+      expect(accepted.runes.length, 80);
+      expect(accepted.length, 81);
+
+      final product = Product.fromJson(_productMap()..['ingredients'] = [accepted]);
+
+      expect(product.ingredients, [accepted]);
+      expect(
+        () => Product.fromJson(_productMap()..['ingredients'] = [rejected]),
+        throwsFormatException,
+      );
+    });
+
     test('construtor rejeita ingrediente em branco', () {
       expect(
         () => Product(

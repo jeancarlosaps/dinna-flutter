@@ -155,11 +155,11 @@ void _requireIngredients(List<String> ingredients) {
   }
   for (var index = 0; index < ingredients.length; index++) {
     final item = ingredients[index];
-    if (item.length > _maxIngredientLength || !_ingredientName.hasMatch(item)) {
+    if (item.runes.length > _maxIngredientLength || !_ingredientName.hasMatch(item)) {
       throw ArgumentError.value(
         item,
         'ingredients[$index]',
-        'ingredients[$index] deve ser um nome de 1 a $_maxIngredientLength caracteres, sem espaço nas pontas',
+        'ingredients[$index] deve ser um nome de 1 a $_maxIngredientLength pontos de código Unicode, sem espaço nas pontas',
       );
     }
   }
