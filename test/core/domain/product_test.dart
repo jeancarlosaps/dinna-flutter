@@ -237,6 +237,9 @@ void main() {
       final product = Product.fromJson(_productMap()..['ingredients'] = [accepted]);
 
       expect(product.ingredients, [accepted]);
+      expect(Product.fromJson(_productMap()..['ingredients'] = ['Cogumelo 👩‍🍳']).ingredients, [
+        'Cogumelo 👩‍🍳',
+      ]);
       expect(
         () => Product.fromJson(_productMap()..['ingredients'] = [rejected]),
         throwsFormatException,

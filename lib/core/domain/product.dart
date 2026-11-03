@@ -8,8 +8,17 @@ const _maxIngredientLength = 80;
 /// Nome curto, sem espaço nas pontas. Espaço interno e a grafia permanecem.
 final _ingredientName = RegExp(r'^\S(?:.*\S)?$');
 
-/// Controle e formato invisível. Letra, número, acento e emoji continuam válidos.
-final _disallowedIngredientCharacter = RegExp(r'\p{C}', unicode: true);
+final _controlOrFormat = RegExp(r'[\p{Cc}\p{Cf}]', unicode: true);
+final _visibleIngredientCharacter = RegExp(r'[\p{L}\p{N}\p{P}\p{S}]', unicode: true);
+
+/// U+200D junta emojis. Os outros controles e formatos, como U+200B, continuam proibidos.
+bool _hasDisallowedIngredientCharacter(String value) {
+  for (final rune in value.runes) {
+    if (rune == 0x200D) continue;
+    if (_controlOrFormat.hasMatch(String.fromCharCodes([rune]))) return true;
+  }
+  return false;
+}
 
 /// Produto do cardápio, no formato de resposta da API.
 ///
@@ -160,7 +169,8 @@ void _requireIngredients(List<String> ingredients) {
     final item = ingredients[index];
     if (item.runes.length > _maxIngredientLength ||
         !_ingredientName.hasMatch(item) ||
-        _disallowedIngredientCharacter.hasMatch(item)) {
+        !_visibleIngredientCharacter.hasMatch(item) ||
+        _hasDisallowedIngredientCharacter(item)) {
       throw ArgumentError.value(
         item,
         'ingredients[$index]',
