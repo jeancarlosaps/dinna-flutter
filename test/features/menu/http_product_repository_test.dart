@@ -83,11 +83,46 @@ void main() {
     expect(products.first.priceCents, isA<int>());
     expect(products.first.imageUrl, 'https://example.com/burger.jpg');
     expect(products.first.available, isTrue);
+    expect(products.first.ingredients, isEmpty);
     expect(products.last.category, 'burgers');
     expect(products.last.priceCents, 3490);
     expect(products.last.imageUrl, isNull);
     expect(products.last.available, isFalse);
+    expect(products.last.ingredients, isEmpty);
     expect(result.message, isNull);
+  });
+
+  test('preserva ingredients e recusa lista inválida', () async {
+    final withIngredients = {
+      ..._contractProduct,
+      'ingredients': ['Pão', 'Queijo cheddar'],
+    };
+    final listed = await repositoryReturning(
+      http.Response(
+        jsonEncode([withIngredients]),
+        200,
+        headers: const {'content-type': 'application/json; charset=utf-8'},
+      ),
+    ).list();
+
+    expect(listed.products?.single.ingredients, ['Pão', 'Queijo cheddar']);
+    expect(listed.message, isNull);
+
+    final invalid = await repositoryReturning(
+      http.Response(
+        jsonEncode([
+          {
+            ..._contractProduct,
+            'ingredients': [' '],
+          },
+        ]),
+        200,
+        headers: const {'content-type': 'application/json; charset=utf-8'},
+      ),
+    ).list();
+
+    expect(invalid.products, isNull);
+    expect(invalid.message, HttpProductRepository.unexpectedResponseMessage);
   });
 
   test('aceita lista vazia como cardápio sem itens', () async {
@@ -212,6 +247,7 @@ void main() {
     expect(result.product?.name, 'Burger Clássico');
     expect(result.product?.priceCents, 3290);
     expect(result.product?.available, isTrue);
+    expect(result.product?.ingredients, isEmpty);
     expect(result.message, isNull);
     expect(result.failure, isNull);
   });

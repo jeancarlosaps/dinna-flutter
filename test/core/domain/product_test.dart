@@ -12,7 +12,8 @@ const _contractProduct = '''
   "category": "burgers",
   "priceCents": 3290,
   "imageUrl": "https://example.com/burger.jpg",
-  "available": true
+  "available": true,
+  "ingredients": []
 }
 ''';
 
@@ -42,6 +43,7 @@ void main() {
       expect(product.priceCents, isA<int>());
       expect(product.imageUrl, 'https://example.com/burger.jpg');
       expect(product.available, isTrue);
+      expect(product.ingredients, isEmpty);
     });
 
     test('grava o JSON do contrato', () {
@@ -114,6 +116,15 @@ void main() {
         'available numérico': _productMap()..['available'] = 1,
         'imageUrl inválida': _productMap()..['imageUrl'] = 'burger.jpg',
         'imageUrl numérica': _productMap()..['imageUrl'] = 1,
+        'ingredients nulo': _productMap()..['ingredients'] = null,
+        'ingredients texto': _productMap()..['ingredients'] = 'Pão',
+        'ingredients número': _productMap()..['ingredients'] = [1],
+        'ingredients string vazia': _productMap()..['ingredients'] = [''],
+        'ingredients só espaços': _productMap()..['ingredients'] = ['   '],
+        'ingredients com espaço no início': _productMap()..['ingredients'] = [' Pão'],
+        'ingredients com espaço no fim': _productMap()..['ingredients'] = ['Pão '],
+        'ingredients acima de 80': _productMap()..['ingredients'] = ['a' * 81],
+        'ingredients acima de 30': _productMap()..['ingredients'] = List.filled(31, 'Pão'),
       };
 
       for (final entry in cases.entries) {
@@ -148,6 +159,88 @@ void main() {
         throwsArgumentError,
       );
     });
+
+    test('lê ingredients na ordem e na grafia informadas', () {
+      final product = Product.fromJson(
+        _productMap()..['ingredients'] = ['Pão', 'Queijo cheddar', 'Pão'],
+      );
+
+      expect(product.ingredients, ['Pão', 'Queijo cheddar', 'Pão']);
+      expect(product.description, 'Pão, blend 180g, queijo e salada');
+    });
+
+    test('faz round-trip de ingredients', () {
+      final product = Product.fromJson(_productMap()..['ingredients'] = ['Pão', 'Queijo cheddar']);
+      final again = Product.fromJson(jsonDecode(jsonEncode(product.toJson())) as Object);
+
+      expect(again, product);
+      expect(again.ingredients, ['Pão', 'Queijo cheddar']);
+      expect(again.toJson()['ingredients'], ['Pão', 'Queijo cheddar']);
+    });
+
+    test('resposta antiga sem ingredients vira lista vazia', () {
+      final json = _productMap()..remove('ingredients');
+      final product = Product.fromJson(json);
+
+      expect(product.ingredients, isEmpty);
+      expect(product.toJson()['ingredients'], isEmpty);
+      expect(product.priceCents, 3290);
+      expect(product.available, isTrue);
+    });
+
+    test('aceita lista vazia explícita', () {
+      final product = Product.fromJson(_productMap()..['ingredients'] = <String>[]);
+
+      expect(product.ingredients, isEmpty);
+      expect(product.toJson()['ingredients'], isEmpty);
+    });
+
+    test('não deixa a lista ser alterada por fora', () {
+      final source = <String>['Pão'];
+      final product = Product(
+        id: 'p1',
+        name: 'Burger',
+        description: '',
+        category: 'burgers',
+        priceCents: 0,
+        imageUrl: null,
+        available: true,
+        ingredients: source,
+      );
+
+      source.add('Queijo cheddar');
+
+      expect(product.ingredients, ['Pão']);
+      expect(() => product.ingredients.add('Sal'), throwsUnsupportedError);
+    });
+
+    test('considera ordem de ingredients na igualdade e no hashCode', () {
+      final left = Product.fromJson(_productMap()..['ingredients'] = ['Pão', 'Queijo cheddar']);
+      final same = Product.fromJson(_productMap()..['ingredients'] = ['Pão', 'Queijo cheddar']);
+      final reordered = Product.fromJson(
+        _productMap()..['ingredients'] = ['Queijo cheddar', 'Pão'],
+      );
+
+      expect(left, same);
+      expect(left.hashCode, same.hashCode);
+      expect(left, isNot(reordered));
+    });
+
+    test('construtor rejeita ingrediente em branco', () {
+      expect(
+        () => Product(
+          id: 'p1',
+          name: 'Burger',
+          description: '',
+          category: 'burgers',
+          priceCents: 0,
+          imageUrl: null,
+          available: true,
+          ingredients: ['   '],
+        ),
+        throwsArgumentError,
+      );
+    });
   });
 }
 
@@ -159,6 +252,7 @@ Map<String, Object?> _productMap() => {
   'priceCents': 3290,
   'imageUrl': 'https://example.com/burger.jpg',
   'available': true,
+  'ingredients': <String>[],
 };
 
 String _seedShapeWithoutImage() => jsonEncode(_productMap()..remove('imageUrl'));
