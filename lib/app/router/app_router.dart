@@ -13,6 +13,7 @@ import '../../features/home/home_view.dart';
 import '../../features/home/home_view_model.dart';
 import '../../features/menu/menu_view.dart';
 import '../../features/menu/menu_view_model.dart';
+import '../../features/menu/product_detail_view_model.dart';
 import '../../features/menu/product_repository.dart';
 import '../../features/restaurant/order_details_view.dart';
 import '../../features/restaurant/order_details_view_model.dart';
@@ -114,6 +115,8 @@ class AppRouter {
       AppRoutes.table => const TableView(),
       AppRoutes.menu => MenuView(
         createViewModel: () => MenuViewModel(productRepository),
+        createDetailViewModel: (productId) =>
+            ProductDetailViewModel(productRepository, productId: productId),
         table: _tableArgument(settings.arguments),
         onOpenCart: (context, table) =>
             Navigator.of(context).pushNamed(AppRoutes.cart, arguments: table),

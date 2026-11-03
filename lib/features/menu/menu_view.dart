@@ -3,22 +3,35 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../../app/theme/dinna_colors.dart';
 import '../../core/domain/product.dart';
 import '../../shared/widgets/dinna_empty_state.dart';
 import '../../shared/widgets/dinna_logo.dart';
 import '../restaurant/order_format.dart';
 import 'menu_view_model.dart';
+import 'product_detail_view.dart';
+import 'product_detail_view_model.dart';
+import 'product_image.dart';
 
 /// Cardápio do cliente, na rota `/menu`.
 ///
 /// O [MenuViewModel] nasce e morre com o State. A mesa chega pela navegação
 /// e segue para o carrinho por [onOpenCart]. O Figma não tem ícone de carrinho
 /// no header: o acesso volta com a barra do carrinho, ao adicionar itens (SCRUM-39).
+///
+/// Tocar um produto abre o detalhe em bottom sheet com [createDetailViewModel].
 class MenuView extends StatefulWidget {
-  const MenuView({super.key, required this.createViewModel, required this.onOpenCart, this.table});
+  const MenuView({
+    super.key,
+    required this.createViewModel,
+    required this.onOpenCart,
+    this.createDetailViewModel,
+    this.table,
+  });
 
   final MenuViewModel Function() createViewModel;
+
+  /// Cria o ViewModel do detalhe para o id tocado. Nulo: o card não abre o detalhe.
+  final ProductDetailViewModel Function(String productId)? createDetailViewModel;
   final void Function(BuildContext context, String? table) onOpenCart;
 
   /// Mesa recebida da tela da mesa. Ausente quando o cardápio abre por outro caminho.
@@ -42,6 +55,12 @@ class _MenuViewState extends State<MenuView> {
   void dispose() {
     _viewModel.dispose();
     super.dispose();
+  }
+
+  void Function(Product)? get _openProduct {
+    final createDetail = widget.createDetailViewModel;
+    if (createDetail == null) return null;
+    return (product) => showProductDetail(context, createViewModel: () => createDetail(product.id));
   }
 
   @override
@@ -89,7 +108,7 @@ class _MenuViewState extends State<MenuView> {
                 message: 'O restaurante ainda não cadastrou pratos.',
               ),
             ),
-            MenuStatus.ready => _MenuContent(viewModel: _viewModel),
+            MenuStatus.ready => _MenuContent(viewModel: _viewModel, onOpenProduct: _openProduct),
           },
         ),
       ),
@@ -98,9 +117,10 @@ class _MenuViewState extends State<MenuView> {
 }
 
 class _MenuContent extends StatelessWidget {
-  const _MenuContent({required this.viewModel});
+  const _MenuContent({required this.viewModel, required this.onOpenProduct});
 
   final MenuViewModel viewModel;
+  final ValueChanged<Product>? onOpenProduct;
 
   @override
   Widget build(BuildContext context) {
@@ -137,7 +157,7 @@ class _MenuContent extends StatelessWidget {
                         ),
                         itemCount: (grouped[category] ?? const []).length,
                         itemBuilder: (context, index) =>
-                            _ProductCard(product: grouped[category]![index]),
+                            _ProductCard(product: grouped[category]![index], onTap: onOpenProduct),
                       ),
                     ),
                   ],
@@ -396,115 +416,84 @@ class _CategoryChip extends StatelessWidget {
 }
 
 class _ProductCard extends StatelessWidget {
-  const _ProductCard({required this.product});
+  const _ProductCard({required this.product, required this.onTap});
 
   final Product product;
+  final ValueChanged<Product>? onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final imageUrl = product.imageUrl;
-    final (light, dark) = _placeholderFor(product.id);
-    final placeholder = DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [light, dark],
-        ),
-      ),
-    );
-
     final available = product.available;
-    final image = imageUrl == null
-        ? placeholder
-        : Image.network(imageUrl, fit: BoxFit.cover, errorBuilder: (_, _, _) => placeholder);
+    final tap = onTap;
 
     return Card(
       clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (available)
-                  image
-                else
-                  Opacity(
-                    opacity: 0.55,
-                    child: ColorFiltered(colorFilter: _grayscale, child: image),
-                  ),
-                if (!available)
-                  Positioned(
-                    top: 8,
-                    left: 8,
-                    right: 8,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: colors.onSurface,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          'Esgotado',
-                          softWrap: true,
-                          style: theme.textTheme.labelSmall?.copyWith(color: colors.surface),
+      child: InkWell(
+        onTap: tap == null ? null : () => tap(product),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ProductImage(product: product),
+                  if (!available)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      right: 8,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: colors.onSurface,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            'Esgotado',
+                            softWrap: true,
+                            style: theme.textTheme.labelSmall?.copyWith(color: colors.surface),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: available ? colors.onSurface : colors.onSurfaceVariant,
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    product.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: available ? colors.onSurface : colors.onSurfaceVariant,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  formatOrderTotal(product.priceCents),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: available ? colors.primary : colors.onSurfaceVariant,
-                    fontWeight: FontWeight.w700,
+                  const SizedBox(height: 2),
+                  Text(
+                    formatOrderTotal(product.priceCents),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: available ? colors.primary : colors.onSurfaceVariant,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
-}
-
-/// Tira a cor da imagem do produto esgotado, como no Figma.
-const _grayscale = ColorFilter.matrix(<double>[
-  0.2126, 0.7152, 0.0722, 0, 0, //
-  0.2126, 0.7152, 0.0722, 0, 0, //
-  0.2126, 0.7152, 0.0722, 0, 0, //
-  0, 0, 0, 1, 0, //
-]);
-
-/// Mesmo produto, mesma cor: o degradê sai do id, não da posição na lista.
-(Color, Color) _placeholderFor(String productId) {
-  final palette = DinnaColors.productPlaceholders;
-  final seed = productId.codeUnits.fold(0, (sum, unit) => sum + unit);
-  return palette[seed % palette.length];
 }
 
 /// A API manda a categoria como identificador (`bebidas`); a tela mostra "Bebidas".
