@@ -81,7 +81,7 @@ Os nomes são correspondência exata: sem barra no fim e sem parâmetro no camin
 | Fundação | `home` | `/` | — | `HomeView`, com `GET /health`. Rota inicial |
 | Cliente | `table` | `/table` | — | `TableView`. Valida a mesa e abre `/menu` com ela (SCRUM-29) |
 | Cliente | `menu` | `/menu` | mesa (`String`) | `MenuView`. Produtos por categoria, via `MenuViewModel` (SCRUM-30) |
-| Cliente | `product` | `/product` | `AppRouteId` | Placeholder |
+| Cliente | `product` | `/product` | `AppRouteId` | Placeholder. O detalhe abre como bottom sheet a partir do cardápio (SCRUM-36), sem trocar de rota |
 | Cliente | `cart` | `/cart` | mesa (`String`) | `CartView`. Revisão no processo, via `CartLines`. |
 | Cliente | `order` | `/order` | `OrderConfirmationArgs` | `OrderConfirmationView`. Pedido já gravado, sem outro POST |
 | Cliente | `orderTracking` | `/order/tracking` | `AppRouteId` | `OrderTrackingView`. Identifica o pedido e não atualiza o status |
@@ -134,6 +134,8 @@ A `TableView` fica em [`lib/features/client/table/table_view.dart`](../lib/featu
 Quando a story ligar o painel ao mapa, “Acessar o painel” chama `Navigator.pushNamed(context, AppRoutes.restaurant)`.
 
 A `MenuView` fica em [`lib/features/menu/menu_view.dart`](../lib/features/menu/menu_view.dart). O `MenuViewModel` nasce no `State`, chama `ProductRepository.list` e expõe `loading`, `ready` e `failed`. A tela mostra uma seção por categoria, na ordem da API, e os chips filtram uma categoria (nula é “Todos”). Produto com `available == false` aparece em cinza com o selo “Esgotado”. A mesa recebida aparece no header e segue para o carrinho por `onOpenCart`, que o router liga a `AppRoutes.cart`.
+
+O detalhe do produto fica em [`lib/features/menu/product_detail_view.dart`](../lib/features/menu/product_detail_view.dart). Tocar um card chama `showProductDetail`, que abre um bottom sheet sobre o cardápio, como no Figma. O `ProductDetailViewModel` nasce no `State` do sheet com o id tocado; o router entrega a fábrica à `MenuView` por `createDetailViewModel`. A mesa não sai do cardápio. A foto e o degradê vêm de `ProductImage`, compartilhado com o card. A caixa “Ingredientes” junta `product.ingredients` por vírgula, na ordem da API; lista vazia mantém a caixa e orienta a consultar o restaurante.
 
 O remoto `feature/client-ui` foi removido depois do merge. O case de `/table` e o restante do mapa da SCRUM-23 convivem na `dev`.
 

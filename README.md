@@ -83,7 +83,7 @@ O Dinna encurta esse intervalo **sem substituir o atendimento humano**:
 
 ## 02 · Estado atual
 
-Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas da SCRUM-23 já estão na `dev`. A home em `/` continua o fluxo `GET /health`. A `TableView` em `/table` valida a mesa e abre o cardápio em `/menu`, que lista os produtos por categoria. O carrinho em `/cart` revisa quantidade, remoção e o total estimado, envia o pedido e mostra o erro ou a orientação para conferir antes de tentar de novo. A intenção desse envio permanece no dispositivo depois que o processo fecha. Com o sucesso gravado, `/order` mostra a confirmação e `/order/tracking` só identifica o pedido. `/product` e `/restaurant/menu` seguem como `RoutePlaceholder`. `/restaurant` abre a fila e `/restaurant/order` o detalhe do pedido.
+Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas da SCRUM-23 já estão na `dev`. A home em `/` continua o fluxo `GET /health`. A `TableView` em `/table` valida a mesa e abre o cardápio em `/menu`, que lista os produtos por categoria. Tocar um produto abre o detalhe em bottom sheet, com descrição e ingredientes. O carrinho em `/cart` revisa quantidade, remoção e o total estimado, envia o pedido e mostra o erro ou a orientação para conferir antes de tentar de novo. A intenção desse envio permanece no dispositivo depois que o processo fecha. Com o sucesso gravado, `/order` mostra a confirmação e `/order/tracking` só identifica o pedido. `/product` e `/restaurant/menu` seguem como `RoutePlaceholder`. `/restaurant` abre a fila e `/restaurant/order` o detalhe do pedido.
 
 | Item | Situação | Onde |
 |---|---|---|
@@ -92,11 +92,12 @@ Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas d
 | Tema Dinna (Material 3) | ✅ Paleta, tipografia (Inter e Source Serif 4) e botões e raios do Figma | `lib/app/theme/`, `assets/fonts/` |
 | URL da API por ambiente | ✅ `--dart-define=API_BASE_URL` com padrão por plataforma | `lib/core/config/` |
 | Cliente HTTP + erro uniforme | ✅ `ApiClient` + `ApiException` | `lib/core/network/` |
-| Testes, lint, format, CI | ✅ 348 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
+| Testes, lint, format, CI | ✅ 356 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
 | Models (`Product`, `CartItem`, `Order`, `OrderItem`, `OrderStatus`, `Preference`) | ✅ Implementados em `lib/core/domain/` (SCRUM-22, PR #5 na `dev`) | [`lib/core/domain/`](lib/core/domain/) |
 | Rotas do cliente e do restaurante | ✅ SCRUM-23 concluída e mergeada pelo PR #6. Mapa em `AppRoutes`. Rota inicial `/`. `/table` abre `TableView`, `/menu` abre `MenuView`, `/order` abre a confirmação, `/order/tracking` identifica o pedido, `/restaurant` abre a fila e `/restaurant/order` o detalhe. `/product` e `/restaurant/menu` são placeholder | [`lib/app/router/`](lib/app/router/), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Mesa (`/table`) | SCRUM-29. `TableViewModel` valida a mesa (vazia, zero ou não numérica mostra erro abaixo do campo). “Ver cardápio” abre `AppRoutes.menu` com a mesa como `String` em `arguments`. “Acessar o painel” ainda usa `onPressed` vazio | [`lib/features/client/table/table_view.dart`](lib/features/client/table/table_view.dart) |
 | Cardápio (`/menu`) | SCRUM-30. `MenuViewModel` carrega `GET /products` e agrupa por categoria. Chips filtram a categoria; produto indisponível aparece em cinza com o selo “Esgotado”. O header mostra a mesa recebida da navegação. Estados de carregando, erro com “Tentar de novo” e cardápio vazio | [`lib/features/menu/menu_view.dart`](lib/features/menu/menu_view.dart) |
+| Detalhe do produto | SCRUM-36. Bottom sheet sobre o cardápio, como no Figma: foto ou degradê, nome, descrição, preço e a caixa “Ingredientes” na ordem da API. Sem ingredientes, a caixa orienta a consultar o restaurante. Produto esgotado mostra aviso. Erro com “Tentar de novo”. A mesa continua no cardápio; `/product` segue placeholder | [`lib/features/menu/product_detail_view.dart`](lib/features/menu/product_detail_view.dart) |
 | Dependências base (SCRUM-18) | Em andamento. HTTP pronto (`http` 1.6.0 e `ApiClient`); `sqflite` persiste o carrinho e `path_provider` localiza o arquivo da intenção do pedido | `pubspec.yaml`, [`lib/core/network/`](lib/core/network/) |
 | Persistência local | SCRUM-70 implementa o repositório SQLite do carrinho; SCRUM-90 persiste a intenção do pedido em arquivo. Preferências e último pedido confirmado seguem fora desses escopos | [`lib/features/client/cart/`](lib/features/client/cart/), [`lib/features/client/order/`](lib/features/client/order/) |
 | Componentes visuais reutilizáveis | ✅ `DinnaLogo`, `DinnaBanner` e `DinnaEmptyState` (SCRUM-28) | `lib/shared/widgets/` |
@@ -110,7 +111,7 @@ Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas d
   <img src="docs/assets/readme/flow.svg" alt="Jornada planejada para R1. Cliente: mesa, cardápio, produto, carrinho, pedido e acompanhamento. O pedido vai para a fila do restaurante, que vê detalhes, atualiza o preparo e finaliza; o status volta para o cliente. O restaurante também mantém o cardápio." width="1600" loading="lazy" />
 </p>
 
-A jornada abaixo é a **R1 planejada**. Na `dev`, a etapa Mesa (`/table`, SCRUM-29) valida a mesa e abre o cardápio (`/menu`, SCRUM-30) com ela. O carrinho tem View em `/cart`. `/order` confirma o pedido gravado. `/order/tracking` não atualiza o status. `/product` e `/restaurant/menu` ainda não têm View: o router mostra `RoutePlaceholder`. `/restaurant` mostra a fila e `/restaurant/order` o detalhe. Os nomes de rota já estão no mapa da SCRUM-23, mergeado pelo PR #6.
+A jornada abaixo é a **R1 planejada**. Na `dev`, a etapa Mesa (`/table`, SCRUM-29) valida a mesa e abre o cardápio (`/menu`, SCRUM-30) com ela. O carrinho tem View em `/cart`. `/order` confirma o pedido gravado. `/order/tracking` não atualiza o status. O detalhe do produto abre como bottom sheet sobre o cardápio (SCRUM-36). `/product` e `/restaurant/menu` ainda não têm View: o router mostra `RoutePlaceholder`. `/restaurant` mostra a fila e `/restaurant/order` o detalhe. Os nomes de rota já estão no mapa da SCRUM-23, mergeado pelo PR #6.
 
 **Cliente (Marina)**
 
@@ -211,7 +212,7 @@ lib/
 │       └── home_view_model.dart
 └── shared/
     └── widgets/                      # DinnaLogo, DinnaBanner, DinnaEmptyState
-test/                                 # espelha lib/ (348 testes)
+test/                                 # espelha lib/ (356 testes)
 docs/ARCHITECTURE.md                  # contrato das camadas MVVM
 docs/assets/readme/                   # ilustrações deste README
 ```
@@ -311,7 +312,7 @@ Na tela inicial, toque em **“Verificar conexão com a API”**: com a API no a
 | `dart format .` | Formata o código (largura 100) |
 | `dart format --output=none --set-exit-if-changed .` | Só verifica a formatação, como na CI |
 
-O que os 348 testes cobrem hoje (`flutter test` nesta branch):
+O que os 356 testes cobrem hoje (`flutter test` nesta branch):
 
 | Arquivo | Cobre |
 |---|---|
@@ -324,6 +325,7 @@ O que os 348 testes cobrem hoje (`flutter test` nesta branch):
 | `test/features/home/home_view_model_test.dart` | `checking` antes da resposta, success, error, exceção inesperada e `dispose` |
 | `test/features/client/table/` | Validação da mesa (vazia, zero, letras, normalização) e navegação para `/menu` com a mesa |
 | `test/features/menu/menu_view_model_test.dart`, `menu_view_test.dart` | Categorias sem repetir, filtro por categoria, falha e cardápio vazio; a tela mostra a mesa recebida, os produtos, o selo “Esgotado” e filtra pelo chip. Erro e vazio cabem em 360×220. Chips a 200% e o nome a 300% não são cortados. A marca, a mesa curta e a mesa longa cabem no header a 300%. O recorte lateral não cobre os chips. Uma carga antiga não substitui a mais nova |
+| `test/features/menu/product_detail_view_test.dart` | Detalhe com ingredientes na ordem da API e sem ingredientes (aviso para consultar o restaurante), produto esgotado, erro com nova tentativa, produto inexistente, texto a 200% sem corte, leitura conjunta no leitor de tela e abertura do bottom sheet pelo card do cardápio |
 | `test/features/client/cart/sqflite_cart_repository_test.dart` | Esquema do carrinho, `lineId`, reabertura, `removeConfirmed` e falha de SQLite sem tratar o carrinho como vazio |
 | `test/shared/widgets/` | `DinnaBanner` com e sem título; `DinnaEmptyState` com e sem ação |
 
@@ -417,7 +419,7 @@ Os focos vêm da distribuição de issues no backlog (Atividade 2) e não são c
 1. **SCRUM-18:** o HTTP e o `sqflite` do carrinho já estão no `pubspec`. Preferências e último pedido confirmado continuam fora deste escopo.
 2. **SCRUM-69/71:** ligar o `CartRepository` da SCRUM-70 ao fluxo. A tela ainda usa `CartLines`.
 3. **SCRUM-28:** componentes Dinna reutilizáveis, em análise na branch `feature/SCRUM-28-tipografia-componentes`. O tema já está na `dev`.
-4. **Cliente:** detalhe do produto (SCRUM-36, com o `ProductDetailViewModel`), quantidade (SCRUM-37) e adicionar ao carrinho (SCRUM-39). O acesso ao carrinho a partir do cardápio entra com a SCRUM-39. “Acessar o painel” da `TableView` ainda não navega. Se a rota inicial passar a ser `/table`, os testes que esperam a home em `/` precisam ser adaptados.
+4. **Cliente:** quantidade no detalhe do produto (SCRUM-37) e adicionar ao carrinho pela `CartSession` (SCRUM-39). O acesso ao carrinho a partir do cardápio entra com a SCRUM-39. “Acessar o painel” da `TableView` ainda não navega. Se a rota inicial passar a ser `/table`, os testes que esperam a home em `/` precisam ser adaptados.
 5. **PDFs em `lib/`:** o PR #3 versionou `Dinna · App Cliente Marina.pdf` (5,5 MB) e `Dinna · App Restaurante Ricardo.pdf` (8,6 MB) ao lado do código. Não são asset do app. A organização fica para outro PR.
 6. **Ambiente:** instalar `cmdline-tools` para o `flutter doctor` ficar verde. O debug Android já executa sem esse componente.
 
