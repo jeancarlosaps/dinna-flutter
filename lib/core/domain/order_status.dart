@@ -26,4 +26,12 @@ enum OrderStatus {
     OrderStatus.ready => target == OrderStatus.finished,
     OrderStatus.finished => false,
   };
+
+  /// Próximo status válido, ou `null` quando o pedido já terminou.
+  OrderStatus? get next => switch (this) {
+    OrderStatus.received => OrderStatus.preparing,
+    OrderStatus.preparing => OrderStatus.ready,
+    OrderStatus.ready => OrderStatus.finished,
+    OrderStatus.finished => null,
+  };
 }

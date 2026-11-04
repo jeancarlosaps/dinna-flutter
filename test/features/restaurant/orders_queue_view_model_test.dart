@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:dinna/core/domain/data_failure.dart';
+import 'package:dinna/core/domain/order.dart';
+import 'package:dinna/core/domain/order_status.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:dinna/features/restaurant/orders_queue_view_model.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -22,17 +24,30 @@ void main() {
     await Future<void>.value();
   }
 
-  test('carrega a lista, ordena por horário e não ocupa a tela na atualização', () async {
-    final older = sampleOrder(id: 'o1', table: '4', createdAt: DateTime.utc(2026, 10, 16, 18));
+  test('carrega a lista, sobe preparing e ordena o restante por horário', () async {
+    final olderReceived = sampleOrder(
+      id: 'o1',
+      table: '4',
+      status: OrderStatus.received,
+      createdAt: DateTime.utc(2026, 10, 16, 18),
+    );
     final sameTimeLaterId = sampleOrder(
       id: 'o10',
       table: '9',
+      status: OrderStatus.received,
       createdAt: DateTime.utc(2026, 10, 16, 18, 5),
     );
     final sameTimeEarlierId = sampleOrder(
       id: 'o2',
       table: '7',
+      status: OrderStatus.received,
       createdAt: DateTime.utc(2026, 10, 16, 18, 5),
+    );
+    final newerPreparing = sampleOrder(
+      id: 'o3',
+      table: '15',
+      status: OrderStatus.preparing,
+      createdAt: DateTime.utc(2026, 10, 16, 18, 10),
     );
     final gate = Completer<OrderList>();
     final repository = FakeOrderRepository(() => gate.future);
@@ -49,14 +64,16 @@ void main() {
     expect(repository.calls, 1);
     expect(delay.durations, isEmpty);
 
-    gate.complete(OrderList.ready([sameTimeLaterId, older, sameTimeEarlierId]));
+    gate.complete(
+      OrderList.ready([sameTimeLaterId, olderReceived, newerPreparing, sameTimeEarlierId]),
+    );
     await flushAsync();
 
     expect(loadings, [true, false]);
     expect(viewModel.isLoading, isFalse);
     expect(viewModel.errorMessage, isNull);
     expect(viewModel.refreshError, isNull);
-    expect(viewModel.orders.map((order) => order.id), ['o1', 'o10', 'o2']);
+    expect(viewModel.orders.map((order) => order.id), ['o3', 'o1', 'o10', 'o2']);
     expect(delay.durations, [OrdersQueueViewModel.defaultPollInterval]);
   });
 
@@ -410,5 +427,107 @@ void main() {
     expect(repository.calls, 1);
     expect(notifications, 0);
     expect(viewModel.orders.single.id, 'o1');
+  });
+
+  test('oculta pedidos finished na fila ativa', () async {
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready([
+        sampleOrder(id: 'o1', status: OrderStatus.received),
+        sampleOrder(id: 'o2', status: OrderStatus.finished),
+      ]),
+    );
+    keep(OrdersQueueViewModel(repository, delay: ControllableDelay().call));
+
+    viewModel.resume();
+    await flushAsync();
+
+    expect(viewModel.orders.map((order) => order.id), ['o1']);
+  });
+
+  test('avança status e remove o pedido ao finalizar', () async {
+    final received = sampleOrder(id: 'o1', status: OrderStatus.received);
+    final preparing = sampleOrder(id: 'o1', status: OrderStatus.preparing);
+    final ready = sampleOrder(id: 'o1', status: OrderStatus.ready);
+    final finished = sampleOrder(id: 'o1', status: OrderStatus.finished);
+    final updates = <Order>[preparing, ready, finished];
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready([received]),
+      updateStatus: (id, status) async {
+        expect(id, 'o1');
+        return OrderUpdate.ready(updates.removeAt(0));
+      },
+    );
+    keep(OrdersQueueViewModel(repository, delay: ControllableDelay().call));
+
+    viewModel.resume();
+    await flushAsync();
+
+    await viewModel.advanceStatus('o1');
+    expect(viewModel.orders.single.status, OrderStatus.preparing);
+    expect(repository.lastUpdateStatus, OrderStatus.preparing);
+
+    await viewModel.advanceStatus('o1');
+    expect(viewModel.orders.single.status, OrderStatus.ready);
+
+    await viewModel.advanceStatus('o1');
+    expect(viewModel.orders, isEmpty);
+    expect(viewModel.isEmpty, isTrue);
+    expect(repository.updateCalls, 3);
+  });
+
+  test('em 409 refetch a fila e mostra status desatualizado', () async {
+    final stale = sampleOrder(id: 'o1', status: OrderStatus.received);
+    final current = sampleOrder(id: 'o1', status: OrderStatus.preparing);
+    var lists = 0;
+    final repository = FakeOrderRepository(
+      () async {
+        lists++;
+        return OrderList.ready([lists == 1 ? stale : current]);
+      },
+      updateStatus: (id, status) async =>
+          const OrderUpdate.unavailable('Não é permitido avançar', failure: DataFailure.conflict),
+    );
+    keep(OrdersQueueViewModel(repository, delay: ControllableDelay().call));
+
+    viewModel.resume();
+    await flushAsync();
+    await viewModel.advanceStatus('o1');
+    await flushAsync();
+
+    expect(viewModel.actionError, OrdersQueueViewModel.staleStatusMessage);
+    expect(viewModel.actionFailure, DataFailure.conflict);
+    expect(viewModel.orders.single.status, OrderStatus.preparing);
+    expect(repository.updateCalls, 1);
+    expect(repository.calls, greaterThanOrEqualTo(2));
+  });
+
+  test('em rede mantém o status e permite nova tentativa', () async {
+    final order = sampleOrder(id: 'o1', status: OrderStatus.received);
+    var fail = true;
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready([order]),
+      updateStatus: (id, status) async {
+        if (fail) {
+          return const OrderUpdate.unavailable('Não foi possível conectar à API');
+        }
+        return OrderUpdate.ready(sampleOrder(id: 'o1', status: OrderStatus.preparing));
+      },
+    );
+    keep(OrdersQueueViewModel(repository, delay: ControllableDelay().call));
+
+    viewModel.resume();
+    await flushAsync();
+    await viewModel.advanceStatus('o1');
+
+    expect(viewModel.orders.single.status, OrderStatus.received);
+    expect(viewModel.actionError, 'Não foi possível conectar à API');
+    expect(viewModel.isUpdating('o1'), isFalse);
+
+    fail = false;
+    await viewModel.advanceStatus('o1');
+
+    expect(viewModel.orders.single.status, OrderStatus.preparing);
+    expect(viewModel.actionError, isNull);
+    expect(repository.updateCalls, 2);
   });
 }

@@ -6,9 +6,11 @@ import 'package:dinna/core/domain/order_item.dart';
 import 'package:dinna/core/domain/order_status.dart';
 import 'package:dinna/features/menu/product_repository.dart';
 import 'package:dinna/features/restaurant/order_details_view_model.dart';
+import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../menu/fake_product_repository.dart';
+import 'fake_order_repository.dart';
 import 'sample_order.dart';
 
 void main() {
@@ -34,10 +36,51 @@ void main() {
     );
   }
 
+  test('usa o name do item e não consulta o cardápio', () async {
+    final repository = FakeProductRepository(
+      () async => ProductList.ready([sampleProduct(id: 'p1', name: 'Do catálogo')]),
+    );
+    keep(
+      OrderDetailsViewModel(
+        repository,
+        FakeOrderRepository(() async => OrderList.ready(const [])),
+        order: sampleOrder(
+          id: 'o1',
+          table: '4',
+          items: [
+            OrderItem(
+              productId: 'p1',
+              quantity: 2,
+              note: 'sem cebola',
+              name: 'Burger Clássico',
+              unitPriceCents: 3290,
+              lineTotalCents: 6580,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await viewModel.resolveProducts();
+
+    expect(repository.calls, 0);
+    expect(viewModel.isResolvingProducts, isFalse);
+    expect(viewModel.productLookupMessage, isNull);
+    expect(viewModel.items.single.name, 'Burger Clássico');
+    expect(viewModel.items.single.lineTotalCents, 6580);
+    expect(viewModel.items.single.note, 'sem cebola');
+  });
+
   test('resolve o nome uma vez e ignora outra consulta', () async {
     final gate = Completer<ProductList>();
     final repository = FakeProductRepository(() => gate.future);
-    keep(OrderDetailsViewModel(repository, order: orderWith(note: 'sem cebola')));
+    keep(
+      OrderDetailsViewModel(
+        repository,
+        FakeOrderRepository(() async => OrderList.ready(const [])),
+        order: orderWith(note: 'sem cebola'),
+      ),
+    );
 
     final pending = viewModel.resolveProducts();
     final ignored = viewModel.resolveProducts();
@@ -66,7 +109,13 @@ void main() {
       () async =>
           ProductList.ready([sampleProduct(id: 'p1', name: 'Burger Veggie', available: false)]),
     );
-    keep(OrderDetailsViewModel(repository, order: orderWith()));
+    keep(
+      OrderDetailsViewModel(
+        repository,
+        FakeOrderRepository(() async => OrderList.ready(const [])),
+        order: orderWith(),
+      ),
+    );
 
     await viewModel.resolveProducts();
 
@@ -78,7 +127,13 @@ void main() {
     final repository = FakeProductRepository(
       () async => ProductList.ready([sampleProduct(id: 'outro', name: 'Suco')]),
     );
-    keep(OrderDetailsViewModel(repository, order: orderWith(note: 'sem gelo')));
+    keep(
+      OrderDetailsViewModel(
+        repository,
+        FakeOrderRepository(() async => OrderList.ready(const [])),
+        order: orderWith(note: 'sem gelo'),
+      ),
+    );
 
     await viewModel.resolveProducts();
 
@@ -92,7 +147,13 @@ void main() {
   test('falha do cardápio preserva o pedido e não expõe o detalhe interno', () async {
     const detalheInterno = 'falha interna do repository';
     final repository = FakeProductRepository(() async => throw StateError(detalheInterno));
-    keep(OrderDetailsViewModel(repository, order: orderWith(note: 'sem cebola')));
+    keep(
+      OrderDetailsViewModel(
+        repository,
+        FakeOrderRepository(() async => OrderList.ready(const [])),
+        order: orderWith(note: 'sem cebola'),
+      ),
+    );
 
     await viewModel.resolveProducts();
 
@@ -110,7 +171,13 @@ void main() {
 
   test('mensagem do repository aparece quando o cardápio não carrega', () async {
     final repository = FakeProductRepository(() async => const ProductList.unavailable('sem rede'));
-    keep(OrderDetailsViewModel(repository, order: orderWith()));
+    keep(
+      OrderDetailsViewModel(
+        repository,
+        FakeOrderRepository(() async => OrderList.ready(const [])),
+        order: orderWith(),
+      ),
+    );
 
     await viewModel.resolveProducts();
 
@@ -128,7 +195,13 @@ void main() {
         detail: 'Connection refused',
       ),
     );
-    keep(OrderDetailsViewModel(repository, order: orderWith()));
+    keep(
+      OrderDetailsViewModel(
+        repository,
+        FakeOrderRepository(() async => OrderList.ready(const [])),
+        order: orderWith(),
+      ),
+    );
 
     await viewModel.resolveProducts();
 
@@ -142,7 +215,13 @@ void main() {
     final repository = FakeProductRepository(
       () async => ProductList.ready([sampleProduct(id: 'p1', name: 'Burger Clássico')]),
     );
-    keep(OrderDetailsViewModel(repository, order: orderWith(note: '   ')));
+    keep(
+      OrderDetailsViewModel(
+        repository,
+        FakeOrderRepository(() async => OrderList.ready(const [])),
+        order: orderWith(note: '   '),
+      ),
+    );
 
     await viewModel.resolveProducts();
 
@@ -167,7 +246,13 @@ void main() {
   test('não notifica nem altera o pedido depois do dispose', () async {
     final gate = Completer<ProductList>();
     final repository = FakeProductRepository(() => gate.future);
-    keep(OrderDetailsViewModel(repository, order: orderWith(note: 'sem cebola')));
+    keep(
+      OrderDetailsViewModel(
+        repository,
+        FakeOrderRepository(() async => OrderList.ready(const [])),
+        order: orderWith(note: 'sem cebola'),
+      ),
+    );
     var notifications = 0;
     viewModel.addListener(() => notifications++);
 
@@ -186,5 +271,61 @@ void main() {
     expect(viewModel.items.single.name, OrderDetailsViewModel.pendingProductName);
     expect(viewModel.items.single.note, 'sem cebola');
     expect(viewModel.table, '4');
+  });
+
+  test('avança o status com o próximo passo e esconde o botão ao finalizar', () async {
+    final products = FakeProductRepository(() async => ProductList.ready(const []));
+    final orders = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      updateStatus: (id, status) async {
+        expect(id, 'o1');
+        expect(status, OrderStatus.ready);
+        return OrderUpdate.ready(sampleOrder(id: 'o1', status: OrderStatus.ready));
+      },
+    );
+    keep(OrderDetailsViewModel(products, orders, order: orderWith()));
+
+    expect(viewModel.canAdvance, isTrue);
+    expect(viewModel.status, OrderStatus.preparing);
+
+    await viewModel.advanceStatus();
+
+    expect(viewModel.status, OrderStatus.ready);
+    expect(orders.updateCalls, 1);
+    expect(viewModel.actionError, isNull);
+
+    final finishing = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      updateStatus: (id, status) async =>
+          OrderUpdate.ready(sampleOrder(id: 'o1', status: OrderStatus.finished)),
+    );
+    keep(
+      OrderDetailsViewModel(
+        products,
+        finishing,
+        order: sampleOrder(id: 'o1', status: OrderStatus.ready),
+      ),
+    );
+    await viewModel.advanceStatus();
+
+    expect(viewModel.status, OrderStatus.finished);
+    expect(viewModel.canAdvance, isFalse);
+  });
+
+  test('em conflito mantém o status e mostra mensagem amigável', () async {
+    final products = FakeProductRepository(() async => ProductList.ready(const []));
+    final orders = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      updateStatus: (id, status) async =>
+          const OrderUpdate.unavailable('Não é permitido avançar', failure: DataFailure.conflict),
+    );
+    keep(OrderDetailsViewModel(products, orders, order: orderWith()));
+
+    await viewModel.advanceStatus();
+
+    expect(viewModel.status, OrderStatus.preparing);
+    expect(viewModel.actionError, OrderDetailsViewModel.staleStatusMessage);
+    expect(viewModel.actionFailure, DataFailure.conflict);
+    expect(viewModel.isUpdating, isFalse);
   });
 }

@@ -204,6 +204,13 @@ void main() {
       expect(OrderStatus.finished.canTransitionTo(OrderStatus.ready), isFalse);
     });
 
+    test('aponta o próximo status ou null no fim', () {
+      expect(OrderStatus.received.next, OrderStatus.preparing);
+      expect(OrderStatus.preparing.next, OrderStatus.ready);
+      expect(OrderStatus.ready.next, OrderStatus.finished);
+      expect(OrderStatus.finished.next, isNull);
+    });
+
     test('rejeita valor fora do contrato', () {
       expect(() => OrderStatus.parse('delivered'), throwsFormatException);
       expect(OrderStatus.parse('finished'), OrderStatus.finished);
