@@ -216,7 +216,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('2 pedidos'), findsOneWidget);
-    expect(find.text('Em preparo primeiro'), findsOneWidget);
+    expect(find.text('Em preparo primeiro'), findsNothing);
     expect(find.text('Mesa 4'), findsOneWidget);
     expect(find.text('Preparando'), findsOneWidget);
     expect(find.text('Mesa 12'), findsOneWidget);

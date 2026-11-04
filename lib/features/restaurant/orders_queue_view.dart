@@ -213,19 +213,9 @@ class _QueueHeader extends StatelessWidget {
     final label = count == 1 ? '1 pedido' : '$count pedidos';
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-            ),
-          ),
-          Text(
-            'Em preparo primeiro',
-            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-          ),
-        ],
+      child: Text(
+        label,
+        style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
       ),
     );
   }
