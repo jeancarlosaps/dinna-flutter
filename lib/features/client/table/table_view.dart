@@ -92,7 +92,12 @@ class _TableViewState extends State<TableView> {
                                         keyboardType: const TextInputType.numberWithOptions(
                                           signed: true,
                                         ),
-                                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.digitsOnly,
+                                          LengthLimitingTextInputFormatter(
+                                            TableViewModel.maxDigits,
+                                          ),
+                                        ],
                                         textInputAction: TextInputAction.go,
                                         onSubmitted: (_) => _submit(),
                                         decoration: InputDecoration(

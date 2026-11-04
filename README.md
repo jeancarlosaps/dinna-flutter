@@ -92,10 +92,10 @@ Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas d
 | Tema Dinna (Material 3) | ✅ Paleta, tipografia (Inter e Source Serif 4) e botões e raios do Figma | `lib/app/theme/`, `assets/fonts/` |
 | URL da API por ambiente | ✅ `--dart-define=API_BASE_URL` com padrão por plataforma | `lib/core/config/` |
 | Cliente HTTP + erro uniforme | ✅ `ApiClient` + `ApiException` | `lib/core/network/` |
-| Testes, lint, format, CI | ✅ 363 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
+| Testes, lint, format, CI | ✅ 366 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
 | Models (`Product`, `CartItem`, `Order`, `OrderItem`, `OrderStatus`, `Preference`) | ✅ Implementados em `lib/core/domain/` (SCRUM-22, PR #5 na `dev`) | [`lib/core/domain/`](lib/core/domain/) |
 | Rotas do cliente e do restaurante | ✅ SCRUM-23 concluída e mergeada pelo PR #6. Mapa em `AppRoutes`. Rota inicial `/`. `/table` abre `TableView`, `/menu` abre `MenuView`, `/order` abre a confirmação, `/order/tracking` identifica o pedido, `/restaurant` abre a fila e `/restaurant/order` o detalhe. `/product` e `/restaurant/menu` são placeholder | [`lib/app/router/`](lib/app/router/), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
-| Mesa (`/table`) | SCRUM-29. `TableViewModel` valida a mesa (vazia, zero ou não numérica mostra erro abaixo do campo). “Ver cardápio” abre `AppRoutes.menu` com a mesa como `String` em `arguments`. “Acessar o painel” ainda usa `onPressed` vazio | [`lib/features/client/table/table_view.dart`](lib/features/client/table/table_view.dart) |
+| Mesa (`/table`) | SCRUM-29. `TableViewModel` valida a mesa de 1 a 999; o campo aceita até 3 dígitos (vazia, zero, acima de 999 ou não numérica mostra erro abaixo do campo). “Ver cardápio” abre `AppRoutes.menu` com a mesa como `String` em `arguments`. “Acessar o painel” ainda usa `onPressed` vazio | [`lib/features/client/table/table_view.dart`](lib/features/client/table/table_view.dart) |
 | Cardápio (`/menu`) | SCRUM-30. `MenuViewModel` carrega `GET /products` e agrupa por categoria. Chips filtram a categoria; produto indisponível aparece em cinza com o selo “Esgotado”. O header mostra a mesa recebida da navegação. Estados de carregando, erro com “Tentar de novo” e cardápio vazio | [`lib/features/menu/menu_view.dart`](lib/features/menu/menu_view.dart) |
 | Detalhe do produto | SCRUM-36. Bottom sheet sobre o cardápio, como no Figma: foto ou degradê, nome, descrição e a caixa “Ingredientes” na ordem da API. Sem ingredientes, a caixa orienta a consultar o restaurante. Seletor de quantidade de 1 a 99 e botão “Adicionar · R$ total” (SCRUM-37); o botão fica desabilitado até a inclusão no carrinho (SCRUM-39). Produto esgotado mostra aviso e desabilita quantidade e botão. Erro com “Tentar de novo”. A mesa continua no cardápio; `/product` segue placeholder | [`lib/features/menu/product_detail_view.dart`](lib/features/menu/product_detail_view.dart) |
 | Dependências base (SCRUM-18) | Em andamento. HTTP pronto (`http` 1.6.0 e `ApiClient`); `sqflite` persiste o carrinho e `path_provider` localiza o arquivo da intenção do pedido | `pubspec.yaml`, [`lib/core/network/`](lib/core/network/) |
@@ -212,7 +212,7 @@ lib/
 │       └── home_view_model.dart
 └── shared/
     └── widgets/                      # DinnaLogo, DinnaBanner, DinnaEmptyState
-test/                                 # espelha lib/ (363 testes)
+test/                                 # espelha lib/ (366 testes)
 docs/ARCHITECTURE.md                  # contrato das camadas MVVM
 docs/assets/readme/                   # ilustrações deste README
 ```
@@ -312,7 +312,7 @@ Na tela inicial, toque em **“Verificar conexão com a API”**: com a API no a
 | `dart format .` | Formata o código (largura 100) |
 | `dart format --output=none --set-exit-if-changed .` | Só verifica a formatação, como na CI |
 
-O que os 363 testes cobrem hoje (`flutter test` nesta branch):
+O que os 366 testes cobrem hoje (`flutter test` nesta branch):
 
 | Arquivo | Cobre |
 |---|---|
