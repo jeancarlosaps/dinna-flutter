@@ -36,6 +36,7 @@ Future<void> _pumpDetail(
   WidgetTester tester,
   FakeProductRepository repository, {
   String productId = 'p1',
+  void Function(Product product, int quantity)? onAdd,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -43,11 +44,23 @@ Future<void> _pumpDetail(
       home: Scaffold(
         body: ProductDetailView(
           createViewModel: () => ProductDetailViewModel(repository, productId: productId),
+          onAdd: onAdd,
         ),
       ),
     ),
   );
   await tester.pumpAndSettle();
+}
+
+final _increase = find.byTooltip('Aumentar quantidade');
+final _decrease = find.byTooltip('Diminuir quantidade');
+
+IconButton _iconButton(WidgetTester tester, Finder finder) {
+  return tester.widget<IconButton>(find.ancestor(of: finder, matching: find.byType(IconButton)));
+}
+
+FilledButton _addButton(WidgetTester tester) {
+  return tester.widget<FilledButton>(find.byType(FilledButton));
 }
 
 void main() {
@@ -58,7 +71,7 @@ void main() {
 
     expect(find.text('Burger Clássico'), findsOneWidget);
     expect(find.text('Pão brioche, blend bovino e cheddar'), findsOneWidget);
-    expect(find.text('R\$ 32,90'), findsOneWidget);
+    expect(find.text('Adicionar · R\$ 32,90'), findsOneWidget);
     expect(find.text('Ingredientes'), findsOneWidget);
     expect(find.text('Pão brioche, Carne bovina, Queijo cheddar'), findsOneWidget);
     expect(find.textContaining('Ingredientes não informados'), findsNothing);
@@ -89,6 +102,134 @@ void main() {
 
     expect(find.text('Burger Veggie'), findsOneWidget);
     expect(find.text('Este produto está esgotado no momento.'), findsOneWidget);
+  });
+
+  testWidgets('quantidade começa em 1 e o total acompanha os toques', (tester) async {
+    final repository = _repository((_) async => ProductDetail.ready(_product()));
+
+    await _pumpDetail(tester, repository, onAdd: (_, _) {});
+
+    expect(find.text('1'), findsOneWidget);
+    expect(_iconButton(tester, _decrease).onPressed, isNull);
+
+    await tester.tap(_increase);
+    await tester.tap(_increase);
+    await tester.pump();
+
+    expect(find.text('3'), findsOneWidget);
+    expect(find.text('Adicionar · R\$ 98,70'), findsOneWidget);
+
+    await tester.tap(_decrease);
+    await tester.pump();
+
+    expect(find.text('2'), findsOneWidget);
+    expect(find.text('Adicionar · R\$ 65,80'), findsOneWidget);
+  });
+
+  testWidgets('quantidade não passa do limite', (tester) async {
+    final repository = _repository((_) async => ProductDetail.ready(_product()));
+
+    await _pumpDetail(tester, repository, onAdd: (_, _) {});
+
+    for (var i = 1; i < ProductDetailView.maxQuantity; i++) {
+      await tester.tap(_increase);
+    }
+    await tester.pump();
+
+    expect(find.text('${ProductDetailView.maxQuantity}'), findsOneWidget);
+    expect(_iconButton(tester, _increase).onPressed, isNull);
+    expect(_iconButton(tester, _decrease).onPressed, isNotNull);
+  });
+
+  testWidgets('adicionar entrega o produto e a quantidade escolhida', (tester) async {
+    final added = <(String, int)>[];
+    final repository = _repository((_) async => ProductDetail.ready(_product()));
+
+    await _pumpDetail(
+      tester,
+      repository,
+      onAdd: (product, quantity) => added.add((product.id, quantity)),
+    );
+
+    await tester.tap(_increase);
+    await tester.pump();
+    await tester.tap(find.text('Adicionar · R\$ 65,80'));
+    await tester.pump();
+
+    expect(added, [('p1', 2)]);
+  });
+
+  testWidgets('sem onAdd o botão adicionar fica desabilitado', (tester) async {
+    final repository = _repository((_) async => ProductDetail.ready(_product()));
+
+    await _pumpDetail(tester, repository);
+
+    expect(_addButton(tester).onPressed, isNull);
+    expect(_iconButton(tester, _increase).onPressed, isNotNull);
+  });
+
+  testWidgets('produto esgotado desabilita quantidade e adicionar', (tester) async {
+    final added = <int>[];
+    final repository = _repository((_) async => ProductDetail.ready(_product(available: false)));
+
+    await _pumpDetail(tester, repository, onAdd: (_, quantity) => added.add(quantity));
+
+    expect(_addButton(tester).onPressed, isNull);
+    expect(_iconButton(tester, _increase).onPressed, isNull);
+    expect(_iconButton(tester, _decrease).onPressed, isNull);
+
+    await tester.tap(find.byType(FilledButton), warnIfMissed: false);
+    await tester.pump();
+    expect(added, isEmpty);
+  });
+
+  testWidgets('quantidade mantida depois de tentar de novo', (tester) async {
+    var calls = 0;
+    final repository = _repository((_) async {
+      calls++;
+      if (calls == 2) return const ProductDetail.unavailable('Sem conexão');
+      return ProductDetail.ready(_product());
+    });
+    late ProductDetailViewModel viewModel;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: Scaffold(
+          body: ProductDetailView(
+            createViewModel: () => viewModel = ProductDetailViewModel(repository, productId: 'p1'),
+            onAdd: (_, _) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(_increase);
+    await tester.pump();
+    await viewModel.load();
+    await tester.pumpAndSettle();
+    expect(find.text('Tentar de novo'), findsOneWidget);
+
+    await tester.tap(find.text('Tentar de novo'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2'), findsOneWidget);
+    expect(find.text('Adicionar · R\$ 65,80'), findsOneWidget);
+  });
+
+  testWidgets('leitor de tela anuncia a quantidade', (tester) async {
+    final semantics = tester.ensureSemantics();
+    final repository = _repository((_) async => ProductDetail.ready(_product()));
+
+    await _pumpDetail(tester, repository, onAdd: (_, _) {});
+    await tester.tap(_increase);
+    await tester.pump();
+
+    final data = tester.getSemantics(find.bySemanticsLabel('Quantidade')).getSemanticsData();
+    expect(data.value, '2');
+    expect(data.flagsCollection.isLiveRegion, isTrue);
+    semantics.dispose();
   });
 
   testWidgets('falha de rede mostra o erro e tenta de novo', (tester) async {
