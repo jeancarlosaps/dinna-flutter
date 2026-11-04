@@ -119,6 +119,8 @@ class _ProductDetailContent extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 12),
+          _IngredientsBox(ingredients: product.ingredients),
+          const SizedBox(height: 12),
           Text(
             formatOrderTotal(product.priceCents),
             style: theme.textTheme.titleMedium?.copyWith(
@@ -133,6 +135,59 @@ class _ProductDetailContent extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// Caixa "Ingredientes" do Figma. Lista vazia mantém a caixa e orienta quem
+/// tem restrição alimentar a consultar o restaurante.
+class _IngredientsBox extends StatelessWidget {
+  const _IngredientsBox({required this.ingredients});
+
+  /// Mensagem quando a API não informa os ingredientes.
+  static const missingMessage =
+      'Ingredientes não informados. Se você tem alergia ou restrição alimentar, '
+      'consulte o restaurante antes de pedir.';
+
+  final List<String> ingredients;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final missing = ingredients.isEmpty;
+
+    // MergeSemantics: o leitor de tela lê título e conteúdo juntos.
+    return MergeSemantics(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: colors.outlineVariant),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Ingredientes',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              missing ? missingMessage : ingredients.join(', '),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                height: 1.4,
+                color: missing ? colors.onSurfaceVariant : colors.onSurface,
+                fontStyle: missing ? FontStyle.italic : null,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
