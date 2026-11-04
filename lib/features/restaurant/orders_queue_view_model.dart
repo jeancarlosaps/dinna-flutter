@@ -16,8 +16,8 @@ import 'order_repository.dart';
 /// acabar, sem esperar o intervalo. Depois do [dispose], a resposta pendente
 /// não altera estado nem notifica.
 ///
-/// A ordenação é local: pedidos `preparing` sobem primeiro; dentro do mesmo
-/// grupo, `createdAt` crescente e, no empate, `id` lexicográfico.
+/// A ordenação é local: `ready` sobe primeiro, depois `preparing`; dentro do
+/// mesmo grupo, `createdAt` crescente e, no empate, `id` lexicográfico.
 /// Pedidos `finished` não entram na fila ativa. Nomes vêm em `OrderItem.name`.
 class OrdersQueueViewModel extends ChangeNotifier {
   OrdersQueueViewModel(
@@ -348,10 +348,11 @@ class OrdersQueueViewModel extends ChangeNotifier {
     return List.unmodifiable(active);
   }
 
-  /// Menor valor aparece antes. `preparing` sobe; o restante mantém a ordem do tempo.
+  /// Menor valor aparece antes. `ready` sobe; depois `preparing`; o restante por tempo.
   static int _queuePriority(OrderStatus status) => switch (status) {
-    OrderStatus.preparing => 0,
-    OrderStatus.received || OrderStatus.ready || OrderStatus.finished => 1,
+    OrderStatus.ready => 0,
+    OrderStatus.preparing => 1,
+    OrderStatus.received || OrderStatus.finished => 2,
   };
 
   void _completeSignal() {

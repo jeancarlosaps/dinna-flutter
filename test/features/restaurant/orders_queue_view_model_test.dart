@@ -24,7 +24,7 @@ void main() {
     await Future<void>.value();
   }
 
-  test('carrega a lista, sobe preparing e ordena o restante por horário', () async {
+  test('carrega a lista com ready acima de preparing e o restante por horário', () async {
     final olderReceived = sampleOrder(
       id: 'o1',
       table: '4',
@@ -49,6 +49,12 @@ void main() {
       status: OrderStatus.preparing,
       createdAt: DateTime.utc(2026, 10, 16, 18, 10),
     );
+    final newestReady = sampleOrder(
+      id: 'o4',
+      table: '2',
+      status: OrderStatus.ready,
+      createdAt: DateTime.utc(2026, 10, 16, 18, 15),
+    );
     final gate = Completer<OrderList>();
     final repository = FakeOrderRepository(() => gate.future);
     final delay = ControllableDelay();
@@ -65,7 +71,13 @@ void main() {
     expect(delay.durations, isEmpty);
 
     gate.complete(
-      OrderList.ready([sameTimeLaterId, olderReceived, newerPreparing, sameTimeEarlierId]),
+      OrderList.ready([
+        sameTimeLaterId,
+        olderReceived,
+        newerPreparing,
+        newestReady,
+        sameTimeEarlierId,
+      ]),
     );
     await flushAsync();
 
@@ -73,7 +85,7 @@ void main() {
     expect(viewModel.isLoading, isFalse);
     expect(viewModel.errorMessage, isNull);
     expect(viewModel.refreshError, isNull);
-    expect(viewModel.orders.map((order) => order.id), ['o3', 'o1', 'o10', 'o2']);
+    expect(viewModel.orders.map((order) => order.id), ['o4', 'o3', 'o1', 'o10', 'o2']);
     expect(delay.durations, [OrdersQueueViewModel.defaultPollInterval]);
   });
 
