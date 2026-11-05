@@ -21,7 +21,10 @@ Future<void> showProductDetail(
     useSafeArea: true,
     showDragHandle: true,
     constraints: BoxConstraints(maxWidth: 480, maxHeight: MediaQuery.sizeOf(context).height * 0.9),
-    builder: (_) => ProductDetailView(createViewModel: createViewModel),
+    // `useSafeArea` protege só o topo e as laterais; o SafeArea inferior
+    // mantém o fim do conteúdo fora da barra de navegação do sistema.
+    builder: (_) =>
+        SafeArea(top: false, child: ProductDetailView(createViewModel: createViewModel)),
   );
 }
 
