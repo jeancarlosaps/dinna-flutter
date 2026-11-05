@@ -10,7 +10,14 @@ import '../restaurant/order_format.dart';
 import 'product_detail_view_model.dart';
 import 'product_image.dart';
 
-///
+/// Largura máxima do sheet: em tablet ele não se estica de borda a borda.
+const productDetailMaxWidth = 480.0;
+
+/// Fração da altura da tela que o sheet pode ocupar.
+const productDetailMaxHeightFactor = 0.9;
+
+/// Abre o detalhe do produto em bottom sheet sobre o cardápio, sem trocar de
+/// rota. O sheet cria o ViewModel com [createViewModel] e o descarta ao fechar.
 Future<void> showProductDetail(
   BuildContext context, {
   required ProductDetailViewModel Function() createViewModel,
@@ -20,7 +27,10 @@ Future<void> showProductDetail(
     isScrollControlled: true,
     useSafeArea: true,
     showDragHandle: true,
-    constraints: BoxConstraints(maxWidth: 480, maxHeight: MediaQuery.sizeOf(context).height * 0.9),
+    constraints: BoxConstraints(
+      maxWidth: productDetailMaxWidth,
+      maxHeight: MediaQuery.sizeOf(context).height * productDetailMaxHeightFactor,
+    ),
     // `useSafeArea` protege só o topo e as laterais; o SafeArea inferior
     // mantém o fim do conteúdo fora da barra de navegação do sistema.
     builder: (_) =>
@@ -28,7 +38,8 @@ Future<void> showProductDetail(
   );
 }
 
-///
+/// Conteúdo do detalhe: carrega o produto ao abrir e mostra o produto, o
+/// carregamento ou a falha.
 class ProductDetailView extends StatefulWidget {
   const ProductDetailView({super.key, required this.createViewModel});
 
@@ -60,17 +71,17 @@ class _ProductDetailViewState extends State<ProductDetailView> {
       listenable: _viewModel,
       builder: (context, _) {
         final product = _viewModel.product;
+        final notFound = _viewModel.failure == DataFailure.notFound;
         return switch (_viewModel.status) {
           ProductDetailStatus.ready when product != null => _ProductDetailContent(product: product),
           ProductDetailStatus.failed => SingleChildScrollView(
             child: DinnaEmptyState(
-              icon: _viewModel.failure == DataFailure.notFound ? Icons.search_off : Icons.wifi_off,
-              title: _viewModel.failure == DataFailure.notFound
-                  ? 'Produto não encontrado'
-                  : 'Não foi possível carregar o produto',
+              icon: notFound ? Icons.search_off : Icons.wifi_off,
+              title: notFound ? 'Produto não encontrado' : 'Não foi possível carregar o produto',
               message: _viewModel.errorMessage ?? ProductDetailViewModel.unexpectedFailureMessage,
-              actionLabel: 'Tentar de novo',
-              onAction: _viewModel.load,
+              // Produto inexistente não se resolve tentando de novo: volta ao cardápio.
+              actionLabel: notFound ? 'Voltar ao cardápio' : 'Tentar de novo',
+              onAction: notFound ? () => Navigator.of(context).maybePop() : _viewModel.load,
               centered: false,
             ),
           ),
