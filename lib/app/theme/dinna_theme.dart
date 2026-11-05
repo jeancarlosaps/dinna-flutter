@@ -93,6 +93,15 @@ abstract final class DinnaTheme {
           borderSide: BorderSide(color: colorScheme.outlineVariant),
         ),
       ),
+      // Figma: sheet creme (sem o tom rosado do Material 3), cantos de 20 e alça clara.
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: colorScheme.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        dragHandleColor: colorScheme.outlineVariant,
+        dragHandleSize: const Size(40, 4),
+      ),
       chipTheme: ChipThemeData(
         shape: StadiumBorder(side: BorderSide(color: colorScheme.outlineVariant)),
       ),

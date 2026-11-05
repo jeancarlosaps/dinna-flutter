@@ -76,7 +76,7 @@ A mesa e os itens ainda não saem da UI.
 
 **Mesa.** `TableViewModel` valida o campo e a `TableView` abre `AppRoutes.menu` com a mesa como `String` em `arguments`, o mesmo formato de `Order.table` (`"12"`). O cardápio (SCRUM-30) recebe a mesa e o router liga `MenuView.onOpenCart` a `AppRoutes.cart` com ela. **Pendente:** o botão do carrinho no cardápio, que entra com a SCRUM-39. Quem fica com o valor é a navegação até o carrinho, não o `OrderSubmissionViewModel`.
 
-**Pendente no detalhe.** `ProductDetailViewModel.load` preenche `product`. Não existe método de adicionar ao carrinho. A UI monta o `CartItem` e entrega a lista a quem persistir (João). Não copie nome, preço nem imagem para o item.
+**Detalhe.** O bottom sheet `ProductDetailView` (SCRUM-36) mostra o produto que `ProductDetailViewModel.load` preenche. **Pendente:** não existe método de adicionar ao carrinho. A UI monta o `CartItem` e entrega a lista a quem persistir (João). Não copie nome, preço nem imagem para o item.
 
 ```dart
 final product = detailViewModel.product;
