@@ -261,6 +261,38 @@ void main() {
     await _pumpDetail(tester, repository);
 
     expect(find.text('Produto não encontrado'), findsOneWidget);
+    expect(find.text('Tentar de novo'), findsNothing);
+    expect(find.text('Voltar ao cardápio'), findsOneWidget);
+  });
+
+  testWidgets('produto inexistente volta ao cardápio sem buscar de novo', (tester) async {
+    final repository = FakeProductRepository(
+      () async => ProductList.ready([_product()]),
+      onFindById: (_) async =>
+          const ProductDetail.unavailable('Produto não existe', failure: DataFailure.notFound),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: MenuView(
+          table: '12',
+          createViewModel: () => MenuViewModel(repository),
+          createDetailViewModel: (id) => ProductDetailViewModel(repository, productId: id),
+          onOpenCart: (_, _) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Burger Clássico'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Voltar ao cardápio'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.text('Mesa 12'), findsOneWidget);
+    expect(repository.findCalls, 1);
   });
 
   testWidgets('ingredientes longos e texto a 200% cabem sem corte numa tela pequena', (
@@ -347,5 +379,39 @@ void main() {
     expect(find.text('Pão brioche, Carne bovina, Queijo cheddar'), findsOneWidget);
     expect(find.text('Mesa 12'), findsOneWidget);
     expect(repository.findCalls, 1);
+  });
+
+  testWidgets('bottom sheet deixa o conteúdo acima da barra de navegação do sistema', (
+    tester,
+  ) async {
+    const navigationBar = 48.0;
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(bottom: navigationBar);
+    tester.view.viewPadding = const FakeViewPadding(bottom: navigationBar);
+    addTearDown(tester.view.reset);
+
+    final repository = FakeProductRepository(
+      () async => ProductList.ready([_product()]),
+      onFindById: (_) async => ProductDetail.ready(_product()),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: MenuView(
+          table: '12',
+          createViewModel: () => MenuViewModel(repository),
+          createDetailViewModel: (id) => ProductDetailViewModel(repository, productId: id),
+          onOpenCart: (_, _) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Burger Clássico'));
+    await tester.pumpAndSettle();
+
+    final detail = tester.getRect(find.byType(ProductDetailView));
+    expect(detail.bottom, lessThanOrEqualTo(800 - navigationBar));
   });
 }
