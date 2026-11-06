@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../../core/domain/cart_item.dart';
 import '../../menu/product_repository.dart';
 import 'cart_lines.dart';
+import 'cart_session.dart';
 
 /// Linha já pronta para a tela: quantidade local, nome e preço do cardápio.
 final class CartRow {
@@ -11,6 +14,7 @@ final class CartRow {
     required this.name,
     required this.note,
     required this.lineTotalCents,
+    this.isAvailable = true,
   });
 
   final int quantity;
@@ -19,6 +23,7 @@ final class CartRow {
 
   /// Preço da linha em centavos. Nulo enquanto o cardápio não precificou.
   final int? lineTotalCents;
+  final bool isAvailable;
 }
 
 /// Revisão das linhas recebidas. Não envia pedido e não grava em disco.
@@ -26,23 +31,33 @@ final class CartRow {
 /// A tela lê [items] e entrega a lista ao envio. Esta classe não chama o
 /// repositório de pedidos.
 ///
-/// A identidade da linha é a posição em [CartLines] e, quando existe, o
-/// [CartItem.lineId]. Duas linhas com o mesmo produto e a mesma observação
-/// são alteradas em separado. [_withQuantity] copia o `lineId` junto.
+/// Em produção, as linhas vêm da [CartSession]; o modo [CartLines] permanece
+/// para testes e fluxos em memória. Duas linhas iguais continuam independentes
+/// pela identidade [CartItem.lineId].
 ///
 /// Depois do [dispose], resposta pendente não altera estado nem notifica.
 class CartViewModel extends ChangeNotifier {
   CartViewModel(ProductRepository products, {required CartLines lines})
-    : this._(products, lines, List<CartItem>.of(lines.read()));
+    : _products = products,
+      _lines = lines,
+      _session = null,
+      _items = List<CartItem>.of(lines.read()),
+      _legacyCommitted = List<CartItem>.of(lines.read());
 
-  CartViewModel._(this._products, this._lines, List<CartItem> initial)
-    : _committed = List<CartItem>.of(initial),
-      _items = List<CartItem>.of(initial);
+  CartViewModel.persisted(ProductRepository products, {required CartSession session})
+    : _products = products,
+      _lines = null,
+      _session = session,
+      _items = List<CartItem>.of(session.read()),
+      _legacyCommitted = const [] {
+    session.addListener(_onSessionChanged);
+  }
 
   final ProductRepository _products;
-  final CartLines _lines;
-  final List<CartItem> _committed;
+  final CartLines? _lines;
+  final CartSession? _session;
   final List<CartItem> _items;
+  final List<CartItem> _legacyCommitted;
 
   /// Nome enquanto o cardápio ainda não respondeu.
   static const pendingProductName = '…';
@@ -61,11 +76,19 @@ class CartViewModel extends ChangeNotifier {
   bool _failed = false;
   bool _requested = false;
   bool _disposed = false;
+  bool _isMutating = false;
   String? _productLookupMessage;
+  String? _cartWriteErrorMessage;
   Map<String, String> _names = const {};
   Map<String, int> _prices = const {};
+  Map<String, bool> _availability = const {};
 
   bool get isResolvingProducts => _resolving;
+
+  bool get isMutating => _isMutating;
+
+  /// Preenchida quando uma alteração persistida falha.
+  String? get cartWriteErrorMessage => _cartWriteErrorMessage;
 
   /// Preenchida só quando a consulta ao cardápio falha.
   String? get productLookupMessage => _productLookupMessage;
@@ -111,12 +134,15 @@ class CartViewModel extends ChangeNotifier {
       }
       final names = <String, String>{};
       final prices = <String, int>{};
+      final availability = <String, bool>{};
       for (final product in products) {
         names[product.id] = product.name;
         prices[product.id] = product.priceCents;
+        availability[product.id] = product.available;
       }
       _names = Map.unmodifiable(names);
       _prices = Map.unmodifiable(prices);
+      _availability = Map.unmodifiable(availability);
       _failed = false;
       _productLookupMessage = null;
       _resolving = false;
@@ -138,26 +164,69 @@ class CartViewModel extends ChangeNotifier {
     }
   }
 
-  void increase(int index) {
-    if (_disposed || !_contains(index)) return;
+  Future<void> increase(int index) {
+    if (_disposed || _isMutating || !_contains(index)) return Future.value();
     final current = _items[index];
-    _items[index] = _withQuantity(current, current.quantity + 1);
-    _publish();
+    return _changeQuantity(index, current, current.quantity + 1);
   }
 
   /// Quantidade 1 permanece. A saída da linha é [removeAt].
-  void decrease(int index) {
-    if (_disposed || !_contains(index)) return;
+  Future<void> decrease(int index) {
+    if (_disposed || _isMutating || !_contains(index)) return Future.value();
     final current = _items[index];
-    if (current.quantity <= 1) return;
-    _items[index] = _withQuantity(current, current.quantity - 1);
-    _publish();
+    if (current.quantity <= 1) return Future.value();
+    return _changeQuantity(index, current, current.quantity - 1);
   }
 
-  void removeAt(int index) {
-    if (_disposed || !_contains(index)) return;
-    _items.removeAt(index);
-    _publish();
+  Future<void> removeAt(int index) {
+    if (_disposed || _isMutating || !_contains(index)) return Future.value();
+    final session = _session;
+    if (session == null) {
+      _items.removeAt(index);
+      _publishLegacy();
+      return Future.value();
+    }
+    final lineId = _items[index].lineId;
+    if (lineId == null) return _reportCartWriteFailure();
+    return _persistMutation(() => session.removeLine(lineId));
+  }
+
+  Future<void> _changeQuantity(int index, CartItem current, int quantity) {
+    final session = _session;
+    if (session == null) {
+      _items[index] = _withQuantity(current, quantity);
+      _publishLegacy();
+      return Future.value();
+    }
+    final lineId = current.lineId;
+    if (lineId == null) return _reportCartWriteFailure();
+    return _persistMutation(() async {
+      final updated = await session.updateLine(
+        lineId: lineId,
+        quantity: quantity,
+        note: current.note,
+      );
+      if (updated == null) throw StateError('A linha do carrinho não existe mais');
+    });
+  }
+
+  Future<void> _persistMutation(Future<void> Function() mutation) async {
+    _isMutating = true;
+    _cartWriteErrorMessage = null;
+    _notify();
+    try {
+      await mutation();
+    } catch (_) {
+      _cartWriteErrorMessage = 'Não foi possível salvar a alteração do carrinho. Tente novamente.';
+    } finally {
+      _isMutating = false;
+      _notify();
+    }
+  }
+
+  Future<void> _reportCartWriteFailure() async {
+    _cartWriteErrorMessage = 'A linha do carrinho não tem uma identidade persistida.';
+    _notify();
   }
 
   bool _contains(int index) => index >= 0 && index < _items.length;
@@ -170,6 +239,7 @@ class CartViewModel extends ChangeNotifier {
       name: _nameFor(item.productId),
       note: visibleNote,
       lineTotalCents: _lineTotal(item),
+      isAvailable: _availability[item.productId] ?? true,
     );
   }
 
@@ -188,29 +258,51 @@ class CartViewModel extends ChangeNotifier {
     return missingProductName;
   }
 
-  void _publish() {
+  void _publishLegacy() {
     if (_disposed) return;
     final next = List<CartItem>.of(_items);
-    if (!_lines.replace(_committed, next)) {
-      final external = _lines.read();
+    final lines = _lines!;
+    if (!lines.replace(_legacyCommitted, next)) {
+      final external = lines.read();
       _items
-        ..clear()
-        ..addAll(external);
-      _committed
         ..clear()
         ..addAll(external);
       _notify();
       return;
     }
-    _committed
+    _legacyCommitted
       ..clear()
       ..addAll(next);
     _notify();
   }
 
+  void _onSessionChanged() {
+    if (_disposed || _session?.isReady != true) return;
+    final next = _session!.read();
+    final oldProductIds = _items.map((item) => item.productId).toSet();
+    final nextProductIds = next.map((item) => item.productId).toSet();
+    _items
+      ..clear()
+      ..addAll(next);
+    if (!_sameSet(oldProductIds, nextProductIds)) {
+      _requested = false;
+      _settled = next.isEmpty;
+      _failed = false;
+      _productLookupMessage = null;
+      _names = const {};
+      _prices = const {};
+      _availability = const {};
+    }
+    _notify();
+    if (!_sameSet(oldProductIds, nextProductIds) && next.isNotEmpty) {
+      unawaited(resolveProducts());
+    }
+  }
+
   void _fail(String? message) {
     _names = const {};
     _prices = const {};
+    _availability = const {};
     _failed = true;
     _resolving = false;
     _settled = true;
@@ -227,8 +319,14 @@ class CartViewModel extends ChangeNotifier {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _session?.removeListener(_onSessionChanged);
     super.dispose();
   }
+}
+
+bool _sameSet<T>(Set<T> first, Set<T> second) {
+  if (first.length != second.length) return false;
+  return first.containsAll(second);
 }
 
 /// Copia a linha com outra quantidade, inclusive a identidade local.
