@@ -40,6 +40,23 @@ void main() {
     expect(pushed?.arguments, '12');
   });
 
+  testWidgets('campo aceita no máximo 3 dígitos', (tester) async {
+    await pumpTable(tester);
+
+    await tester.enterText(find.byType(TextField), '0000000000000001');
+    await tester.pump();
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.controller!.text, '000');
+
+    await tester.enterText(find.byType(TextField), '');
+    await tester.enterText(find.byType(TextField), '1234');
+    await tester.tap(find.text('Ver cardápio'));
+    await tester.pumpAndSettle();
+
+    expect(pushed?.arguments, '123');
+  });
+
   testWidgets('teclado numérico com tecla de envio', (tester) async {
     await pumpTable(tester);
 

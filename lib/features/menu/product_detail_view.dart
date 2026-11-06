@@ -21,6 +21,7 @@ const productDetailMaxHeightFactor = 0.9;
 Future<void> showProductDetail(
   BuildContext context, {
   required ProductDetailViewModel Function() createViewModel,
+  void Function(Product product, int quantity)? onAdd,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -33,17 +34,26 @@ Future<void> showProductDetail(
     ),
     // `useSafeArea` protege só o topo e as laterais; o SafeArea inferior
     // mantém o fim do conteúdo fora da barra de navegação do sistema.
-    builder: (_) =>
-        SafeArea(top: false, child: ProductDetailView(createViewModel: createViewModel)),
+    builder: (_) => SafeArea(
+      top: false,
+      child: ProductDetailView(createViewModel: createViewModel, onAdd: onAdd),
+    ),
   );
 }
 
 /// Conteúdo do detalhe: carrega o produto ao abrir e mostra o produto, o
 /// carregamento ou a falha.
 class ProductDetailView extends StatefulWidget {
-  const ProductDetailView({super.key, required this.createViewModel});
+  const ProductDetailView({super.key, required this.createViewModel, this.onAdd});
 
   final ProductDetailViewModel Function() createViewModel;
+
+  /// Recebe o produto e a quantidade escolhida. Nulo deixa o botão
+  /// "Adicionar" desabilitado.
+  final void Function(Product product, int quantity)? onAdd;
+
+  /// Limite do seletor de quantidade.
+  static const maxQuantity = 99;
 
   @override
   State<ProductDetailView> createState() => _ProductDetailViewState();
@@ -51,6 +61,15 @@ class ProductDetailView extends StatefulWidget {
 
 class _ProductDetailViewState extends State<ProductDetailView> {
   late final ProductDetailViewModel _viewModel;
+
+  /// Quantidade local da tela. Começa em 1 e não passa pelo carrinho.
+  int _quantity = 1;
+
+  /// Soma [delta] à quantidade atual, e não ao valor do último build:
+  /// toques seguidos antes do próximo frame não se perdem.
+  void _changeQuantity(int delta) {
+    setState(() => _quantity = (_quantity + delta).clamp(1, ProductDetailView.maxQuantity));
+  }
 
   @override
   void initState() {
@@ -73,7 +92,12 @@ class _ProductDetailViewState extends State<ProductDetailView> {
         final product = _viewModel.product;
         final notFound = _viewModel.failure == DataFailure.notFound;
         return switch (_viewModel.status) {
-          ProductDetailStatus.ready when product != null => _ProductDetailContent(product: product),
+          ProductDetailStatus.ready when product != null => _ProductDetailContent(
+            product: product,
+            quantity: _quantity,
+            onQuantityStep: _changeQuantity,
+            onAdd: widget.onAdd == null ? null : () => widget.onAdd!(product, _quantity),
+          ),
           ProductDetailStatus.failed => SingleChildScrollView(
             child: DinnaEmptyState(
               icon: notFound ? Icons.search_off : Icons.wifi_off,
@@ -93,9 +117,17 @@ class _ProductDetailViewState extends State<ProductDetailView> {
 }
 
 class _ProductDetailContent extends StatelessWidget {
-  const _ProductDetailContent({required this.product});
+  const _ProductDetailContent({
+    required this.product,
+    required this.quantity,
+    required this.onQuantityStep,
+    required this.onAdd,
+  });
 
   final Product product;
+  final int quantity;
+  final ValueChanged<int> onQuantityStep;
+  final VoidCallback? onAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -134,13 +166,6 @@ class _ProductDetailContent extends StatelessWidget {
           ],
           const SizedBox(height: 12),
           _IngredientsBox(ingredients: product.ingredients),
-          const SizedBox(height: 12),
-          Text(
-            formatOrderTotal(product.priceCents),
-            style: theme.textTheme.titleMedium?.copyWith(
-              color: product.available ? colors.primary : colors.onSurfaceVariant,
-            ),
-          ),
           if (!product.available) ...[
             const SizedBox(height: 12),
             const DinnaBanner(
@@ -148,6 +173,91 @@ class _ProductDetailContent extends StatelessWidget {
               message: 'Este produto está esgotado no momento.',
             ),
           ],
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _QuantityStepper(
+                quantity: quantity,
+                enabled: product.available,
+                onStep: onQuantityStep,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton(
+                  onPressed: product.available ? onAdd : null,
+                  child: Text(
+                    'Adicionar · ${formatOrderTotal(product.priceCents * quantity)}',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Seletor `− 1 +` do Figma (104×36). Fica entre 1 e
+/// [ProductDetailView.maxQuantity] e cresce com o tamanho do texto.
+class _QuantityStepper extends StatelessWidget {
+  const _QuantityStepper({required this.quantity, required this.enabled, required this.onStep});
+
+  final int quantity;
+  final bool enabled;
+  final ValueChanged<int> onStep;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    const buttonConstraints = BoxConstraints.tightFor(width: 36, height: 36);
+
+    return Container(
+      constraints: const BoxConstraints(minWidth: 104, minHeight: 36),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          IconButton(
+            tooltip: 'Diminuir quantidade',
+            constraints: buttonConstraints,
+            padding: EdgeInsets.zero,
+            iconSize: 18,
+            onPressed: enabled && quantity > 1 ? () => onStep(-1) : null,
+            icon: const Icon(Icons.remove),
+          ),
+          Semantics(
+            label: 'Quantidade',
+            value: '$quantity',
+            liveRegion: true,
+            excludeSemantics: true,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 28),
+              child: Text(
+                '$quantity',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: enabled ? colors.onSurface : colors.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Aumentar quantidade',
+            constraints: buttonConstraints,
+            padding: EdgeInsets.zero,
+            iconSize: 18,
+            onPressed: enabled && quantity < ProductDetailView.maxQuantity ? () => onStep(1) : null,
+            icon: const Icon(Icons.add),
+          ),
         ],
       ),
     );
