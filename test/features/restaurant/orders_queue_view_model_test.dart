@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dinna/core/domain/data_failure.dart';
 import 'package:dinna/core/domain/order.dart';
+import 'package:dinna/core/domain/order_item.dart';
 import 'package:dinna/core/domain/order_status.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:dinna/features/restaurant/orders_queue_view_model.dart';
@@ -24,7 +25,7 @@ void main() {
     await Future<void>.value();
   }
 
-  test('carrega a lista com ready acima de preparing e o restante por horário', () async {
+  test('carrega a lista com preparing acima de ready e o restante por horário', () async {
     final olderReceived = sampleOrder(
       id: 'o1',
       table: '4',
@@ -85,8 +86,45 @@ void main() {
     expect(viewModel.isLoading, isFalse);
     expect(viewModel.errorMessage, isNull);
     expect(viewModel.refreshError, isNull);
-    expect(viewModel.orders.map((order) => order.id), ['o4', 'o3', 'o1', 'o10', 'o2']);
+    expect(viewModel.orders.map((order) => order.id), ['o3', 'o4', 'o1', 'o10', 'o2']);
     expect(delay.durations, [OrdersQueueViewModel.defaultPollInterval]);
+  });
+
+  test('após PATCH sem snapshot, a fila preserva nome e totais do GET', () async {
+    final listed = sampleOrder(
+      id: 'o1',
+      status: OrderStatus.received,
+      items: [
+        OrderItem(
+          productId: 'p1',
+          quantity: 2,
+          note: 'sem cebola',
+          name: 'Burger Clássico',
+          unitPriceCents: 3290,
+          lineTotalCents: 6580,
+        ),
+      ],
+    );
+    final patched = sampleOrder(
+      id: 'o1',
+      status: OrderStatus.preparing,
+      items: [OrderItem(productId: 'p1', quantity: 2, note: 'sem cebola')],
+    );
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready([listed]),
+      updateStatus: (id, status) async => OrderUpdate.ready(patched),
+    );
+    keep(OrdersQueueViewModel(repository, delay: ControllableDelay().call));
+
+    viewModel.resume();
+    await flushAsync();
+    await viewModel.advanceStatus('o1');
+
+    final item = viewModel.orders.single.items.single;
+    expect(viewModel.orders.single.status, OrderStatus.preparing);
+    expect(item.name, 'Burger Clássico');
+    expect(item.unitPriceCents, 3290);
+    expect(item.lineTotalCents, 6580);
   });
 
   test('trata lista vazia como fila sem pedidos', () async {

@@ -181,7 +181,7 @@ class OrderDetailsViewModel extends ChangeNotifier {
       if (_disposed) return;
       final updated = result.order;
       if (updated != null) {
-        _order = updated;
+        _order = updated.preservingItemSnapshotsFrom(_order);
         _actionError = null;
         _actionFailure = null;
         return;

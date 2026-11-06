@@ -16,7 +16,7 @@ import 'order_repository.dart';
 /// acabar, sem esperar o intervalo. Depois do [dispose], a resposta pendente
 /// não altera estado nem notifica.
 ///
-/// A ordenação é local: `ready` sobe primeiro, depois `preparing`; dentro do
+/// A ordenação é local: `preparing` sobe primeiro, depois `ready`; dentro do
 /// mesmo grupo, `createdAt` crescente e, no empate, `id` lexicográfico.
 /// Pedidos `finished` não entram na fila ativa. Nomes vêm em `OrderItem.name`.
 class OrdersQueueViewModel extends ChangeNotifier {
@@ -212,7 +212,7 @@ class OrdersQueueViewModel extends ChangeNotifier {
     var found = false;
     for (final order in _orders) {
       if (order.id == updated.id) {
-        next.add(updated);
+        next.add(updated.preservingItemSnapshotsFrom(order));
         found = true;
       } else {
         next.add(order);
@@ -348,10 +348,10 @@ class OrdersQueueViewModel extends ChangeNotifier {
     return List.unmodifiable(active);
   }
 
-  /// Menor valor aparece antes. `ready` sobe; depois `preparing`; o restante por tempo.
+  /// Menor valor aparece antes. `preparing` sobe; depois `ready`; o restante por tempo.
   static int _queuePriority(OrderStatus status) => switch (status) {
-    OrderStatus.ready => 0,
-    OrderStatus.preparing => 1,
+    OrderStatus.preparing => 0,
+    OrderStatus.ready => 1,
     OrderStatus.received || OrderStatus.finished => 2,
   };
 

@@ -92,6 +92,19 @@ final class OrderItem {
     if (note != null) 'note': note,
   };
 
+  /// Mantém snapshot de [previous] quando esta resposta omite nome ou preços.
+  OrderItem preservingSnapshotFrom(OrderItem? previous) {
+    if (previous == null) return this;
+    return OrderItem(
+      productId: productId,
+      quantity: quantity,
+      note: note,
+      name: name ?? previous.name,
+      unitPriceCents: unitPriceCents ?? previous.unitPriceCents,
+      lineTotalCents: lineTotalCents ?? previous.lineTotalCents,
+    );
+  }
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;

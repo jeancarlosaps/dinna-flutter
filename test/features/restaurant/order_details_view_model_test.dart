@@ -273,6 +273,45 @@ void main() {
     expect(viewModel.table, '4');
   });
 
+  test('após PATCH sem snapshot, preserva nome e totais do pedido carregado', () async {
+    final products = FakeProductRepository(() async => ProductList.ready(const []));
+    final current = sampleOrder(
+      id: 'o1',
+      status: OrderStatus.preparing,
+      totalCents: 6580,
+      items: [
+        OrderItem(
+          productId: 'p1',
+          quantity: 2,
+          note: 'sem cebola',
+          name: 'Burger Clássico',
+          unitPriceCents: 3290,
+          lineTotalCents: 6580,
+        ),
+      ],
+    );
+    final orders = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      updateStatus: (id, status) async => OrderUpdate.ready(
+        sampleOrder(
+          id: 'o1',
+          status: OrderStatus.ready,
+          totalCents: 6580,
+          items: [OrderItem(productId: 'p1', quantity: 2, note: 'sem cebola')],
+        ),
+      ),
+    );
+    keep(OrderDetailsViewModel(products, orders, order: current));
+    await viewModel.resolveProducts();
+
+    await viewModel.advanceStatus();
+
+    expect(viewModel.status, OrderStatus.ready);
+    expect(viewModel.items.single.name, 'Burger Clássico');
+    expect(viewModel.items.single.lineTotalCents, 6580);
+    expect(viewModel.order.items.single.unitPriceCents, 3290);
+  });
+
   test('avança o status com o próximo passo e esconde o botão ao finalizar', () async {
     final products = FakeProductRepository(() async => ProductList.ready(const []));
     final orders = FakeOrderRepository(

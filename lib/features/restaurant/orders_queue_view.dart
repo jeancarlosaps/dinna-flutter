@@ -254,9 +254,12 @@ class _OrderTile extends StatelessWidget {
                 button: onOpen != null,
                 excludeSemantics: true,
                 onTap: onOpen,
-                label: onOpen == null
-                    ? 'Mesa ${order.table}, $time, $status'
-                    : 'Mesa ${order.table}, $time, $status. Ver detalhes',
+                label: _orderSemanticsLabel(
+                  order: order,
+                  time: time,
+                  status: status,
+                  canOpen: onOpen != null,
+                ),
                 child: InkWell(
                   onTap: onOpen,
                   child: Padding(
@@ -360,4 +363,17 @@ class _ItemRow extends StatelessWidget {
       ],
     );
   }
+}
+
+String _orderSemanticsLabel({
+  required Order order,
+  required String time,
+  required String status,
+  required bool canOpen,
+}) {
+  final items = [
+    for (final item in order.items) '${item.quantity}× ${orderItemDisplayName(item.name)}',
+  ].join(', ');
+  final summary = 'Mesa ${order.table}, $time, $status. $items';
+  return canOpen ? '$summary. Ver detalhes' : summary;
 }

@@ -98,19 +98,29 @@ void main() {
     final handle = tester.ensureSemantics();
     try {
       Order? selected;
+      final order = sampleOrder(
+        id: 'o1',
+        table: '12',
+        items: [
+          OrderItem(productId: 'p1', quantity: 2, note: null, name: 'Burger Clássico'),
+          OrderItem(productId: 'p2', quantity: 1, note: null, name: 'Suco'),
+        ],
+      );
       await pumpQueue(
         tester,
         () => OrdersQueueViewModel(
-          FakeOrderRepository(() async => OrderList.ready([sampleOrder(id: 'o1', table: '12')])),
+          FakeOrderRepository(() async => OrderList.ready([order])),
           delay: pendingPollDelay,
         ),
-        onOrderSelected: (context, order) => selected = order,
+        onOrderSelected: (context, selectedOrder) => selected = selectedOrder,
       );
       await tester.pumpAndSettle();
 
       final node = tester.getSemantics(find.bySemanticsLabel(RegExp('Ver detalhes')));
       expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
       expect(node.getSemanticsData().label, contains('Ver detalhes'));
+      expect(node.getSemanticsData().label, contains('2× Burger Clássico'));
+      expect(node.getSemanticsData().label, contains('1× Suco'));
 
       node.owner!.performAction(node.id, SemanticsAction.tap);
       await tester.pump();
