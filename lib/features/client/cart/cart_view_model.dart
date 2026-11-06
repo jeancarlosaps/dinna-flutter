@@ -267,6 +267,9 @@ class CartViewModel extends ChangeNotifier {
       _items
         ..clear()
         ..addAll(external);
+      _legacyCommitted
+        ..clear()
+        ..addAll(external);
       _notify();
       return;
     }
@@ -281,10 +284,13 @@ class CartViewModel extends ChangeNotifier {
     final next = _session!.read();
     final oldProductIds = _items.map((item) => item.productId).toSet();
     final nextProductIds = next.map((item) => item.productId).toSet();
+    final productsChanged = !_sameSet(oldProductIds, nextProductIds);
     _items
       ..clear()
       ..addAll(next);
-    if (!_sameSet(oldProductIds, nextProductIds)) {
+    // `list()` returns the full catalog, so an in-flight lookup already covers
+    // any cart changes that arrive before it completes.
+    if (productsChanged && !_resolving) {
       _requested = false;
       _settled = next.isEmpty;
       _failed = false;
@@ -294,7 +300,7 @@ class CartViewModel extends ChangeNotifier {
       _availability = const {};
     }
     _notify();
-    if (!_sameSet(oldProductIds, nextProductIds) && next.isNotEmpty) {
+    if (productsChanged && next.isNotEmpty && !_resolving) {
       unawaited(resolveProducts());
     }
   }

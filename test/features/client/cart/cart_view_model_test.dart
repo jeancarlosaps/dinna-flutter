@@ -4,6 +4,8 @@ import 'package:dinna/core/domain/cart_item.dart';
 import 'package:dinna/core/domain/data_failure.dart';
 import 'package:dinna/core/domain/product.dart';
 import 'package:dinna/features/client/cart/cart_lines.dart';
+import 'package:dinna/features/client/cart/cart_repository.dart';
+import 'package:dinna/features/client/cart/cart_session.dart';
 import 'package:dinna/features/client/cart/cart_view_model.dart';
 import 'package:dinna/features/menu/product_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -186,6 +188,42 @@ void main() {
     expect(lines.read().map((item) => item.productId), ['p1', 'p2']);
     expect(lines.read().first.quantity, 1);
     expect(viewModel.rows.map((row) => row.quantity), [1, 1]);
+
+    await viewModel.increase(0);
+
+    expect(lines.read().map((item) => item.productId), ['p1', 'p2']);
+    expect(lines.read().first.quantity, 2);
+    expect(viewModel.rows.map((row) => row.quantity), [2, 1]);
+  });
+
+  test('reutiliza a consulta pendente ao remover linha durante a leitura do cardápio', () async {
+    final cart = _MemoryCartRepository([
+      CartItem(lineId: 'line-1', productId: 'p1', quantity: 1, note: null),
+      CartItem(lineId: 'line-2', productId: 'p2', quantity: 1, note: null),
+    ]);
+    final session = CartSession(cart);
+    addTearDown(session.dispose);
+    await session.restore();
+
+    final catalog = Completer<ProductList>();
+    var catalogCalls = 0;
+    final products = FakeProductRepository(() {
+      catalogCalls++;
+      return catalog.future;
+    });
+    final viewModel = CartViewModel.persisted(products, session: session);
+    addTearDown(viewModel.dispose);
+
+    final pendingLookup = viewModel.resolveProducts();
+    await viewModel.removeAt(0);
+
+    expect(catalogCalls, 1);
+    catalog.complete(ProductList.ready([priced('p2', 'Salada', 2690)]));
+    await pendingLookup;
+
+    expect(viewModel.rows.single.name, 'Salada');
+    expect(viewModel.estimatedTotalCents, 2690);
+    expect(catalogCalls, 1);
   });
 
   test('índice fora da lista não grava', () async {
@@ -294,4 +332,31 @@ class _RecordingLines implements CartLines {
     items = List<CartItem>.of(next);
     return true;
   }
+}
+
+class _MemoryCartRepository implements CartRepository {
+  _MemoryCartRepository(this.items);
+
+  List<CartItem> items;
+
+  @override
+  Future<List<CartItem>> load() async => List<CartItem>.of(items);
+
+  @override
+  Future<CartItem> add({required String productId, required int quantity, String? note}) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<bool> update(CartItem item) async => false;
+
+  @override
+  Future<bool> remove(String lineId) async {
+    final oldLength = items.length;
+    items = items.where((item) => item.lineId != lineId).toList();
+    return items.length != oldLength;
+  }
+
+  @override
+  Future<List<CartItem>> removeConfirmed(List<CartItem> confirmedItems) async => items;
 }

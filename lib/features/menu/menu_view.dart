@@ -48,7 +48,6 @@ class MenuView extends StatefulWidget {
 
 class _MenuViewState extends State<MenuView> {
   late final MenuViewModel _viewModel;
-  var _isAddingProduct = false;
 
   @override
   void initState() {
@@ -71,35 +70,21 @@ class _MenuViewState extends State<MenuView> {
 
   void Function(Product)? get _openProduct {
     final createDetail = widget.createDetailViewModel;
-    if (createDetail == null) return null;
+    final session = widget.cartSession;
+    if (createDetail == null || (session != null && !session.isReady)) return null;
     return (product) => showProductDetail(
       context,
       createViewModel: () => createDetail(product.id),
-      onAdd: widget.cartSession?.isReady == true
-          ? (product, quantity) => unawaited(_addProduct(product, quantity))
-          : null,
+      onAdd: session == null ? null : (product, quantity) => _addProduct(product, quantity),
     );
   }
 
   Future<void> _addProduct(Product product, int quantity) async {
     final session = widget.cartSession;
-    if (_isAddingProduct || session == null || !session.isReady) return;
-    _isAddingProduct = true;
-
-    try {
-      await session.addLine(productId: product.id, quantity: quantity);
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('${product.name} adicionado ao carrinho.')));
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Não foi possível adicionar o produto. Tente novamente.')),
-      );
-    } finally {
-      _isAddingProduct = false;
+    if (session == null || !session.isReady) {
+      throw StateError('O carrinho ainda não foi restaurado');
     }
+    await session.addLine(productId: product.id, quantity: quantity);
   }
 
   @override
