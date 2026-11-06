@@ -1,6 +1,11 @@
+import 'dart:async';
+
 import 'package:dinna/app/theme/dinna_theme.dart';
+import 'package:dinna/core/domain/cart_item.dart';
 import 'package:dinna/core/domain/data_failure.dart';
 import 'package:dinna/core/domain/product.dart';
+import 'package:dinna/features/client/cart/cart_repository.dart';
+import 'package:dinna/features/client/cart/cart_session.dart';
 import 'package:dinna/features/menu/menu_view.dart';
 import 'package:dinna/features/menu/menu_view_model.dart';
 import 'package:dinna/features/menu/product_detail_view.dart';
@@ -36,7 +41,7 @@ Future<void> _pumpDetail(
   WidgetTester tester,
   FakeProductRepository repository, {
   String productId = 'p1',
-  void Function(Product product, int quantity)? onAdd,
+  FutureOr<void> Function(Product product, int quantity)? onAdd,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -148,7 +153,9 @@ void main() {
     await _pumpDetail(
       tester,
       repository,
-      onAdd: (product, quantity) => added.add((product.id, quantity)),
+      onAdd: (product, quantity) {
+        added.add((product.id, quantity));
+      },
     );
 
     await tester.tap(_increase);
@@ -172,7 +179,13 @@ void main() {
     final added = <int>[];
     final repository = _repository((_) async => ProductDetail.ready(_product(available: false)));
 
-    await _pumpDetail(tester, repository, onAdd: (_, quantity) => added.add(quantity));
+    await _pumpDetail(
+      tester,
+      repository,
+      onAdd: (_, quantity) {
+        added.add(quantity);
+      },
+    );
 
     expect(_addButton(tester).onPressed, isNull);
     expect(_iconButton(tester, _increase).onPressed, isNull);
@@ -381,6 +394,86 @@ void main() {
     expect(repository.findCalls, 1);
   });
 
+  testWidgets('só abre o detalhe depois de a restauração do carrinho terminar', (tester) async {
+    final cartRepository = _DeferredCartRepository();
+    final session = CartSession(cartRepository);
+    addTearDown(session.dispose);
+    final restore = session.restore();
+    final repository = FakeProductRepository(
+      () async => ProductList.ready([_product()]),
+      onFindById: (_) async => ProductDetail.ready(_product()),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: MenuView(
+          createViewModel: () => MenuViewModel(repository),
+          createDetailViewModel: (id) => ProductDetailViewModel(repository, productId: id),
+          cartSession: session,
+          onOpenCart: (_, _) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Burger Clássico'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(repository.findCalls, 0);
+
+    cartRepository.loadCompleter.complete(const []);
+    await restore;
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Burger Clássico'));
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(repository.findCalls, 1);
+  });
+
+  testWidgets('conclusão tardia não fecha outra rota após dispensar o detalhe', (tester) async {
+    final navigatorKey = GlobalKey<NavigatorState>();
+    final addCompleter = Completer<void>();
+    final repository = _repository((_) async => ProductDetail.ready(_product()));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        theme: DinnaTheme.light(),
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => FilledButton(
+              onPressed: () => showProductDetail(
+                context,
+                createViewModel: () => ProductDetailViewModel(repository, productId: 'p1'),
+                onAdd: (_, _) => addCompleter.future,
+              ),
+              child: const Text('Abrir detalhe'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Abrir detalhe'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Adicionar · R\$ 32,90'));
+    await tester.pump();
+
+    navigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    navigatorKey.currentState!.push<void>(
+      MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('Outra rota'))),
+    );
+    await tester.pumpAndSettle();
+
+    addCompleter.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Outra rota'), findsOneWidget);
+  });
+
   testWidgets('bottom sheet deixa o conteúdo acima da barra de navegação do sistema', (
     tester,
   ) async {
@@ -414,4 +507,25 @@ void main() {
     final detail = tester.getRect(find.byType(ProductDetailView));
     expect(detail.bottom, lessThanOrEqualTo(800 - navigationBar));
   });
+}
+
+class _DeferredCartRepository implements CartRepository {
+  final Completer<List<CartItem>> loadCompleter = Completer<List<CartItem>>();
+
+  @override
+  Future<List<CartItem>> load() => loadCompleter.future;
+
+  @override
+  Future<CartItem> add({required String productId, required int quantity, String? note}) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<bool> update(CartItem item) async => false;
+
+  @override
+  Future<bool> remove(String lineId) async => false;
+
+  @override
+  Future<List<CartItem>> removeConfirmed(List<CartItem> confirmedItems) async => const [];
 }

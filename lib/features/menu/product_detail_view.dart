@@ -21,7 +21,7 @@ const productDetailMaxHeightFactor = 0.9;
 Future<void> showProductDetail(
   BuildContext context, {
   required ProductDetailViewModel Function() createViewModel,
-  void Function(Product product, int quantity)? onAdd,
+  FutureOr<void> Function(Product product, int quantity)? onAdd,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -36,7 +36,7 @@ Future<void> showProductDetail(
     // mantém o fim do conteúdo fora da barra de navegação do sistema.
     builder: (_) => SafeArea(
       top: false,
-      child: ProductDetailView(createViewModel: createViewModel, onAdd: onAdd),
+      child: ProductDetailView(createViewModel: createViewModel, onAdd: onAdd, closeOnAdd: true),
     ),
   );
 }
@@ -44,13 +44,21 @@ Future<void> showProductDetail(
 /// Conteúdo do detalhe: carrega o produto ao abrir e mostra o produto, o
 /// carregamento ou a falha.
 class ProductDetailView extends StatefulWidget {
-  const ProductDetailView({super.key, required this.createViewModel, this.onAdd});
+  const ProductDetailView({
+    super.key,
+    required this.createViewModel,
+    this.onAdd,
+    this.closeOnAdd = false,
+  });
 
   final ProductDetailViewModel Function() createViewModel;
 
   /// Recebe o produto e a quantidade escolhida. Nulo deixa o botão
   /// "Adicionar" desabilitado.
-  final void Function(Product product, int quantity)? onAdd;
+  final FutureOr<void> Function(Product product, int quantity)? onAdd;
+
+  /// Fecha apenas se a inclusão terminou enquanto este detalhe ainda é a rota atual.
+  final bool closeOnAdd;
 
   /// Limite do seletor de quantidade.
   static const maxQuantity = 99;
@@ -64,6 +72,31 @@ class _ProductDetailViewState extends State<ProductDetailView> {
 
   /// Quantidade local da tela. Começa em 1 e não passa pelo carrinho.
   int _quantity = 1;
+  bool _isAdding = false;
+  String? _addError;
+
+  Future<void> _addProduct(Product product) async {
+    final add = widget.onAdd;
+    if (add == null || _isAdding) return;
+    final quantity = _quantity;
+    setState(() {
+      _isAdding = true;
+      _addError = null;
+    });
+
+    try {
+      await add(product, quantity);
+      if (!mounted || !widget.closeOnAdd || ModalRoute.of(context)?.isCurrent != true) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('${product.name} adicionado ao carrinho.')));
+      Navigator.of(context).pop();
+    } catch (_) {
+      if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
+      setState(() => _addError = 'Não foi possível adicionar o produto. Tente novamente.');
+    } finally {
+      if (mounted) setState(() => _isAdding = false);
+    }
+  }
 
   /// Soma [delta] à quantidade atual, e não ao valor do último build:
   /// toques seguidos antes do próximo frame não se perdem.
@@ -95,8 +128,10 @@ class _ProductDetailViewState extends State<ProductDetailView> {
           ProductDetailStatus.ready when product != null => _ProductDetailContent(
             product: product,
             quantity: _quantity,
+            isAdding: _isAdding,
+            addError: _addError,
             onQuantityStep: _changeQuantity,
-            onAdd: widget.onAdd == null ? null : () => widget.onAdd!(product, _quantity),
+            onAdd: widget.onAdd == null ? null : () => unawaited(_addProduct(product)),
           ),
           ProductDetailStatus.failed => SingleChildScrollView(
             child: DinnaEmptyState(
@@ -120,12 +155,16 @@ class _ProductDetailContent extends StatelessWidget {
   const _ProductDetailContent({
     required this.product,
     required this.quantity,
+    required this.isAdding,
+    required this.addError,
     required this.onQuantityStep,
     required this.onAdd,
   });
 
   final Product product;
   final int quantity;
+  final bool isAdding;
+  final String? addError;
   final ValueChanged<int> onQuantityStep;
   final VoidCallback? onAdd;
 
@@ -173,22 +212,31 @@ class _ProductDetailContent extends StatelessWidget {
               message: 'Este produto está esgotado no momento.',
             ),
           ],
+          if (addError != null) ...[
+            const SizedBox(height: 12),
+            DinnaBanner(tone: DinnaBannerTone.error, message: addError!),
+          ],
           const SizedBox(height: 16),
           Row(
             children: [
               _QuantityStepper(
                 quantity: quantity,
-                enabled: product.available,
+                enabled: product.available && !isAdding,
                 onStep: onQuantityStep,
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: FilledButton(
-                  onPressed: product.available ? onAdd : null,
-                  child: Text(
-                    'Adicionar · ${formatOrderTotal(product.priceCents * quantity)}',
-                    textAlign: TextAlign.center,
-                  ),
+                  onPressed: product.available && !isAdding ? onAdd : null,
+                  child: isAdding
+                      ? const SizedBox.square(
+                          dimension: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(
+                          'Adicionar · ${formatOrderTotal(product.priceCents * quantity)}',
+                          textAlign: TextAlign.center,
+                        ),
                 ),
               ),
             ],

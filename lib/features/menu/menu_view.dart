@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../core/domain/product.dart';
 import '../../shared/widgets/dinna_empty_state.dart';
 import '../../shared/widgets/dinna_logo.dart';
+import '../client/cart/cart_session.dart';
 import '../restaurant/order_format.dart';
 import 'menu_view_model.dart';
 import 'product_detail_view.dart';
@@ -25,6 +26,7 @@ class MenuView extends StatefulWidget {
     required this.createViewModel,
     required this.onOpenCart,
     this.createDetailViewModel,
+    this.cartSession,
     this.table,
   });
 
@@ -32,6 +34,9 @@ class MenuView extends StatefulWidget {
 
   /// Cria o ViewModel do detalhe para o id tocado. Nulo: o card não abre o detalhe.
   final ProductDetailViewModel Function(String productId)? createDetailViewModel;
+
+  /// Sessão compartilhada que confirma a inclusão no armazenamento local.
+  final CartSession? cartSession;
   final void Function(BuildContext context, String? table) onOpenCart;
 
   /// Mesa recebida da tela da mesa. Ausente quando o cardápio abre por outro caminho.
@@ -48,19 +53,38 @@ class _MenuViewState extends State<MenuView> {
   void initState() {
     super.initState();
     _viewModel = widget.createViewModel();
+    widget.cartSession?.addListener(_onCartSessionChanged);
     unawaited(_viewModel.load());
+  }
+
+  void _onCartSessionChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    widget.cartSession?.removeListener(_onCartSessionChanged);
     _viewModel.dispose();
     super.dispose();
   }
 
   void Function(Product)? get _openProduct {
     final createDetail = widget.createDetailViewModel;
-    if (createDetail == null) return null;
-    return (product) => showProductDetail(context, createViewModel: () => createDetail(product.id));
+    final session = widget.cartSession;
+    if (createDetail == null || (session != null && !session.isReady)) return null;
+    return (product) => showProductDetail(
+      context,
+      createViewModel: () => createDetail(product.id),
+      onAdd: session == null ? null : (product, quantity) => _addProduct(product, quantity),
+    );
+  }
+
+  Future<void> _addProduct(Product product, int quantity) async {
+    final session = widget.cartSession;
+    if (session == null || !session.isReady) {
+      throw StateError('O carrinho ainda não foi restaurado');
+    }
+    await session.addLine(productId: product.id, quantity: quantity);
   }
 
   @override
