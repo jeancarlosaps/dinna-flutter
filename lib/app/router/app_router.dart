@@ -138,7 +138,8 @@ class AppRouter {
         onOrderSelected: _openOrder,
       ),
       AppRoutes.restaurantOrder => OrderDetailsView(
-        createViewModel: (order) => OrderDetailsViewModel(productRepository, order: order),
+        createViewModel: (order) =>
+            OrderDetailsViewModel(productRepository, orderRepository, order: order),
       ),
       _ when name != null && _isFlowRoute(name) => RoutePlaceholder(routeName: name),
       _ => UnknownRouteView(routeName: name),

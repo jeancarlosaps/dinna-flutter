@@ -19,12 +19,43 @@ String orderStatusLabel(OrderStatus status) => switch (status) {
   OrderStatus.finished => 'Finalizado',
 };
 
+/// Texto do botão de um toque. `null` quando não há próximo status.
+String? orderAdvanceActionLabel(OrderStatus status) => switch (status) {
+  OrderStatus.received => 'Iniciar preparo',
+  OrderStatus.preparing => 'Marcar como pronto',
+  OrderStatus.ready => 'Finalizar pedido',
+  OrderStatus.finished => null,
+};
+
 Color orderStatusColor(ColorScheme scheme, OrderStatus status) => switch (status) {
   OrderStatus.received => scheme.primary,
   OrderStatus.preparing => scheme.tertiary,
   OrderStatus.ready => scheme.secondary,
   OrderStatus.finished => scheme.onSurfaceVariant,
 };
+
+Color orderStatusContainerColor(ColorScheme scheme, OrderStatus status) => switch (status) {
+  OrderStatus.received => scheme.primaryContainer,
+  OrderStatus.preparing => scheme.tertiaryContainer,
+  OrderStatus.ready => scheme.secondaryContainer,
+  OrderStatus.finished => scheme.surfaceContainerHighest,
+};
+
+String formatOrderItemCount(int count) => count == 1 ? '1 item' : '$count itens';
+
+/// Nome exibido na cozinha. Sem catálogo, ainda deixa claro que é um produto.
+String orderItemDisplayName(String? name) {
+  final trimmed = name?.trim();
+  if (trimmed == null || trimmed.isEmpty) return 'Produto';
+  return trimmed;
+}
+
+/// Observação limpa do item, ou `null` quando vazia.
+String? orderItemNote(String? note) {
+  final trimmed = note?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  return trimmed;
+}
 
 /// `totalCents` do contrato, em reais. O model já garante valor >= 0.
 String formatOrderTotal(int totalCents) {

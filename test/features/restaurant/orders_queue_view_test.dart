@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dinna/app/router/app_router.dart';
 import 'package:dinna/app/theme/dinna_theme.dart';
 import 'package:dinna/core/domain/order.dart';
+import 'package:dinna/core/domain/order_item.dart';
 import 'package:dinna/core/domain/order_status.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:dinna/features/restaurant/orders_queue_view.dart';
@@ -97,19 +98,29 @@ void main() {
     final handle = tester.ensureSemantics();
     try {
       Order? selected;
+      final order = sampleOrder(
+        id: 'o1',
+        table: '12',
+        items: [
+          OrderItem(productId: 'p1', quantity: 2, note: null, name: 'Burger Clássico'),
+          OrderItem(productId: 'p2', quantity: 1, note: null, name: 'Suco'),
+        ],
+      );
       await pumpQueue(
         tester,
         () => OrdersQueueViewModel(
-          FakeOrderRepository(() async => OrderList.ready([sampleOrder(id: 'o1', table: '12')])),
+          FakeOrderRepository(() async => OrderList.ready([order])),
           delay: pendingPollDelay,
         ),
-        onOrderSelected: (context, order) => selected = order,
+        onOrderSelected: (context, selectedOrder) => selected = selectedOrder,
       );
       await tester.pumpAndSettle();
 
-      final node = tester.getSemantics(find.byType(Card));
+      final node = tester.getSemantics(find.bySemanticsLabel(RegExp('Ver detalhes')));
       expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
-      expect(node.getSemanticsData().label, contains('Abrir detalhes'));
+      expect(node.getSemanticsData().label, contains('Ver detalhes'));
+      expect(node.getSemanticsData().label, contains('2× Burger Clássico'));
+      expect(node.getSemanticsData().label, contains('1× Suco'));
 
       node.owner!.performAction(node.id, SemanticsAction.tap);
       await tester.pump();
@@ -119,6 +130,73 @@ void main() {
     } finally {
       handle.dispose();
     }
+  });
+
+  testWidgets('abre o detalhe pelo card sem botão de avanço na fila', (tester) async {
+    final order = sampleOrder(id: 'o1', table: '4', status: OrderStatus.received);
+    Order? selected;
+    final repository = FakeOrderRepository(() async => OrderList.ready([order]));
+
+    await pumpQueue(
+      tester,
+      () => OrdersQueueViewModel(repository, delay: pendingPollDelay),
+      onOrderSelected: (context, selectedOrder) => selected = selectedOrder,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Iniciar preparo'), findsNothing);
+    expect(find.text('Ver detalhes'), findsOneWidget);
+    await tester.tap(find.text('Ver detalhes'));
+    await tester.pumpAndSettle();
+
+    expect(selected?.id, 'o1');
+    expect(selected?.status, OrderStatus.received);
+    expect(repository.updateCalls, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('mostra nome do prato e quantidade sem observação no card', (tester) async {
+    final order = sampleOrder(
+      id: 'o1',
+      table: '12',
+      status: OrderStatus.received,
+      totalCents: 10470,
+      items: [
+        OrderItem(
+          productId: 'p1',
+          quantity: 2,
+          note: 'sem cebola',
+          name: 'Burger Clássico',
+          unitPriceCents: 3290,
+          lineTotalCents: 6580,
+        ),
+        OrderItem(
+          productId: 'p2',
+          quantity: 1,
+          note: null,
+          name: 'Burger Smoke',
+          unitPriceCents: 3890,
+          lineTotalCents: 3890,
+        ),
+      ],
+    );
+
+    await pumpQueue(
+      tester,
+      () => OrdersQueueViewModel(
+        FakeOrderRepository(() async => OrderList.ready([order])),
+        delay: pendingPollDelay,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 pedido'), findsOneWidget);
+    expect(find.text('2×'), findsOneWidget);
+    expect(find.text('Burger Clássico'), findsOneWidget);
+    expect(find.text('sem cebola'), findsNothing);
+    expect(find.text('1×'), findsOneWidget);
+    expect(find.text('Burger Smoke'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('mostra mesa, horário e status na ordem da fila', (tester) async {
@@ -147,7 +225,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Mais antigos primeiro'), findsOneWidget);
+    expect(find.text('2 pedidos'), findsOneWidget);
+    expect(find.text('Em preparo primeiro'), findsNothing);
     expect(find.text('Mesa 4'), findsOneWidget);
     expect(find.text('Preparando'), findsOneWidget);
     expect(find.text('Mesa 12'), findsOneWidget);

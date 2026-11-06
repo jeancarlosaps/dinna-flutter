@@ -76,6 +76,20 @@ int readRequiredInt(Map<String, Object?> json, String key, {required int min}) {
   return value;
 }
 
+/// Ausente e `null` viram `null`. Outro tipo é erro: não há coerção.
+int? readOptionalInt(Map<String, Object?> json, String key, {int min = 0}) {
+  if (!json.containsKey(key) || json[key] == null) return null;
+
+  final value = json[key];
+  if (value is! int) {
+    throw FormatException('Campo $key deve ser inteiro');
+  }
+  if (value < min) {
+    throw FormatException('Campo $key deve ser >= $min');
+  }
+  return value;
+}
+
 bool readRequiredBool(Map<String, Object?> json, String key) {
   if (!json.containsKey(key) || json[key] == null) {
     throw FormatException('Campo $key é obrigatório');

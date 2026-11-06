@@ -438,6 +438,29 @@ void main() {
       ),
     );
   });
+
+  test('envia PATCH com corpo JSON e decodifica a resposta', () async {
+    late http.Request requested;
+    final client = ApiClient(
+      baseUrl: baseUrl,
+      httpClient: MockClient((request) async {
+        requested = request;
+        return http.Response(
+          jsonEncode({'id': 'o1', 'status': 'preparing'}),
+          200,
+          headers: const {'content-type': 'application/json; charset=utf-8'},
+        );
+      }),
+    );
+
+    final body = await client.patchJson('/orders/o1/status', {'status': 'preparing'});
+
+    expect(requested.method, 'PATCH');
+    expect(requested.url.toString(), 'http://localhost:3333/orders/o1/status');
+    expect(requested.headers['Content-Type'], contains('application/json'));
+    expect(jsonDecode(requested.body), {'status': 'preparing'});
+    expect(body, {'id': 'o1', 'status': 'preparing'});
+  });
 }
 
 /// A requisição sai; a leitura do corpo cai.

@@ -32,11 +32,26 @@ class ApiClient {
       'Não foi possível confirmar o envio. O pedido pode ter sido registrado.';
 
   Future<Object?> getJson(String path) async {
+    return _send(
+      () => _httpClient.get(baseUrl.resolve(path), headers: const {'Accept': 'application/json'}),
+    );
+  }
+
+  /// `PATCH` com corpo JSON. Usado por `PATCH /orders/:id/status`.
+  Future<Object?> patchJson(String path, Map<String, Object?> body) {
+    return _send(
+      () => _httpClient.patch(
+        baseUrl.resolve(path),
+        headers: const {'Accept': 'application/json', 'Content-Type': 'application/json'},
+        body: jsonEncode(body),
+      ),
+    );
+  }
+
+  Future<Object?> _send(Future<http.Response> Function() request) async {
     final http.Response response;
     try {
-      response = await _httpClient
-          .get(baseUrl.resolve(path), headers: const {'Accept': 'application/json'})
-          .timeout(timeout);
+      response = await request().timeout(timeout);
     } on TimeoutException {
       throw const ApiException('Tempo de resposta esgotado');
     } on SocketException catch (error) {

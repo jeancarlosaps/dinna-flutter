@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/domain/data_failure.dart';
 import '../../core/domain/order.dart';
+import '../../core/domain/order_status.dart';
 import 'order_repository.dart';
 
 /// Fila do restaurante: ViewModel → [OrderRepository]. Não conhece HTTP.
@@ -15,8 +16,9 @@ import 'order_repository.dart';
 /// acabar, sem esperar o intervalo. Depois do [dispose], a resposta pendente
 /// não altera estado nem notifica.
 ///
-/// A ordenação é local: `createdAt` crescente e, no empate, `id` em ordem
-/// lexicográfica. É a mesma chave do `ORDER BY created_at ASC, o.id ASC` da API.
+/// A ordenação é local: `preparing` sobe primeiro, depois `ready`; dentro do
+/// mesmo grupo, `createdAt` crescente e, no empate, `id` lexicográfico.
+/// Pedidos `finished` não entram na fila ativa. Nomes vêm em `OrderItem.name`.
 class OrdersQueueViewModel extends ChangeNotifier {
   OrdersQueueViewModel(
     this._repository, {
@@ -34,6 +36,12 @@ class OrdersQueueViewModel extends ChangeNotifier {
   /// Mensagem de tela quando o repository deixa escapar uma falha que não traduziu.
   static const unexpectedFailureMessage = 'Não foi possível carregar a fila';
 
+  /// Mensagem quando o avanço falha sem texto utilizável.
+  static const unexpectedAdvanceMessage = 'Não foi possível atualizar o status';
+
+  /// Conflito de transição (ex.: outro device já avançou).
+  static const staleStatusMessage = 'Status desatualizado. Atualizamos a fila.';
+
   static Future<void> _wait(Duration duration) => Future<void>.delayed(duration);
 
   List<Order> _orders = const [];
@@ -41,7 +49,10 @@ class OrdersQueueViewModel extends ChangeNotifier {
   bool _loading = false;
   String? _errorMessage;
   String? _refreshError;
+  String? _actionError;
   DataFailure? _failure;
+  DataFailure? _actionFailure;
+  final Set<String> _updatingIds = {};
   bool _active = false;
   bool _started = false;
   bool _disposed = false;
@@ -49,7 +60,7 @@ class OrdersQueueViewModel extends ChangeNotifier {
   bool _refreshSoon = false;
   Completer<void>? _signal;
 
-  /// Pedidos já ordenados. Vazio antes da primeira resposta com sucesso.
+  /// Pedidos ativos já ordenados. Vazio antes da primeira resposta com sucesso.
   List<Order> get orders => _orders;
 
   /// Carregamento que ocupa a tela. Atualização com dados na tela não liga isto.
@@ -64,16 +75,22 @@ class OrdersQueueViewModel extends ChangeNotifier {
   /// Falha de uma atualização depois que a lista já existe. A lista permanece.
   String? get refreshError => _refreshError;
 
+  /// Falha do último avanço de status. A lista permanece no status anterior.
+  String? get actionError => _actionError;
+
   /// Classificação da falha atual, inicial ou de atualização. Nula com a lista válida.
   DataFailure? get failure => _failure;
+
+  /// Classificação da falha do avanço. Nula quando o avanço não falhou.
+  DataFailure? get actionFailure => _actionFailure;
 
   /// Lista válida e sem pedidos. Erro inicial não é fila vazia.
   bool get isEmpty => _hasLoaded && _orders.isEmpty && _errorMessage == null;
 
+  /// `true` enquanto o PATCH deste pedido está em voo.
+  bool isUpdating(String orderId) => _updatingIds.contains(orderId);
+
   /// Liga a rotina. Se estava pausada, consulta assim que o ciclo acordar.
-  ///
-  /// Com uma consulta em voo, não abre outra. A rotina pede a próxima assim
-  /// que a atual terminar.
   void resume() {
     if (_disposed || _active) return;
     _active = true;
@@ -94,6 +111,123 @@ class OrdersQueueViewModel extends ChangeNotifier {
   Future<void> retry() {
     if (_disposed) return Future<void>.value();
     return _fetch(background: _hasLoaded);
+  }
+
+  /// Limpa o banner do último avanço falho.
+  void clearActionError() {
+    if (_disposed || (_actionError == null && _actionFailure == null)) return;
+    _actionError = null;
+    _actionFailure = null;
+    _notify();
+  }
+
+  /// Avança um passo o status do pedido. Só um PATCH por id por vez.
+  ///
+  /// Devolve o pedido atualizado em sucesso; `null` se falhou, foi ignorado
+  /// ou o pedido saiu da fila (`finished`).
+  Future<Order?> advanceStatus(String orderId) async {
+    if (_disposed || _updatingIds.contains(orderId)) return null;
+
+    Order? current;
+    for (final order in _orders) {
+      if (order.id == orderId) {
+        current = order;
+        break;
+      }
+    }
+    final next = current?.status.next;
+    if (current == null || next == null) return null;
+
+    _updatingIds.add(orderId);
+    _actionError = null;
+    _actionFailure = null;
+    _notify();
+
+    try {
+      final result = await _repository.updateStatus(id: orderId, status: next);
+      if (_disposed) return null;
+      final updated = result.order;
+      if (updated != null) {
+        _applyUpdatedOrder(updated);
+        if (updated.status == OrderStatus.finished) return null;
+        return updated;
+      }
+      await _handleAdvanceFailure(
+        orderId,
+        result.message,
+        result.failure ?? DataFailure.unavailable,
+      );
+      return null;
+    } catch (error, stackTrace) {
+      if (_disposed) return null;
+      await _handleAdvanceFailure(orderId, unexpectedAdvanceMessage, DataFailure.unavailable);
+      if (kDebugMode) {
+        FlutterError.presentError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'orders queue view model',
+            context: ErrorDescription('ao avançar o status do pedido'),
+          ),
+        );
+      }
+      return null;
+    } finally {
+      if (!_disposed) {
+        _updatingIds.remove(orderId);
+        _notify();
+      }
+    }
+  }
+
+  Future<void> _handleAdvanceFailure(String orderId, String? message, DataFailure failure) async {
+    final text = message == null || message.isEmpty ? unexpectedAdvanceMessage : message;
+    if (failure == DataFailure.notFound) {
+      _removeOrder(orderId);
+      _actionError = text;
+      _actionFailure = failure;
+      _notify();
+      return;
+    }
+    if (failure == DataFailure.conflict) {
+      _actionError = staleStatusMessage;
+      _actionFailure = failure;
+      _notify();
+      await _fetch(background: true);
+      return;
+    }
+    _actionError = text;
+    _actionFailure = failure;
+    _notify();
+  }
+
+  void _applyUpdatedOrder(Order updated) {
+    _actionError = null;
+    _actionFailure = null;
+    if (updated.status == OrderStatus.finished) {
+      _removeOrder(updated.id);
+      return;
+    }
+    final next = <Order>[];
+    var found = false;
+    for (final order in _orders) {
+      if (order.id == updated.id) {
+        next.add(updated.preservingItemSnapshotsFrom(order));
+        found = true;
+      } else {
+        next.add(order);
+      }
+    }
+    if (!found) next.add(updated);
+    _orders = _sorted(next);
+    _notify();
+  }
+
+  void _removeOrder(String orderId) {
+    _orders = List.unmodifiable([
+      for (final order in _orders)
+        if (order.id != orderId) order,
+    ]);
   }
 
   Future<void> _run() async {
@@ -200,14 +334,26 @@ class OrdersQueueViewModel extends ChangeNotifier {
   }
 
   List<Order> _sorted(List<Order> orders) {
-    final sorted = [...orders]
-      ..sort((a, b) {
-        final byTime = a.createdAt.compareTo(b.createdAt);
-        if (byTime != 0) return byTime;
-        return a.id.compareTo(b.id);
-      });
-    return List.unmodifiable(sorted);
+    final active = [
+      for (final order in orders)
+        if (order.status != OrderStatus.finished) order,
+    ];
+    active.sort((a, b) {
+      final byPriority = _queuePriority(a.status).compareTo(_queuePriority(b.status));
+      if (byPriority != 0) return byPriority;
+      final byTime = a.createdAt.compareTo(b.createdAt);
+      if (byTime != 0) return byTime;
+      return a.id.compareTo(b.id);
+    });
+    return List.unmodifiable(active);
   }
+
+  /// Menor valor aparece antes. `preparing` sobe; depois `ready`; o restante por tempo.
+  static int _queuePriority(OrderStatus status) => switch (status) {
+    OrderStatus.preparing => 0,
+    OrderStatus.ready => 1,
+    OrderStatus.received || OrderStatus.finished => 2,
+  };
 
   void _completeSignal() {
     final signal = _signal;

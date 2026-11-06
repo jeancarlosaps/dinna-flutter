@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/router/app_route_args.dart';
 import '../../core/domain/order.dart';
+import '../../core/domain/order_status.dart';
 import '../../shared/widgets/dinna_banner.dart';
 import '../../shared/widgets/dinna_empty_state.dart';
 import 'order_details_view_model.dart';
@@ -12,8 +13,7 @@ import 'order_format.dart';
 /// Detalhe de um pedido da fila, na rota `/restaurant/order`.
 ///
 /// Lê [RestaurantOrderArgs] da rota. Sem o pedido já carregado, explica a
-/// ausência e não consulta `GET /orders`. O [OrderDetailsViewModel] nasce e
-/// morre com o State.
+/// ausência e não consulta `GET /orders`. O avanço de status fica fixo no rodapé.
 class OrderDetailsView extends StatefulWidget {
   const OrderDetailsView({super.key, required this.createViewModel});
 
@@ -25,13 +25,11 @@ class OrderDetailsView extends StatefulWidget {
 
 class _OrderDetailsViewState extends State<OrderDetailsView> {
   OrderDetailsViewModel? _viewModel;
-  var _resolvedArguments = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_resolvedArguments) return;
-    _resolvedArguments = true;
+    if (_viewModel != null) return;
     final order = _orderFromRoute();
     if (order == null) return;
     final viewModel = widget.createViewModel(order);
@@ -61,7 +59,7 @@ class _OrderDetailsViewState extends State<OrderDetailsView> {
           ? const _MissingOrder()
           : ListenableBuilder(
               listenable: viewModel,
-              builder: (context, _) => _DetailsBody(viewModel: viewModel),
+              builder: (context, _) => _DetailsScaffold(viewModel: viewModel),
             ),
     );
   }
@@ -76,6 +74,59 @@ class _MissingOrder extends StatelessWidget {
       icon: Icons.receipt_long_outlined,
       title: 'Pedido indisponível',
       message: 'Abra o pedido pela fila para ver a mesa, os itens e o horário.',
+    );
+  }
+}
+
+class _DetailsScaffold extends StatelessWidget {
+  const _DetailsScaffold({required this.viewModel});
+
+  final OrderDetailsViewModel viewModel;
+
+  @override
+  Widget build(BuildContext context) {
+    final action = orderAdvanceActionLabel(viewModel.status);
+    final ready = viewModel.status == OrderStatus.ready;
+    final scheme = Theme.of(context).colorScheme;
+
+    return Column(
+      children: [
+        Expanded(child: _DetailsBody(viewModel: viewModel)),
+        if (action != null)
+          Material(
+            elevation: 6,
+            color: scheme.surfaceContainerLowest,
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 720),
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        backgroundColor: ready ? scheme.secondary : null,
+                        foregroundColor: ready ? scheme.onSecondary : null,
+                      ),
+                      onPressed: viewModel.isUpdating ? null : viewModel.advanceStatus,
+                      child: viewModel.isUpdating
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: scheme.onPrimary,
+                              ),
+                            )
+                          : Text(action),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -100,29 +151,58 @@ class _DetailsBody extends StatelessWidget {
 
   Widget _content(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final items = viewModel.items;
     final lookupMessage = viewModel.productLookupMessage;
+    final actionError = viewModel.actionError;
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
         _SummaryCard(viewModel: viewModel),
+        if (actionError != null) ...[
+          const SizedBox(height: 10),
+          DinnaBanner(
+            tone: DinnaBannerTone.error,
+            title: 'Não foi possível avançar',
+            message: actionError,
+          ),
+        ],
         if (lookupMessage != null) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           DinnaBanner(
             tone: DinnaBannerTone.warning,
             title: 'Nomes indisponíveis',
             message: lookupMessage,
           ),
         ],
-        const SizedBox(height: 20),
-        Text('Itens', style: theme.textTheme.titleMedium),
-        if (viewModel.isResolvingProducts) ...[const SizedBox(height: 12), const _ResolvingNames()],
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
+        Text('Itens', style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+        if (viewModel.isResolvingProducts) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Carregando nomes…',
+                style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 8),
         for (var index = 0; index < items.length; index++) ...[
-          if (index > 0) const SizedBox(height: 12),
+          if (index > 0) const SizedBox(height: 8),
           _ItemCard(item: items[index]),
         ],
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
+        const Divider(height: 1),
+        const SizedBox(height: 12),
         _TotalRow(totalCents: viewModel.totalCents),
       ],
     );
@@ -137,6 +217,7 @@ class _SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final time = formatOrderTimestamp(viewModel.createdAt);
     final status = orderStatusLabel(viewModel.status);
     return Semantics(
@@ -144,63 +225,40 @@ class _SummaryCard extends StatelessWidget {
       excludeSemantics: true,
       label: 'Mesa ${viewModel.table}, $time, $status',
       child: Card(
+        margin: EdgeInsets.zero,
         child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          child: Row(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
                       'Mesa ${viewModel.table}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium,
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    time,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                    const SizedBox(height: 4),
+                    Text(
+                      time,
+                      style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-              const SizedBox(height: 8),
               Text(
                 status,
                 style: theme.textTheme.labelLarge?.copyWith(
-                  color: orderStatusColor(theme.colorScheme, viewModel.status),
-                  fontWeight: FontWeight.w600,
+                  color: orderStatusColor(scheme, viewModel.status),
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
           ),
         ),
       ),
-    );
-  }
-}
-
-class _ResolvingNames extends StatelessWidget {
-  const _ResolvingNames();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            'Carregando nomes dos produtos',
-            style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -213,27 +271,48 @@ class _ItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final note = item.note;
     return Card(
+      margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('${item.quantity}×', style: theme.textTheme.titleMedium),
-                const SizedBox(width: 12),
-                Expanded(child: Text(item.name, style: theme.textTheme.bodyLarge)),
+                Text(
+                  '${item.quantity}×',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: scheme.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    item.name,
+                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                if (item.lineTotalCents != null) ...[
+                  const SizedBox(width: 10),
+                  Text(
+                    formatOrderTotal(item.lineTotalCents!),
+                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                ],
               ],
             ),
             if (note != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                note,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+              const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsets.only(left: 28),
+                child: Text(
+                  note,
+                  style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
                 ),
               ),
             ],
@@ -254,8 +333,16 @@ class _TotalRow extends StatelessWidget {
     final theme = Theme.of(context);
     return Row(
       children: [
-        Expanded(child: Text('Total', style: theme.textTheme.titleMedium)),
-        Text(formatOrderTotal(totalCents), style: theme.textTheme.titleMedium),
+        Expanded(
+          child: Text(
+            'Total',
+            style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+        ),
+        Text(
+          formatOrderTotal(totalCents),
+          style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
       ],
     );
   }

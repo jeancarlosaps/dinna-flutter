@@ -1,11 +1,13 @@
 import '../../core/domain/cart_item.dart';
 import '../../core/domain/data_failure.dart';
 import '../../core/domain/order.dart';
+import '../../core/domain/order_status.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import 'order_repository.dart';
 
-/// Repository concreto de `GET /orders` e `POST /orders`.
+/// Repository concreto de `GET /orders`, `POST /orders` e
+/// `PATCH /orders/:id/status`.
 ///
 /// A listagem não envia `status` nem `table`; a fila pede a lista inteira.
 /// A criação envia mesa e itens. `totalCents` é o da resposta, não uma soma
@@ -149,5 +151,19 @@ class HttpOrderRepository implements OrderRepository {
   bool _provenWithoutEffect(int? status, String? code) {
     return (status == 400 && code == validationErrorCode) ||
         (status == 404 && code == productNotFoundCode);
+  }
+
+  @override
+  Future<OrderUpdate> updateStatus({required String id, required OrderStatus status}) async {
+    try {
+      final body = await _apiClient.patchJson('/orders/${Uri.encodeComponent(id)}/status', {
+        'status': status.value,
+      });
+      return OrderUpdate.ready(Order.fromJson(body));
+    } on ApiException catch (error) {
+      return OrderUpdate.unavailable(error.message, failure: error.failure, detail: error.detail);
+    } on FormatException {
+      return const OrderUpdate.unavailable(unexpectedResponseMessage);
+    }
   }
 }

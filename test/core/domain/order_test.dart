@@ -108,6 +108,41 @@ void main() {
       expect(order.items, hasLength(1));
     });
 
+    test('preserva snapshot dos itens quando a resposta omite name e preços', () {
+      final previous = Order(
+        id: 'o1',
+        table: '12',
+        status: OrderStatus.received,
+        items: [
+          OrderItem(
+            productId: 'p1',
+            quantity: 2,
+            note: 'sem cebola',
+            name: 'Burger Clássico',
+            unitPriceCents: 3290,
+            lineTotalCents: 6580,
+          ),
+        ],
+        totalCents: 6580,
+        createdAt: DateTime.utc(2026, 10, 16, 18),
+      );
+      final updated = Order(
+        id: 'o1',
+        table: '12',
+        status: OrderStatus.preparing,
+        items: [OrderItem(productId: 'p1', quantity: 2, note: 'sem cebola')],
+        totalCents: 6580,
+        createdAt: DateTime.utc(2026, 10, 16, 18),
+      );
+
+      final merged = updated.preservingItemSnapshotsFrom(previous);
+
+      expect(merged.status, OrderStatus.preparing);
+      expect(merged.items.single.name, 'Burger Clássico');
+      expect(merged.items.single.unitPriceCents, 3290);
+      expect(merged.items.single.lineTotalCents, 6580);
+    });
+
     test('rejeita JSON incompatível com o contrato', () {
       final cases = <String, Object?>{
         'não é objeto': jsonDecode('null'),
@@ -202,6 +237,13 @@ void main() {
       expect(OrderStatus.received.canTransitionTo(OrderStatus.ready), isFalse);
       expect(OrderStatus.preparing.canTransitionTo(OrderStatus.received), isFalse);
       expect(OrderStatus.finished.canTransitionTo(OrderStatus.ready), isFalse);
+    });
+
+    test('aponta o próximo status ou null no fim', () {
+      expect(OrderStatus.received.next, OrderStatus.preparing);
+      expect(OrderStatus.preparing.next, OrderStatus.ready);
+      expect(OrderStatus.ready.next, OrderStatus.finished);
+      expect(OrderStatus.finished.next, isNull);
     });
 
     test('rejeita valor fora do contrato', () {
