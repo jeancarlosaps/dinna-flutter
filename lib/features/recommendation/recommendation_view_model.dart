@@ -6,6 +6,7 @@ import '../menu/product_repository.dart';
 import 'recommendation.dart';
 import 'recommendation_catalog.dart';
 import 'recommendation_preferences.dart';
+import 'recommendation_preferences_store.dart';
 import 'recommendation_repository.dart';
 import 'recommendation_request.dart';
 
@@ -68,19 +69,37 @@ final class RecommendationCartIgnored extends RecommendationCartAddition {
 ///
 /// As cinco escolhas não ganham default. Restrição marcada permanece no
 /// pedido. Contradição desabilita o envio e não apaga o que a pessoa marcou.
+///
+/// O armazenamento, quando existe, devolve o formulário já salvo e grava cada
+/// alteração. Abrir a tela não chama [RecommendationRepository.recommend].
 class RecommendationViewModel extends ChangeNotifier {
   RecommendationViewModel(
     this._repository, {
     required ProductRepository products,
     this.cartSession,
+    this.preferencesStore,
     this.table,
     this.limit = 3,
   }) : _products = products,
-       _catalog = RecommendationCatalog(products);
+       _catalog = RecommendationCatalog(products) {
+    final stored = _readStored();
+    if (stored != null) {
+      _budget = stored.budget;
+      _hunger = stored.hunger;
+      _protein = stored.protein;
+      _style = stored.style;
+      _taste = stored.taste;
+      _restrictions = stored.restrictions;
+    }
+    _lastSaved = _capture();
+  }
 
   final RecommendationRepository _repository;
   final ProductRepository _products;
   final RecommendationCatalog _catalog;
+
+  /// Nulo deixa o formulário só nesta instância. A tela não lê o armazenamento.
+  final RecommendationPreferencesStore? preferencesStore;
 
   /// Carrinho já restaurado da sessão. Nulo não cria outro carrinho.
   final CartSession? cartSession;
@@ -105,6 +124,16 @@ class RecommendationViewModel extends ChangeNotifier {
   MealStyle? _style;
   MealTaste? _taste;
   List<DietaryRestriction> _restrictions = const [];
+  late RecommendationSelection _lastSaved;
+  RecommendationSelection? _queued;
+  var _draining = false;
+  Future<void> _settled = Future<void>.value();
+
+  /// Termina quando a gravação já pedida chega ao armazenamento.
+  ///
+  /// A tela não espera esta future. Quem recria o fluxo espera, para ler a
+  /// última escolha e não uma gravação que ainda estava na fila.
+  Future<void> get preferencesSettled => _settled;
 
   RecommendationPhase _phase = RecommendationPhase.editing;
   List<RecommendedProduct> _recommendedProducts = const [];
@@ -177,6 +206,7 @@ class RecommendationViewModel extends ChangeNotifier {
     if (value == null || _disposed) return;
     apply();
     notifyListeners();
+    _persist();
   }
 
   /// Marca ou desmarca uma restrição. As outras escolhas ficam onde estão.
@@ -193,6 +223,65 @@ class RecommendationViewModel extends ChangeNotifier {
         if (next.contains(item)) item,
     ]);
     notifyListeners();
+    _persist();
+  }
+
+  RecommendationSelection? _readStored() {
+    final store = preferencesStore;
+    if (store == null) return null;
+    try {
+      final stored = store.current;
+      if (stored == null || stored.isEmpty) return null;
+      return stored;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  RecommendationSelection _capture() {
+    return RecommendationSelection(
+      budget: _budget,
+      hunger: _hunger,
+      protein: _protein,
+      style: _style,
+      taste: _taste,
+      restrictions: _restrictions,
+    );
+  }
+
+  /// Uma alteração por vez. Enquanto a escrita anterior não volta, a fila fica
+  /// com a seleção mais recente, para uma resposta lenta não gravar por cima.
+  void _persist() {
+    final store = preferencesStore;
+    if (store == null) return;
+    final next = _capture();
+    if (next == _lastSaved || next == _queued) return;
+    _queued = next;
+    if (_draining) return;
+    _draining = true;
+    _settled = _drain(store);
+  }
+
+  Future<void> _drain(RecommendationPreferencesStore store) async {
+    while (true) {
+      final snapshot = _queued;
+      if (snapshot == null) {
+        if (_queued != null) continue;
+        _draining = false;
+        if (_queued != null) {
+          _draining = true;
+          continue;
+        }
+        return;
+      }
+      _queued = null;
+      try {
+        await store.save(snapshot);
+        _lastSaved = snapshot;
+      } catch (_) {
+        // A escolha continua na tela. A próxima alteração grava o formulário inteiro.
+      }
+    }
   }
 
   /// Envia o body atual. Ignora toque repetido enquanto o POST não volta.
