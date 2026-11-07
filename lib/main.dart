@@ -16,7 +16,11 @@ import 'features/restaurant/http_order_repository.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final config = AppConfig.fromEnvironment();
-  final apiClient = ApiClient(baseUrl: config.apiBaseUrl, httpClient: http.Client());
+  final apiClient = ApiClient(
+    baseUrl: config.apiBaseUrl,
+    apiToken: config.apiToken,
+    httpClient: http.Client(),
+  );
   final intentStore = await openOrderIntentStore();
   final preferencesStore = await openRecommendationPreferencesStore();
 
