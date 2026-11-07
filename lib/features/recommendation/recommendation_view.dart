@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../../shared/widgets/dinna_banner.dart';
 import '../../shared/widgets/dinna_empty_state.dart';
-import 'recommendation.dart';
+import '../menu/product_image.dart';
+import '../restaurant/order_format.dart';
+import 'recommendation_catalog.dart';
 import 'recommendation_preferences.dart';
 import 'recommendation_view_model.dart';
 
@@ -24,6 +26,10 @@ const _noCompatibleMessage =
 const _emptyCatalogTitle = 'Cardápio vazio';
 
 const _emptyCatalogMessage = 'O restaurante ainda não tem pratos disponíveis para sugerir.';
+
+const _noAvailableTitle = 'Nenhum prato disponível';
+
+const _noAvailableMessage = 'As sugestões recebidas não estão no cardápio disponível agora.';
 
 const _failureTitle = 'Não foi possível pedir uma sugestão';
 
@@ -108,6 +114,21 @@ class _RecommendationViewState extends State<RecommendationView> {
                   title: _emptyCatalogTitle,
                   message: _emptyCatalogMessage,
                   onShowMenu: () => widget.onShowMenu(context),
+                ),
+                RecommendationPhase.noAvailableProducts => _OutcomeMessage(
+                  icon: Icons.search_off,
+                  title: _noAvailableTitle,
+                  message: _noAvailableMessage,
+                  onShowMenu: () => widget.onShowMenu(context),
+                  showAllergy: true,
+                ),
+                RecommendationPhase.catalogFailed => _OutcomeMessage(
+                  icon: Icons.cloud_off,
+                  title: _viewModel.errorTitle ?? RecommendationViewModel.catalogFailureTitle,
+                  message: _viewModel.errorMessage ?? RecommendationViewModel.catalogFailureMessage,
+                  onShowMenu: () => widget.onShowMenu(context),
+                  actionLabel: 'Tentar de novo',
+                  onAction: () => unawaited(_viewModel.submit()),
                 ),
                 RecommendationPhase.failed => _OutcomeMessage(
                   icon: Icons.wifi_off,
@@ -300,8 +321,8 @@ class _SuggestionResult extends StatelessWidget {
         ],
         const DinnaBanner(tone: DinnaBannerTone.info, message: _allergyNotice),
         const SizedBox(height: 16),
-        for (final suggestion in viewModel.suggestions) ...[
-          _ReasonCard(suggestion: suggestion),
+        for (final suggestion in viewModel.recommendedProducts) ...[
+          _RecommendationCard(suggestion: suggestion),
           const SizedBox(height: 12),
         ],
         if (fallback) ...[
@@ -318,17 +339,43 @@ class _SuggestionResult extends StatelessWidget {
   }
 }
 
-class _ReasonCard extends StatelessWidget {
-  const _ReasonCard({required this.suggestion});
+class _RecommendationCard extends StatelessWidget {
+  const _RecommendationCard({required this.suggestion});
 
-  final RecommendationSuggestion suggestion;
+  final RecommendedProduct suggestion;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final product = suggestion.product;
+
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Text(suggestion.reason, style: Theme.of(context).textTheme.bodySmall),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(height: 170, child: ProductImage(product: product)),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(product.name, style: theme.textTheme.titleMedium),
+                const SizedBox(height: 4),
+                Text(
+                  formatOrderTotal(product.priceCents),
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: colors.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(suggestion.reason, style: theme.textTheme.bodySmall),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
