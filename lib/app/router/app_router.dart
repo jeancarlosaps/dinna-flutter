@@ -156,6 +156,7 @@ class AppRouter {
           preferencesStore: recommendationPreferencesStore,
           table: _tableArgument(settings.arguments),
         ),
+        routeObserver: routeObserver,
         onShowMenu: (context) => Navigator.of(context).pop(),
         onOpenCart: (context) =>
             Navigator.of(context)

@@ -48,19 +48,25 @@ class RecommendationView extends StatefulWidget {
     required this.createViewModel,
     required this.onShowMenu,
     this.onOpenCart,
+    this.routeObserver,
   });
 
   final RecommendationViewModel Function() createViewModel;
   final void Function(BuildContext context) onShowMenu;
   final void Function(BuildContext context)? onOpenCart;
 
+  /// A mesma instância do `MaterialApp`. Sem ela, a tela coberta não percebe
+  /// quando volta a aparecer.
+  final RouteObserver<PageRoute<dynamic>>? routeObserver;
+
   @override
   State<RecommendationView> createState() => _RecommendationViewState();
 }
 
-class _RecommendationViewState extends State<RecommendationView> {
+class _RecommendationViewState extends State<RecommendationView> with RouteAware {
   late final RecommendationViewModel _viewModel;
   final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+  PageRoute<dynamic>? _route;
   var _canOpenCart = false;
   var _openingCart = false;
   String? _cartError;
@@ -138,7 +144,26 @@ class _RecommendationViewState extends State<RecommendationView> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final observer = widget.routeObserver;
+    final route = ModalRoute.of(context);
+    if (observer == null || route is! PageRoute<dynamic> || route == _route) return;
+    if (_route != null) observer.unsubscribe(this);
+    _route = route;
+    observer.subscribe(this, route);
+  }
+
+  /// Outra rota saiu de cima. As escolhas feitas nela entram neste formulário
+  /// antes do próximo toque.
+  @override
+  void didPopNext() {
+    _viewModel.syncFromStore();
+  }
+
+  @override
   void dispose() {
+    widget.routeObserver?.unsubscribe(this);
     _viewModel.removeListener(_clearStaleCartError);
     _messengerKey.currentState?.hideCurrentSnackBar();
     _viewModel.dispose();

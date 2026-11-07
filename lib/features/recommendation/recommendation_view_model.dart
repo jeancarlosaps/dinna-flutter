@@ -256,6 +256,28 @@ class RecommendationViewModel extends ChangeNotifier {
     );
   }
 
+  /// A rota voltou a ficar visível. Outra abertura pode ter gravado escolhas
+  /// mais novas enquanto esta instância continuava montada.
+  ///
+  /// O formulário passa a mostrar o que está armazenado, sem gravar de novo e
+  /// sem chamar a recomendação. Leitura vazia ou falha deixa o que já aparece.
+  void syncFromStore() {
+    if (_disposed) return;
+    final stored = _readStored();
+    if (stored == null) return;
+    final showing = _capture();
+    if (stored != showing) {
+      _budget = stored.budget;
+      _hunger = stored.hunger;
+      _protein = stored.protein;
+      _style = stored.style;
+      _taste = stored.taste;
+      _restrictions = stored.restrictions;
+      notifyListeners();
+    }
+    if (_queued == null) _lastSaved = stored;
+  }
+
   /// Cada alteração segue na hora para o armazenamento compartilhado.
   ///
   /// A fila de lá ordena as escritas, inclusive entre uma tela que está

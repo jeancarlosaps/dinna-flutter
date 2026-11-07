@@ -498,6 +498,71 @@ void main() {
     await tester.pump();
     expect(fake.calls, 1);
   });
+
+  testWidgets('a tela que ficou aberta não apaga a escolha da abertura nova', (tester) async {
+    final fake = _repository();
+    final store = MemoryRecommendationPreferencesStore();
+    final observer = RouteObserver<PageRoute<dynamic>>();
+    late RecommendationViewModel covered;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        navigatorObservers: [observer],
+        home: RecommendationView(
+          routeObserver: observer,
+          createViewModel: () {
+            covered = _model(fake, store: store);
+            return covered;
+          },
+          onShowMenu: (_) {},
+        ),
+      ),
+    );
+
+    await tester.tap(find.text(MealBudget.upTo20.label));
+    await tester.pump();
+    await covered.preferencesSettled;
+
+    late RecommendationViewModel latest;
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    unawaited(
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => RecommendationView(
+            routeObserver: observer,
+            createViewModel: () {
+              latest = _model(fake, store: store);
+              return latest;
+            },
+            onShowMenu: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    latest.setRestriction(DietaryRestriction.noGluten, selected: true);
+    await latest.preferencesSettled;
+    expect(fake.calls, 0);
+
+    navigator.pop();
+    await tester.pumpAndSettle();
+
+    expect(covered.restrictions, [DietaryRestriction.noGluten]);
+    await tester.scrollUntilVisible(find.text(DietaryRestriction.noGluten.label), 400);
+    expect(_check(DietaryRestriction.noGluten.label).value, isTrue);
+    expect(fake.calls, 0);
+
+    await tester.scrollUntilVisible(find.text(MealBudget.from21To35.label), -400);
+    await tester.tap(find.text(MealBudget.from21To35.label));
+    await tester.pump();
+    await covered.preferencesSettled;
+
+    expect(store.current?.budget, MealBudget.from21To35);
+    expect(store.current?.restrictions, [DietaryRestriction.noGluten]);
+    expect(fake.calls, 0);
+  });
 }
 
 FakeRecommendationRepository _repository() {
