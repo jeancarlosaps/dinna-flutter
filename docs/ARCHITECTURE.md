@@ -48,13 +48,21 @@ O contrato `ApiStatusRepository` não importa o Service. Quem implementa (`HttpA
 4. O ViewModel grava `checking`, limpa a mensagem e notifica a View ("Verificando…").
 5. O ViewModel chama `ApiStatusRepository.checkHealth`.
 6. `HttpApiStatusRepository` chama `ApiClient.getJson('/health')`.
-7. O `ApiClient` faz `GET {API_BASE_URL}/health`.
+7. O `ApiClient` faz `GET {API_BASE_URL}/health`. Se `API_TOKEN` estiver preenchido, a chamada também leva `X-Dinna-Api-Token`. O servidor deixa `/health` público; o header não altera o contrato dessa rota.
 8. O resultado volta pelas camadas:
    - `{ "status": "ok" }` vira `ApiAvailability.online`. O ViewModel vai para `online` e a View mostra "API online".
    - JSON diferente vira `ApiAvailability.offline('Resposta inesperada da API')`. A View mostra "API indisponível" e a mensagem.
    - Rede, timeout, status fora de 2xx ou corpo que não é JSON viram `ApiException` no Service. O Repository converte em `ApiAvailability.offline` com `error.message`. O ViewModel não vê status code.
 9. O ViewModel publica o estado e notifica de novo. Se a tela já foi descartada, não altera o estado nem notifica.
 10. Uma falha que o repository não traduziu tira o ViewModel de `checking` e o leva a `offline`, com a mensagem "Não foi possível verificar a API". O texto da exceção não entra na tela. Em debug, o console do Flutter mostra a falha para diagnóstico; em release, esse registro não acontece.
+
+## Token de acesso do ambiente
+
+`API_TOKEN` é lido em [`app_config.dart`](../lib/core/config/app_config.dart) com `String.fromEnvironment`. Vazio ou ausente significa a API local sem proteção. Preenchido, o [`ApiClient`](../lib/core/network/api_client.dart) envia `X-Dinna-Api-Token` em todos os métodos que já existem (`getJson` e `postJson`). Não há PUT, PATCH nem DELETE nesse client. O header não substitui `Content-Type`, `Idempotency-Key` nem outro header entregue pelo repositório.
+
+HTTP 401 com `error.code` `UNAUTHORIZED` segue o caminho já usado para falha de servidor: vira `ApiException` e `DataFailure.unavailable`, não `notFound`. A mensagem da API pode chegar à tela. O token não entra nessa mensagem, em log nem na interface. O client não repete a chamada. No envio do pedido, a `Idempotency-Key` continua na intenção; 401 não apaga essa intenção, o carrinho nem as preferências da recomendação.
+
+`--dart-define` grava o valor no binário. Isso é aceitável só em builds controlados da equipe, até a apresentação. Não é armazenamento seguro, não deve ir para loja e o token deve ser rotacionado depois. A URL pública do Railway ainda não entra nesta documentação: use o placeholder `https://<url-publica-do-railway>` até o deploy ser confirmado.
 
 ## Navegação
 
