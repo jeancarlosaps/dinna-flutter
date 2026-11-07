@@ -432,6 +432,45 @@ void main() {
     expect(repository.findCalls, 1);
   });
 
+  testWidgets('adicionar no cardápio grava o produto e a quantidade na sessão', (tester) async {
+    final cartRepository = _RecordingCartRepository();
+    final session = CartSession(cartRepository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final repository = FakeProductRepository(
+      () async => ProductList.ready([_product()]),
+      onFindById: (_) async => ProductDetail.ready(_product()),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: MenuView(
+          createViewModel: () => MenuViewModel(repository),
+          createDetailViewModel: (id) => ProductDetailViewModel(repository, productId: id),
+          cartSession: session,
+          onOpenCart: (_, _) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Burger Clássico'));
+    await tester.pumpAndSettle();
+    await tester.tap(_increase);
+    await tester.tap(_increase);
+    await tester.pump();
+    await tester.tap(find.text('Adicionar · R\$ 98,70'));
+    await tester.pumpAndSettle();
+
+    expect(cartRepository.added, [('p1', 3)]);
+    final line = session.read().single;
+    expect(line.lineId, 'line-1');
+    expect(line.productId, 'p1');
+    expect(line.quantity, 3);
+    expect(find.byType(BottomSheet), findsNothing);
+  });
+
   testWidgets('conclusão tardia não fecha outra rota após dispensar o detalhe', (tester) async {
     final navigatorKey = GlobalKey<NavigatorState>();
     final addCompleter = Completer<void>();
@@ -518,6 +557,33 @@ class _DeferredCartRepository implements CartRepository {
   @override
   Future<CartItem> add({required String productId, required int quantity, String? note}) async {
     throw UnimplementedError();
+  }
+
+  @override
+  Future<bool> update(CartItem item) async => false;
+
+  @override
+  Future<bool> remove(String lineId) async => false;
+
+  @override
+  Future<List<CartItem>> removeConfirmed(List<CartItem> confirmedItems) async => const [];
+}
+
+class _RecordingCartRepository implements CartRepository {
+  final added = <(String, int)>[];
+
+  @override
+  Future<List<CartItem>> load() async => const [];
+
+  @override
+  Future<CartItem> add({required String productId, required int quantity, String? note}) async {
+    added.add((productId, quantity));
+    return CartItem(
+      lineId: 'line-${added.length}',
+      productId: productId,
+      quantity: quantity,
+      note: note,
+    );
   }
 
   @override

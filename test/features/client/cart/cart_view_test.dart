@@ -151,12 +151,64 @@ void main() {
     expect(tester.takeException(), isNull);
 
     repository.loadOverride = null;
+    repository.items.add(CartItem(lineId: 'line-2', productId: 'p2', quantity: 2, note: null));
     await tester.tap(find.text('Tentar novamente'));
     await tester.pumpAndSettle();
 
     expect(session.isReady, isTrue);
     expect(find.text('Moqueca de Peixe'), findsOneWidget);
+    expect(find.text('Salada Grega'), findsOneWidget);
     expect(find.text('Enviar pedido'), findsOneWidget);
+  });
+
+  testWidgets('envio fica bloqueado enquanto a alteração do carrinho não grava', (tester) async {
+    final repository = _CartSessionRepository([
+      CartItem(lineId: 'line-1', productId: 'p1', quantity: 1, note: null),
+    ]);
+    final pendingUpdate = Completer<bool>();
+    repository.updateOverride = (_) => pendingUpdate.future;
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    var creates = 0;
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async {
+          creates++;
+          return const OrderSubmission.failed('Não foi possível enviar o pedido');
+        },
+      ),
+    );
+    addTearDown(submission.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: CartView(
+          createViewModel: () =>
+              CartViewModel.persisted(FakeProductRepository(() async => catalog), session: session),
+          submission: submission,
+          onOpenMenu: (_) {},
+          cartSession: session,
+          table: '12',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Enviar pedido'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Aumentar quantidade'));
+    await tester.pump();
+
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(creates, 0);
+
+    pendingUpdate.complete(true);
+    await tester.pumpAndSettle();
+
+    expect(session.read().single.quantity, 2);
+    expect(find.text('Enviar pedido'), findsOneWidget);
+    expect(creates, 0);
   });
 
   testWidgets('o estado vazio rola até o cardápio em tela baixa', (tester) async {
@@ -272,6 +324,7 @@ class _CartSessionRepository implements CartRepository {
 
   final List<CartItem> items;
   Future<List<CartItem>> Function()? loadOverride;
+  Future<bool> Function(CartItem item)? updateOverride;
 
   @override
   Future<List<CartItem>> load() async =>
@@ -282,7 +335,8 @@ class _CartSessionRepository implements CartRepository {
       throw UnimplementedError();
 
   @override
-  Future<bool> update(CartItem item) => throw UnimplementedError();
+  Future<bool> update(CartItem item) =>
+      updateOverride == null ? throw UnimplementedError() : updateOverride!(item);
 
   @override
   Future<bool> remove(String lineId) => throw UnimplementedError();
