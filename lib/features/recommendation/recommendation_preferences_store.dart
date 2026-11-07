@@ -116,6 +116,9 @@ final class RecommendationSelection {
 abstract interface class RecommendationPreferencesStore {
   RecommendationSelection? get current;
 
+  /// Sobe quando uma gravação nova é pedida. A falha não cria outro marco.
+  int get epoch;
+
   Future<void> save(RecommendationSelection selection);
 }
 
@@ -127,6 +130,9 @@ final class UnavailableRecommendationPreferencesStore implements RecommendationP
 
   @override
   RecommendationSelection? get current => null;
+
+  @override
+  int get epoch => 0;
 
   @override
   Future<void> save(RecommendationSelection selection) async {
@@ -157,6 +163,9 @@ final class MemoryRecommendationPreferencesStore implements RecommendationPrefer
 
   @override
   RecommendationSelection? get current => _queue.current;
+
+  @override
+  int get epoch => _queue.epoch;
 
   @override
   Future<void> save(RecommendationSelection selection) => _queue.save(selection, _write);
@@ -199,6 +208,9 @@ final class FileRecommendationPreferencesStore implements RecommendationPreferen
 
   @override
   RecommendationSelection? get current => _queue.current;
+
+  @override
+  int get epoch => _queue.epoch;
 
   @override
   Future<void> save(RecommendationSelection selection) => _queue.save(selection, _write);
@@ -264,6 +276,9 @@ final class _SaveQueue {
   RecommendationSelection? _durable;
   Future<void> _tail = Future<void>.value();
   var _revision = 0;
+
+  /// Marco da última gravação pedida. O rollback de uma falha não muda.
+  int get epoch => _revision;
 
   void restore(RecommendationSelection? selection) {
     current = selection;

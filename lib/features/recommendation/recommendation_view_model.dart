@@ -92,6 +92,7 @@ class RecommendationViewModel extends ChangeNotifier {
       _restrictions = stored.restrictions;
     }
     _lastSaved = _capture();
+    _seenEpoch = _epoch(preferencesStore);
   }
 
   final RecommendationRepository _repository;
@@ -126,6 +127,7 @@ class RecommendationViewModel extends ChangeNotifier {
   List<DietaryRestriction> _restrictions = const [];
   late RecommendationSelection _lastSaved;
   RecommendationSelection? _queued;
+  var _seenEpoch = 0;
   Future<void> _settled = Future<void>.value();
 
   /// Termina quando a gravação já pedida chega ao armazenamento.
@@ -259,23 +261,49 @@ class RecommendationViewModel extends ChangeNotifier {
   /// A rota voltou a ficar visível. Outra abertura pode ter gravado escolhas
   /// mais novas enquanto esta instância continuava montada.
   ///
-  /// O formulário passa a mostrar o que está armazenado, sem gravar de novo e
-  /// sem chamar a recomendação. Leitura vazia ou falha deixa o que já aparece.
+  /// Só entra seleção de um marco que esta instância ainda não viu. A falha da
+  /// própria gravação não desfaz o que está na tela. Seleção vazia limpa o
+  /// formulário. Resultado de outra preferência sai da tela, sem novo POST.
   void syncFromStore() {
     if (_disposed) return;
-    final stored = _readStored();
-    if (stored == null) return;
-    final showing = _capture();
-    if (stored != showing) {
-      _budget = stored.budget;
-      _hunger = stored.hunger;
-      _protein = stored.protein;
-      _style = stored.style;
-      _taste = stored.taste;
-      _restrictions = stored.restrictions;
+    final store = preferencesStore;
+    if (store == null) return;
+    final int epoch;
+    final RecommendationSelection? stored;
+    try {
+      epoch = store.epoch;
+      stored = store.current;
+    } catch (_) {
+      return;
+    }
+    if (epoch == _seenEpoch) return;
+
+    final incoming = stored ?? RecommendationSelection();
+    final changed = incoming != _capture();
+    if (changed) {
+      _budget = incoming.budget;
+      _hunger = incoming.hunger;
+      _protein = incoming.protein;
+      _style = incoming.style;
+      _taste = incoming.taste;
+      _restrictions = incoming.restrictions;
+    }
+    _seenEpoch = epoch;
+    if (_queued == null) _lastSaved = _capture();
+    if (changed && (_phase != RecommendationPhase.editing || _inFlight)) {
+      returnToEditing();
+    } else if (changed) {
       notifyListeners();
     }
-    if (_queued == null) _lastSaved = stored;
+  }
+
+  int _epoch(RecommendationPreferencesStore? store) {
+    if (store == null) return _seenEpoch;
+    try {
+      return store.epoch;
+    } catch (_) {
+      return _seenEpoch;
+    }
   }
 
   /// Cada alteração segue na hora para o armazenamento compartilhado.
@@ -291,6 +319,7 @@ class RecommendationViewModel extends ChangeNotifier {
     if (_queued == null && next == _lastSaved && next == _stored(store)) return;
     _queued = next;
     final pending = store.save(next);
+    _seenEpoch = _epoch(store);
     _settled = pending.then<void>(
       (_) {
         if (!identical(_queued, next)) return;

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dinna/app/theme/dinna_theme.dart';
+import 'package:dinna/core/domain/product.dart';
 import 'package:dinna/features/menu/product_repository.dart';
 import 'package:dinna/features/recommendation/recommendation.dart';
 import 'package:dinna/features/recommendation/recommendation_preferences.dart';
@@ -563,6 +564,118 @@ void main() {
     expect(store.current?.restrictions, [DietaryRestriction.noGluten]);
     expect(fake.calls, 0);
   });
+
+  test('desmarcar a única restrição limpa a tela que ficou aberta', () async {
+    final store = MemoryRecommendationPreferencesStore();
+    final covered = _model(_repository(), store: store);
+    covered.setRestriction(DietaryRestriction.noGluten, selected: true);
+    await covered.preferencesSettled;
+
+    final latest = _model(_repository(), store: store);
+    latest.setRestriction(DietaryRestriction.noGluten, selected: false);
+    await latest.preferencesSettled;
+    expect(store.current?.isEmpty, isTrue);
+
+    covered.syncFromStore();
+
+    expect(covered.restrictions, isEmpty);
+    covered.selectBudget(MealBudget.upTo20);
+    await covered.preferencesSettled;
+    expect(store.current?.budget, MealBudget.upTo20);
+    expect(store.current?.restrictions, isEmpty);
+  });
+
+  test('falha de gravação não desfaz a edição ao voltar para a tela', () async {
+    final store = MemoryRecommendationPreferencesStore();
+    final viewModel = _model(_repository(), store: store);
+    viewModel.selectBudget(MealBudget.upTo20);
+    await viewModel.preferencesSettled;
+
+    store.failNextSave();
+    viewModel.setRestriction(DietaryRestriction.noGluten, selected: true);
+    await viewModel.preferencesSettled;
+    expect(store.current?.restrictions, isEmpty);
+
+    viewModel.syncFromStore();
+
+    expect(viewModel.restrictions, [DietaryRestriction.noGluten]);
+    viewModel.selectHunger(MealHunger.normal);
+    await viewModel.preferencesSettled;
+    expect(store.current?.budget, MealBudget.upTo20);
+    expect(store.current?.hunger, MealHunger.normal);
+    expect(store.current?.restrictions, [DietaryRestriction.noGluten]);
+  });
+
+  test('preferência nova descarta a sugestão sem pedir outra', () async {
+    final fake = _repository();
+    final store = MemoryRecommendationPreferencesStore();
+    final covered = RecommendationViewModel(
+      fake,
+      products: FakeProductRepository(
+        () async => ProductList.ready([
+          Product(
+            id: 'p3',
+            name: 'Frango grelhado',
+            description: 'Frango',
+            category: 'Pratos',
+            priceCents: 2000,
+            imageUrl: null,
+            available: true,
+          ),
+        ]),
+      ),
+      preferencesStore: store,
+    );
+    _answer(covered);
+    await covered.preferencesSettled;
+    await covered.submit();
+
+    expect(covered.phase, RecommendationPhase.suggestions);
+    expect(fake.calls, 1);
+
+    final latest = _model(fake, store: store);
+    latest.setRestriction(DietaryRestriction.vegan, selected: true);
+    await latest.preferencesSettled;
+    covered.syncFromStore();
+
+    expect(covered.phase, RecommendationPhase.editing);
+    expect(covered.recommendedProducts, isEmpty);
+    expect(covered.restrictions, [DietaryRestriction.vegan]);
+    expect(fake.calls, 1);
+  });
+
+  test('preferência nova invalida a sugestão que ainda não voltou', () async {
+    final gate = Completer<RecommendationAttempt>();
+    final fake = FakeRecommendationRepository((_) => gate.future);
+    final store = MemoryRecommendationPreferencesStore();
+    final covered = _model(fake, store: store);
+    _answer(covered);
+    await covered.preferencesSettled;
+    final pending = covered.submit();
+
+    expect(covered.phase, RecommendationPhase.loading);
+    expect(fake.calls, 1);
+
+    final latest = _model(fake, store: store);
+    latest.selectProtein(MealProtein.vegetarian);
+    await latest.preferencesSettled;
+    covered.syncFromStore();
+    gate.complete(
+      RecommendationAttempt.ready(
+        Recommendation(
+          provider: RecommendationProvider.answered,
+          outcome: RecommendationOutcome.suggestions,
+          products: [RecommendationSuggestion(productId: 'p3', reason: 'Frango')],
+        ),
+      ),
+    );
+    await pending;
+
+    expect(covered.phase, RecommendationPhase.editing);
+    expect(covered.protein, MealProtein.vegetarian);
+    expect(covered.recommendedProducts, isEmpty);
+    expect(fake.calls, 1);
+  });
 }
 
 FakeRecommendationRepository _repository() {
@@ -629,6 +742,9 @@ CheckboxListTile _check(String label) {
 /// A falha de leitura acontece ao consultar o valor, antes do formulário nascer.
 final class _ThrowingReadStore implements RecommendationPreferencesStore {
   const _ThrowingReadStore();
+
+  @override
+  int get epoch => 0;
 
   @override
   RecommendationSelection? get current => throw const RecommendationPreferencesStoreException(
