@@ -585,6 +585,66 @@ void main() {
     expect(store.current?.restrictions, isEmpty);
   });
 
+  testWidgets('falha de gravação não some ao voltar do carrinho', (tester) async {
+    final fake = _repository();
+    final store = MemoryRecommendationPreferencesStore();
+    final observer = RouteObserver<PageRoute<dynamic>>();
+    late RecommendationViewModel viewModel;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        navigatorObservers: [observer],
+        home: RecommendationView(
+          routeObserver: observer,
+          createViewModel: () {
+            viewModel = _model(fake, store: store);
+            return viewModel;
+          },
+          onShowMenu: (_) {},
+        ),
+      ),
+    );
+
+    await tester.tap(find.text(MealBudget.upTo20.label));
+    await tester.pump();
+    await viewModel.preferencesSettled;
+
+    store.failNextSave();
+    await tester.scrollUntilVisible(find.text(DietaryRestriction.noGluten.label), 400);
+    await tester.tap(find.text(DietaryRestriction.noGluten.label));
+    await tester.pump();
+    await viewModel.preferencesSettled;
+
+    expect(_check(DietaryRestriction.noGluten.label).value, isTrue);
+    expect(viewModel.budget, MealBudget.upTo20);
+    expect(viewModel.restrictions, [DietaryRestriction.noGluten]);
+    expect(store.current?.restrictions, isEmpty);
+    expect(fake.calls, 0);
+
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    unawaited(
+      navigator.push(
+        MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('Carrinho'))),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Carrinho'), findsOneWidget);
+
+    navigator.pop();
+    await tester.pumpAndSettle();
+    await viewModel.preferencesSettled;
+
+    expect(viewModel.budget, MealBudget.upTo20);
+    expect(viewModel.restrictions, [DietaryRestriction.noGluten]);
+    await tester.scrollUntilVisible(find.text(DietaryRestriction.noGluten.label), 400);
+    expect(_check(DietaryRestriction.noGluten.label).value, isTrue);
+    expect(store.current?.budget, MealBudget.upTo20);
+    expect(store.current?.restrictions, [DietaryRestriction.noGluten]);
+    expect(store.completed.last.restrictions, [DietaryRestriction.noGluten]);
+    expect(fake.calls, 0);
+  });
+
   test('falha de gravação não desfaz a edição ao voltar para a tela', () async {
     final store = MemoryRecommendationPreferencesStore();
     final viewModel = _model(_repository(), store: store);

@@ -261,9 +261,10 @@ class RecommendationViewModel extends ChangeNotifier {
   /// A rota voltou a ficar visível. Outra abertura pode ter gravado escolhas
   /// mais novas enquanto esta instância continuava montada.
   ///
-  /// Só entra seleção de um marco que esta instância ainda não viu. A falha da
-  /// própria gravação não desfaz o que está na tela. Seleção vazia limpa o
-  /// formulário. Resultado de outra preferência sai da tela, sem novo POST.
+  /// Um marco novo é alteração externa: a tela passa a mostrá-la, inclusive
+  /// quando a seleção veio vazia, e descarta sugestão da preferência anterior.
+  /// O mesmo marco, com o store de volta ao durável, é falha desta tela. A
+  /// edição continua visível e é republicada, sem novo POST.
   void syncFromStore() {
     if (_disposed) return;
     final store = preferencesStore;
@@ -276,9 +277,12 @@ class RecommendationViewModel extends ChangeNotifier {
     } catch (_) {
       return;
     }
-    if (epoch == _seenEpoch) return;
-
     final incoming = stored ?? RecommendationSelection();
+    if (epoch == _seenEpoch) {
+      if (_queued == null && incoming != _capture()) _persist();
+      return;
+    }
+
     final changed = incoming != _capture();
     if (changed) {
       _budget = incoming.budget;
