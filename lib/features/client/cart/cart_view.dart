@@ -174,6 +174,7 @@ class _CartViewState extends State<CartView> {
     if (!_submission.canRequestSubmit ||
         viewModel == null ||
         widget.cartSession?.isReady == false ||
+        widget.cartSession?.hasPendingOperations == true ||
         viewModel.isMutating ||
         viewModel.items.isEmpty) {
       return;
@@ -235,7 +236,7 @@ class _CartViewState extends State<CartView> {
     return Scaffold(
       appBar: AppBar(title: const Text('Seu carrinho')),
       body: ListenableBuilder(
-        listenable: Listenable.merge([viewModel, _submission]),
+        listenable: Listenable.merge([viewModel, _submission, ?session]),
         builder: (context, _) {
           final hasRows = viewModel.rows.isNotEmpty;
           final submission = _SubmissionSection(
@@ -244,7 +245,11 @@ class _CartViewState extends State<CartView> {
             onResume: _resume,
             onBeginAnother: _beginAnother,
             onViewConfirmation: widget.onOrderConfirmed == null ? null : _viewConfirmation,
-            allowSend: hasRows && !viewModel.isMutating && session?.isReady != false,
+            allowSend:
+                hasRows &&
+                !viewModel.isMutating &&
+                session?.isReady != false &&
+                session?.hasPendingOperations != true,
           );
           if (!hasRows && _submission.status == OrderSubmissionStatus.idle) {
             return _EmptyCart(onOpenMenu: () => widget.onOpenMenu(context));

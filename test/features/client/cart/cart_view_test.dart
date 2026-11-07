@@ -211,6 +211,62 @@ void main() {
     expect(creates, 0);
   });
 
+  testWidgets('reabrir o carrinho com alteração pendente mantém o envio bloqueado', (tester) async {
+    final repository = _CartSessionRepository([
+      CartItem(lineId: 'line-1', productId: 'p1', quantity: 1, note: null),
+    ]);
+    final pendingUpdate = Completer<bool>();
+    repository.updateOverride = (_) => pendingUpdate.future;
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final sent = <List<CartItem>>[];
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async {
+          sent.add(items);
+          return const OrderSubmission.failed('Não foi possível enviar o pedido');
+        },
+      ),
+    );
+    addTearDown(submission.dispose);
+    Widget cart() => MaterialApp(
+      theme: DinnaTheme.light(),
+      home: CartView(
+        createViewModel: () =>
+            CartViewModel.persisted(FakeProductRepository(() async => catalog), session: session),
+        submission: submission,
+        onOpenMenu: (_) {},
+        cartSession: session,
+        table: '12',
+      ),
+    );
+
+    await tester.pumpWidget(cart());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Aumentar quantidade'));
+    await tester.pump();
+    expect(session.hasPendingOperations, isTrue);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(cart());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(sent, isEmpty);
+
+    pendingUpdate.complete(true);
+    await tester.pumpAndSettle();
+
+    expect(session.hasPendingOperations, isFalse);
+    expect(find.text('Enviar pedido'), findsOneWidget);
+    await tester.tap(find.text('Enviar pedido'));
+    await tester.pumpAndSettle();
+
+    expect(sent.single.single.quantity, 2);
+  });
+
   testWidgets('o estado vazio rola até o cardápio em tela baixa', (tester) async {
     tester.view.physicalSize = const Size(360, 220);
     tester.view.devicePixelRatio = 1;

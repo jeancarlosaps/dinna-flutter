@@ -14,11 +14,16 @@ final class CartSession extends ChangeNotifier {
   bool _isReady = false;
   bool _isRestoring = false;
   bool _disposed = false;
+  int _pendingCount = 0;
   Object? _restoreError;
 
   bool get isReady => _isReady;
   bool get isRestoring => _isRestoring;
   Object? get restoreError => _restoreError;
+
+  /// Há operação na fila ainda sem resposta do repositório. Vale para qualquer
+  /// tela, inclusive uma aberta depois de a operação começar.
+  bool get hasPendingOperations => _pendingCount > 0;
 
   /// Linhas confirmadas, na mesma ordem devolvida pelo SQLite.
   List<CartItem> read() {
@@ -137,7 +142,12 @@ final class CartSession extends ChangeNotifier {
   }
 
   Future<T> _enqueue<T>(Future<T> Function() operation) {
-    final result = _pendingOperations.then((_) => operation());
+    _pendingCount++;
+    _notify();
+    final result = _pendingOperations.then((_) => operation()).whenComplete(() {
+      _pendingCount--;
+      _notify();
+    });
     _pendingOperations = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     return result;
   }

@@ -99,6 +99,28 @@ void main() {
     expect(reopened.cartWriteErrorMessage, isNull);
   });
 
+  test('operações pendentes ficam visíveis até o SQLite responder, com sucesso ou falha', () async {
+    final session = await restoredSession(open());
+    expect(session.hasPendingOperations, isFalse);
+
+    final add = session.addLine(productId: 'p1', quantity: 1);
+    final increase = session.changeQuantity(lineId: 'line-1', delta: 1);
+    expect(session.hasPendingOperations, isTrue);
+
+    await add;
+    expect(session.hasPendingOperations, isTrue);
+    await increase;
+    expect(session.hasPendingOperations, isFalse);
+    expect(session.read().single.quantity, 2);
+
+    await failOn('UPDATE');
+    final failing = session.changeQuantity(lineId: 'line-1', delta: 1);
+    expect(session.hasPendingOperations, isTrue);
+    await expectLater(failing, throwsA(isA<DatabaseException>()));
+    expect(session.hasPendingOperations, isFalse);
+    expect(session.read().single.quantity, 2);
+  });
+
   test('falha do SQLite ao atualizar mantém a quantidade confirmada', () async {
     final repository = open();
     final session = await restoredSession(repository);
