@@ -71,6 +71,30 @@ void main() {
     expect(partial.current!.restrictions, [DietaryRestriction.vegan]);
   });
 
+  test('escrita concluída permanece quando a escolha seguinte falha', () async {
+    final store = MemoryRecommendationPreferencesStore();
+    final gates = <Completer<void>>[];
+    store.delaySaves(() {
+      final gate = Completer<void>();
+      gates.add(gate);
+      return gate.future;
+    });
+    final original = _selection();
+    final first = store.save(original);
+    await pumpEventQueue();
+    final second = store.save(_selection(budget: MealBudget.unlimited));
+    gates.single.complete();
+    await pumpEventQueue();
+    expect(store.completed, [original]);
+    store.failNextSave();
+    gates[1].complete();
+
+    await expectLater(second, throwsA(isA<RecommendationPreferencesStoreException>()));
+    await first;
+    expect(store.current, original);
+    expect(store.completed, [original]);
+  });
+
   test('gravações pedidas juntas terminam na última e não correm juntas', () async {
     final store = MemoryRecommendationPreferencesStore();
     final gates = <Completer<void>>[];

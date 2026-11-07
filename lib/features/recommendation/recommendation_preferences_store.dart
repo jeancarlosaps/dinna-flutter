@@ -294,7 +294,9 @@ final class _SaveQueue {
       if (revision == _revision) current = _durable;
       rethrow;
     }
-    if (revision == _revision) _durable = selection;
+    // A escrita terminou, então o arquivo agora é esta seleção, mesmo que uma
+    // escolha mais nova já esteja em [current] e ainda não tenha sido gravada.
+    _durable = selection;
   }
 }
 

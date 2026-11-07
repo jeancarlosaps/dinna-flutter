@@ -126,7 +126,6 @@ class RecommendationViewModel extends ChangeNotifier {
   List<DietaryRestriction> _restrictions = const [];
   late RecommendationSelection _lastSaved;
   RecommendationSelection? _queued;
-  var _draining = false;
   Future<void> _settled = Future<void>.value();
 
   /// Termina quando a gravação já pedida chega ao armazenamento.
@@ -249,39 +248,29 @@ class RecommendationViewModel extends ChangeNotifier {
     );
   }
 
-  /// Uma alteração por vez. Enquanto a escrita anterior não volta, a fila fica
-  /// com a seleção mais recente, para uma resposta lenta não gravar por cima.
+  /// Cada alteração segue na hora para o armazenamento compartilhado.
+  ///
+  /// A fila de lá ordena as escritas, inclusive entre uma tela que está
+  /// fechando e outra que já reabriu. Segurar a seleção mais nova só neste
+  /// ViewModel faria a escrita antiga passar por cima da nova.
   void _persist() {
     final store = preferencesStore;
     if (store == null) return;
     final next = _capture();
-    if (next == _lastSaved || next == _queued) return;
+    if (next == _queued) return;
+    if (_queued == null && next == _lastSaved) return;
     _queued = next;
-    if (_draining) return;
-    _draining = true;
-    _settled = _drain(store);
-  }
-
-  Future<void> _drain(RecommendationPreferencesStore store) async {
-    while (true) {
-      final snapshot = _queued;
-      if (snapshot == null) {
-        if (_queued != null) continue;
-        _draining = false;
-        if (_queued != null) {
-          _draining = true;
-          continue;
-        }
-        return;
-      }
-      _queued = null;
-      try {
-        await store.save(snapshot);
-        _lastSaved = snapshot;
-      } catch (_) {
-        // A escolha continua na tela. A próxima alteração grava o formulário inteiro.
-      }
-    }
+    final pending = store.save(next);
+    _settled = pending.then<void>(
+      (_) {
+        if (!identical(_queued, next)) return;
+        _lastSaved = next;
+        _queued = null;
+      },
+      onError: (Object _, StackTrace _) {
+        if (identical(_queued, next)) _queued = null;
+      },
+    );
   }
 
   /// Envia o body atual. Ignora toque repetido enquanto o POST não volta.

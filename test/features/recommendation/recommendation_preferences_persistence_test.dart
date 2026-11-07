@@ -313,23 +313,60 @@ void main() {
     for (final budget in order) {
       viewModel.selectBudget(budget);
     }
-    await pumpEventQueue();
-    expect(gates, hasLength(1));
-    expect(store.maxInFlight, 1);
-    gates.first.complete();
-    await pumpEventQueue();
-    expect(gates, hasLength(2));
-    gates[1].complete();
+    await _release(gates);
     await viewModel.preferencesSettled;
 
     expect(store.maxInFlight, 1);
     expect(store.current!.budget, MealBudget.unlimited);
-    expect(store.completed.map((selection) => selection.budget).toList(), [
-      MealBudget.upTo20,
-      MealBudget.unlimited,
-    ]);
+    expect(store.completed.map((selection) => selection.budget).toList(), [MealBudget.unlimited]);
     expect(viewModel.budget, MealBudget.unlimited);
     expect(fake.calls, 0);
+  });
+
+  test('voltar ao valor anterior durante a gravação não perde essa escolha', () async {
+    final store = MemoryRecommendationPreferencesStore(
+      initial: RecommendationSelection(budget: MealBudget.upTo20),
+    );
+    final gates = <Completer<void>>[];
+    store.delaySaves(() {
+      final gate = Completer<void>();
+      gates.add(gate);
+      return gate.future;
+    });
+    final viewModel = _model(_repository(), store: store);
+
+    viewModel.selectBudget(MealBudget.from21To35);
+    viewModel.selectBudget(MealBudget.upTo20);
+    await _release(gates);
+    await viewModel.preferencesSettled;
+
+    expect(viewModel.budget, MealBudget.upTo20);
+    expect(store.current!.budget, MealBudget.upTo20);
+    expect(_model(_repository(), store: store).budget, MealBudget.upTo20);
+  });
+
+  test('reabrir durante a gravação não deixa a tela antiga sobrescrever a nova', () async {
+    final store = MemoryRecommendationPreferencesStore();
+    final gates = <Completer<void>>[];
+    store.delaySaves(() {
+      final gate = Completer<void>();
+      gates.add(gate);
+      return gate.future;
+    });
+    final first = _model(_repository(), store: store);
+    first.selectBudget(MealBudget.upTo20);
+    first.selectBudget(MealBudget.from21To35);
+
+    final second = _model(_repository(), store: store);
+    expect(second.budget, MealBudget.from21To35);
+    second.selectBudget(MealBudget.unlimited);
+    await _release(gates);
+    await first.preferencesSettled;
+    await second.preferencesSettled;
+
+    expect(store.current!.budget, MealBudget.unlimited);
+    expect(store.maxInFlight, 1);
+    expect(_model(_repository(), store: store).budget, MealBudget.unlimited);
   });
 
   test('restaura a contradição e continua bloqueando o envio', () async {
@@ -471,6 +508,18 @@ RecommendationSelection _saved() {
     style: MealStyle.balanced,
     taste: MealTaste.savory,
   );
+}
+
+Future<void> _release(List<Completer<void>> gates) async {
+  for (var attempt = 0; attempt < 5; attempt++) {
+    await pumpEventQueue();
+    final pending = gates.where((gate) => !gate.isCompleted).toList();
+    if (pending.isEmpty) return;
+    for (final gate in pending) {
+      gate.complete();
+    }
+  }
+  fail('a gravação não terminou');
 }
 
 RadioListTile<T> _radio<T>(String label) {
