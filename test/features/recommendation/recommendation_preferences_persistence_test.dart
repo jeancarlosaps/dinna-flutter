@@ -736,6 +736,89 @@ void main() {
     expect(covered.recommendedProducts, isEmpty);
     expect(fake.calls, 1);
   });
+
+  test('gravação atrasada que conclui não apaga a preferência mais nova', () async {
+    final harness = await _race();
+
+    harness.first.syncFromStore();
+    await _openNext(harness.gates);
+    await harness.latest.preferencesSettled;
+    harness.first.syncFromStore();
+
+    _expectShared(harness, hunger: MealHunger.normal);
+    expect(harness.store.completed.last.hunger, MealHunger.normal);
+  });
+
+  test('falha da gravação atrasada não desfaz a preferência mais nova', () async {
+    final store = MemoryRecommendationPreferencesStore();
+    final gates = _arm(store);
+    final first = _model(_repository(), store: store);
+
+    store.failNextSave();
+    first.selectBudget(MealBudget.upTo20);
+    await pumpEventQueue();
+    final latest = _model(_repository(), store: store);
+    latest.selectHunger(MealHunger.normal);
+    await _openNext(gates);
+
+    expect(store.current?.budget, MealBudget.upTo20);
+    expect(store.current?.hunger, MealHunger.normal);
+    first.syncFromStore();
+    expect(first.hunger, MealHunger.normal);
+
+    await _openNext(gates);
+    await latest.preferencesSettled;
+    first.syncFromStore();
+
+    expect(first.budget, MealBudget.upTo20);
+    expect(first.hunger, MealHunger.normal);
+    expect(store.current?.hunger, MealHunger.normal);
+    expect(store.completed, hasLength(1));
+    expect(store.completed.single.hunger, MealHunger.normal);
+  });
+
+  test('rollback da gravação nova deixa a tela antiga igual ao durável', () async {
+    final harness = await _race();
+
+    harness.store.failNextSave();
+    await _openNext(harness.gates);
+    await harness.latest.preferencesSettled;
+    harness.first.syncFromStore();
+
+    expect(harness.first.budget, MealBudget.upTo20);
+    expect(harness.first.hunger, isNull);
+    expect(harness.store.current?.hunger, isNull);
+    expect(harness.store.completed.single.hunger, isNull);
+
+    harness.latest.syncFromStore();
+    await _openNext(harness.gates);
+    await harness.latest.preferencesSettled;
+    harness.first.syncFromStore();
+
+    _expectShared(harness, hunger: MealHunger.normal);
+    expect(harness.store.completed.last.hunger, MealHunger.normal);
+  });
+
+  test('sync no meio da fila não republica a seleção antiga', () async {
+    final harness = await _race(protein: MealProtein.fish);
+
+    harness.first.syncFromStore();
+
+    expect(harness.first.protein, MealProtein.fish);
+    expect(harness.store.current?.protein, MealProtein.fish);
+    expect(harness.store.completed, hasLength(1));
+    expect(harness.gates, hasLength(2));
+    expect(harness.gates.last.isCompleted, isFalse);
+
+    await _openNext(harness.gates);
+    await harness.latest.preferencesSettled;
+    harness.first.syncFromStore();
+
+    _expectShared(harness, protein: MealProtein.fish);
+    expect(harness.store.completed.last.protein, MealProtein.fish);
+    expect(harness.store.completed, hasLength(2));
+    expect(harness.gates, hasLength(2));
+  });
 }
 
 FakeRecommendationRepository _repository() {
@@ -777,6 +860,64 @@ RecommendationSelection _saved() {
     style: MealStyle.balanced,
     taste: MealTaste.savory,
   );
+}
+
+List<Completer<void>> _arm(MemoryRecommendationPreferencesStore store) {
+  final gates = <Completer<void>>[];
+  store.delaySaves(() {
+    final gate = Completer<void>();
+    gates.add(gate);
+    return gate.future;
+  });
+  return gates;
+}
+
+/// Libera só a gravação que está esperando. A seguinte permanece fechada.
+Future<void> _openNext(List<Completer<void>> gates) async {
+  await pumpEventQueue();
+  final pending = gates.where((gate) => !gate.isCompleted).toList();
+  expect(pending, isNotEmpty);
+  pending.first.complete();
+  await pumpEventQueue();
+}
+
+/// A primeira tela já pediu a gravação do orçamento. A segunda nasceu desse
+/// valor e pediu outra preferência, que fica esperando atrás da primeira.
+Future<_Race> _race({MealProtein? protein}) async {
+  final store = MemoryRecommendationPreferencesStore();
+  final gates = _arm(store);
+  final first = _model(_repository(), store: store);
+  first.selectBudget(MealBudget.upTo20);
+  await pumpEventQueue();
+  final latest = _model(_repository(), store: store);
+  if (protein != null) {
+    latest.selectProtein(protein);
+  } else {
+    latest.selectHunger(MealHunger.normal);
+  }
+  await _openNext(gates);
+  return _Race(store, gates, first, latest);
+}
+
+void _expectShared(_Race harness, {MealHunger? hunger, MealProtein? protein}) {
+  expect(harness.first.budget, MealBudget.upTo20);
+  expect(harness.latest.budget, MealBudget.upTo20);
+  expect(harness.first.hunger, hunger);
+  expect(harness.latest.hunger, hunger);
+  expect(harness.first.protein, protein);
+  expect(harness.latest.protein, protein);
+  expect(harness.store.current?.budget, MealBudget.upTo20);
+  expect(harness.store.current?.hunger, hunger);
+  expect(harness.store.current?.protein, protein);
+}
+
+final class _Race {
+  const _Race(this.store, this.gates, this.first, this.latest);
+
+  final MemoryRecommendationPreferencesStore store;
+  final List<Completer<void>> gates;
+  final RecommendationViewModel first;
+  final RecommendationViewModel latest;
 }
 
 Future<void> _release(List<Completer<void>> gates) async {
