@@ -313,14 +313,17 @@ class RecommendationViewModel extends ChangeNotifier {
   /// Cada alteração segue na hora para o armazenamento compartilhado.
   ///
   /// A fila de lá ordena as escritas, inclusive entre uma tela que está
-  /// fechando e outra que já reabriu. Segurar a seleção mais nova só neste
-  /// ViewModel faria a escrita antiga passar por cima da nova.
+  /// fechando e outra que já reabriu. Repetir a seleção que esta instância
+  /// já pediu só é redundante enquanto o store ainda está nela. Se outra
+  /// instância mudou a revisão compartilhada, voltar ao valor anterior é
+  /// uma intenção nova.
   void _persist() {
     final store = preferencesStore;
     if (store == null) return;
     final next = _capture();
-    if (next == _queued) return;
-    if (_queued == null && next == _lastSaved && next == _stored(store)) return;
+    final stored = _stored(store);
+    if (next == _queued && next == stored) return;
+    if (_queued == null && next == _lastSaved && next == stored) return;
     _queued = next;
     final pending = store.save(next);
     _seenEpoch = _epoch(store);

@@ -355,6 +355,26 @@ void main() {
     expect(_model(_repository(), store: store).budget, MealBudget.upTo20);
   });
 
+  test('nova seleção de A não é ignorada depois que outra instância gravou B', () async {
+    final store = MemoryRecommendationPreferencesStore();
+    final gates = _arm(store);
+    final first = _model(_repository(), store: store);
+
+    first.selectBudget(MealBudget.upTo20);
+    await pumpEventQueue();
+    final second = _model(_repository(), store: store);
+    second.selectBudget(MealBudget.from21To35);
+    first.selectBudget(MealBudget.upTo20);
+    await _release(gates);
+    await first.preferencesSettled;
+    await second.preferencesSettled;
+
+    expect(first.budget, MealBudget.upTo20);
+    expect(store.current?.budget, MealBudget.upTo20);
+    expect(store.completed.last.budget, MealBudget.upTo20);
+    expect(_model(_repository(), store: store).budget, MealBudget.upTo20);
+  });
+
   test('voltar ao valor anterior durante a gravação não perde essa escolha', () async {
     final store = MemoryRecommendationPreferencesStore(
       initial: RecommendationSelection(budget: MealBudget.upTo20),
