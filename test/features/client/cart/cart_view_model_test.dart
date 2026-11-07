@@ -287,6 +287,41 @@ void main() {
     expect(session.read, throwsStateError);
   });
 
+  test('remoção rejeitada sem releitura do SQLite bloqueia a sessão até restaurar', () async {
+    final first = CartItem(lineId: 'line-1', productId: 'p1', quantity: 1, note: null);
+    final second = CartItem(lineId: 'line-2', productId: 'p1', quantity: 2, note: null);
+    final cart = _MemoryCartRepository([first, second]);
+    final session = CartSession(cart);
+    addTearDown(session.dispose);
+    await session.restore();
+    final viewModel = CartViewModel.persisted(
+      catalog([priced('p1', 'Moqueca', 1000)]),
+      session: session,
+    );
+    addTearDown(viewModel.dispose);
+
+    cart.items = [first];
+    cart.loadFailure = StateError('SQLite indisponível');
+    await viewModel.removeAt(1);
+
+    expect(viewModel.cartWriteErrorMessage, isNotNull);
+    expect(session.isReady, isFalse);
+    expect(session.restoreError, isA<StateError>());
+    expect(session.hasPendingOperations, isFalse);
+    expect(session.read, throwsStateError);
+    expect(viewModel.rows, hasLength(2));
+    await expectLater(session.changeQuantity(lineId: 'line-1', delta: 1), throwsStateError);
+    expect(cart.items, [first]);
+
+    cart.loadFailure = null;
+    await session.restore();
+
+    expect(session.isReady, isTrue);
+    expect(session.restoreError, isNull);
+    expect(session.read(), [first]);
+    expect(viewModel.rows, hasLength(1));
+  });
+
   test('índice fora da lista não grava', () async {
     final lines = _RecordingLines([line('p1', 1)]);
     final viewModel = viewModelOf(const [], catalog([priced('p1', 'Moqueca', 1000)]), lines: lines);

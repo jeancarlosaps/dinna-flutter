@@ -267,6 +267,70 @@ void main() {
     expect(sent.single.single.quantity, 2);
   });
 
+  testWidgets('falha ao reconciliar alteração rejeitada bloqueia envio até restaurar', (
+    tester,
+  ) async {
+    final repository = _CartSessionRepository([
+      CartItem(lineId: 'line-1', productId: 'p1', quantity: 1, note: null),
+    ]);
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final sent = <List<CartItem>>[];
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async {
+          sent.add(items);
+          return const OrderSubmission.failed('Não foi possível enviar o pedido');
+        },
+      ),
+    );
+    addTearDown(submission.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: CartView(
+          createViewModel: () =>
+              CartViewModel.persisted(FakeProductRepository(() async => catalog), session: session),
+          submission: submission,
+          onOpenMenu: (_) {},
+          cartSession: session,
+          table: '12',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    repository.updateOverride = (_) async => false;
+    repository.loadOverride = () async => throw StateError('SQLite indisponível');
+    await tester.tap(find.byTooltip('Aumentar quantidade'));
+    await tester.pumpAndSettle();
+
+    if (find.text('Enviar pedido').evaluate().isNotEmpty) {
+      await tester.tap(find.text('Enviar pedido'));
+      await tester.pumpAndSettle();
+    }
+    expect(sent, isEmpty);
+    expect(session.isReady, isFalse);
+    expect(session.restoreError, isA<StateError>());
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(find.text('Não foi possível carregar seu carrinho. Tente novamente.'), findsOneWidget);
+
+    repository.updateOverride = null;
+    repository.loadOverride = null;
+    repository.items[0] = CartItem(lineId: 'line-1', productId: 'p1', quantity: 4, note: null);
+    await tester.tap(find.text('Tentar novamente'));
+    await tester.pumpAndSettle();
+
+    expect(session.isReady, isTrue);
+    expect(session.read().single.quantity, 4);
+    await tester.tap(find.text('Enviar pedido'));
+    await tester.pumpAndSettle();
+
+    expect(sent.single.single.quantity, 4);
+  });
+
   testWidgets('o estado vazio rola até o cardápio em tela baixa', (tester) async {
     tester.view.physicalSize = const Size(360, 220);
     tester.view.devicePixelRatio = 1;

@@ -135,8 +135,18 @@ final class CartSession extends ChangeNotifier {
     _notify();
   });
 
+  /// Sem leitura do SQLite, o cache deixa de ser confiável: a sessão volta a
+  /// exigir [restore], sem descartar as linhas confirmadas antes.
   Future<void> _reload() async {
-    final loaded = await _repository.load();
+    final List<CartItem> loaded;
+    try {
+      loaded = await _repository.load();
+    } catch (error) {
+      _isReady = false;
+      _restoreError = error;
+      _notify();
+      rethrow;
+    }
     _items = List<CartItem>.unmodifiable(loaded);
     _notify();
   }
