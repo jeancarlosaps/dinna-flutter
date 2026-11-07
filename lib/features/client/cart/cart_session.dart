@@ -29,6 +29,7 @@ final class CartSession extends ChangeNotifier {
   /// Recupera o carrinho persistido. Uma falha não publica lista vazia.
   Future<void> restore() => _enqueue(() async {
     _checkNotDisposed();
+    _isReady = false;
     _isRestoring = true;
     _restoreError = null;
     _notify();

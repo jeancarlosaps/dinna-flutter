@@ -52,6 +52,7 @@ class _CartViewState extends State<CartView> {
   String? _presentedIntentId;
   var _confirmationFrame = false;
   var _confirmationOpen = false;
+  bool? _lastSessionReadiness;
 
   OrderSubmissionViewModel get _submission => widget.submission;
 
@@ -59,10 +60,12 @@ class _CartViewState extends State<CartView> {
   void initState() {
     super.initState();
     final session = widget.cartSession;
-    if (session == null || session.isReady) {
+    if (session == null) {
       _initializeViewModel();
     } else {
       session.addListener(_onCartSession);
+      _lastSessionReadiness = session.isReady;
+      if (session.isReady) _initializeViewModel();
     }
     _submission.addListener(_onSubmission);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -81,8 +84,14 @@ class _CartViewState extends State<CartView> {
 
   void _onCartSession() {
     final session = widget.cartSession;
-    if (!mounted || session == null || !session.isReady || _viewModel != null) return;
-    setState(_initializeViewModel);
+    if (!mounted || session == null) return;
+    final readinessChanged = session.isReady != _lastSessionReadiness;
+    _lastSessionReadiness = session.isReady;
+    if (session.isReady && _viewModel == null) {
+      setState(_initializeViewModel);
+    } else if (readinessChanged) {
+      setState(() {});
+    }
   }
 
   void _initializeViewModel() {
@@ -164,6 +173,7 @@ class _CartViewState extends State<CartView> {
     final viewModel = _viewModel;
     if (!_submission.canRequestSubmit ||
         viewModel == null ||
+        widget.cartSession?.isReady == false ||
         viewModel.isMutating ||
         viewModel.items.isEmpty) {
       return;
@@ -182,13 +192,15 @@ class _CartViewState extends State<CartView> {
   @override
   Widget build(BuildContext context) {
     final session = widget.cartSession;
-    if (session != null && _viewModel == null) {
+    if (session != null && (!session.isReady || _viewModel == null)) {
       return Scaffold(
         appBar: AppBar(title: const Text('Seu carrinho')),
         body: ListenableBuilder(
           listenable: session,
           builder: (context, _) {
-            if (session.isReady) return const SizedBox.shrink();
+            if (session.isReady) {
+              return const Center(child: CircularProgressIndicator());
+            }
             final hasError = session.restoreError != null;
             return Center(
               child: Padding(
@@ -232,7 +244,7 @@ class _CartViewState extends State<CartView> {
             onResume: _resume,
             onBeginAnother: _beginAnother,
             onViewConfirmation: widget.onOrderConfirmed == null ? null : _viewConfirmation,
-            allowSend: hasRows && !viewModel.isMutating,
+            allowSend: hasRows && !viewModel.isMutating && session?.isReady != false,
           );
           if (!hasRows && _submission.status == OrderSubmissionStatus.idle) {
             return _EmptyCart(onOpenMenu: () => widget.onOpenMenu(context));

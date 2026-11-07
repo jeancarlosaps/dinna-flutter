@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:dinna/app/app.dart';
 import 'package:dinna/app/router/app_router.dart';
 import 'package:dinna/app/theme/dinna_theme.dart';
 import 'package:dinna/core/domain/cart_item.dart';
 import 'package:dinna/core/domain/product.dart';
 import 'package:dinna/features/client/cart/cart_lines.dart';
+import 'package:dinna/features/client/cart/cart_repository.dart';
+import 'package:dinna/features/client/cart/cart_session.dart';
 import 'package:dinna/features/client/cart/cart_view.dart';
 import 'package:dinna/features/client/cart/cart_view_model.dart';
 import 'package:dinna/features/client/order/order_submission_view_model.dart';
@@ -95,6 +99,64 @@ void main() {
     await tester.pump();
 
     expect(opened, 1);
+  });
+
+  testWidgets('falha ao restaurar novamente esconde linhas antigas e bloqueia envio', (
+    tester,
+  ) async {
+    final repository = _CartSessionRepository([
+      CartItem(lineId: 'line-1', productId: 'p1', quantity: 1, note: null),
+    ]);
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(() async => OrderList.ready(const [])),
+    );
+    addTearDown(submission.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: CartView(
+          createViewModel: () =>
+              CartViewModel.persisted(FakeProductRepository(() async => catalog), session: session),
+          submission: submission,
+          onOpenMenu: (_) {},
+          cartSession: session,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Moqueca de Peixe'), findsOneWidget);
+    expect(find.text('Enviar pedido'), findsOneWidget);
+
+    final pendingLoad = Completer<List<CartItem>>();
+    repository.loadOverride = () => pendingLoad.future;
+    final restore = session.restore();
+    await tester.pump();
+    await tester.pump();
+
+    expect(session.isReady, isFalse);
+    expect(find.text('Moqueca de Peixe'), findsNothing);
+    expect(find.text('Enviar pedido'), findsNothing);
+
+    pendingLoad.completeError(StateError('SQLite indisponível'));
+    await expectLater(restore, throwsStateError);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Não foi possível carregar seu carrinho. Tente novamente.'), findsOneWidget);
+    expect(find.text('Moqueca de Peixe'), findsNothing);
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    repository.loadOverride = null;
+    await tester.tap(find.text('Tentar novamente'));
+    await tester.pumpAndSettle();
+
+    expect(session.isReady, isTrue);
+    expect(find.text('Moqueca de Peixe'), findsOneWidget);
+    expect(find.text('Enviar pedido'), findsOneWidget);
   });
 
   testWidgets('o estado vazio rola até o cardápio em tela baixa', (tester) async {
@@ -203,4 +265,29 @@ void main() {
     expect(find.text(formatOrderTotal(9780)), findsWidgets);
     expect(lines.read().single.quantity, 2);
   });
+}
+
+class _CartSessionRepository implements CartRepository {
+  _CartSessionRepository(this.items);
+
+  final List<CartItem> items;
+  Future<List<CartItem>> Function()? loadOverride;
+
+  @override
+  Future<List<CartItem>> load() async =>
+      loadOverride == null ? List<CartItem>.of(items) : loadOverride!();
+
+  @override
+  Future<CartItem> add({required String productId, required int quantity, String? note}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<bool> update(CartItem item) => throw UnimplementedError();
+
+  @override
+  Future<bool> remove(String lineId) => throw UnimplementedError();
+
+  @override
+  Future<List<CartItem>> removeConfirmed(List<CartItem> confirmedItems) =>
+      throw UnimplementedError();
 }
