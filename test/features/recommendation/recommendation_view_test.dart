@@ -1,25 +1,27 @@
 import 'dart:async';
 
 import 'package:dinna/app/theme/dinna_theme.dart';
+import 'package:dinna/core/domain/product.dart';
+import 'package:dinna/features/menu/product_image.dart';
+import 'package:dinna/features/menu/product_repository.dart';
 import 'package:dinna/features/recommendation/recommendation.dart';
 import 'package:dinna/features/recommendation/recommendation_preferences.dart';
 import 'package:dinna/features/recommendation/recommendation_repository.dart';
 import 'package:dinna/features/recommendation/recommendation_view.dart';
 import 'package:dinna/features/recommendation/recommendation_view_model.dart';
+import 'package:dinna/features/restaurant/order_format.dart';
 import 'package:dinna/shared/widgets/dinna_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../menu/fake_product_repository.dart';
 import 'fake_recommendation_repository.dart';
 
 const _allergy = 'Tem alergia? Confirme os ingredientes com a equipe antes de pedir.';
 
 void main() {
   testWidgets('mostra as perguntas, a alergia e o botão desabilitado', (tester) async {
-    await _pump(
-      tester,
-      RecommendationViewModel(FakeRecommendationRepository((_) async => _answered())),
-    );
+    await _pump(tester, _model(FakeRecommendationRepository((_) async => _answered())));
 
     expect(find.text('Me ajuda a escolher'), findsOneWidget);
     expect(find.text(_allergy), findsOneWidget);
@@ -40,10 +42,7 @@ void main() {
   testWidgets('seleção única e restrições múltiplas habilitam o botão', (tester) async {
     final handle = tester.ensureSemantics();
     try {
-      await _pump(
-        tester,
-        RecommendationViewModel(FakeRecommendationRepository((_) async => _answered())),
-      );
+      await _pump(tester, _model(FakeRecommendationRepository((_) async => _answered())));
 
       await _answerForm(tester);
       await _tapLabel(tester, DietaryRestriction.noOnion.label);
@@ -80,10 +79,7 @@ void main() {
   });
 
   testWidgets('contradição fica visível e não apaga a escolha', (tester) async {
-    await _pump(
-      tester,
-      RecommendationViewModel(FakeRecommendationRepository((_) async => _answered())),
-    );
+    await _pump(tester, _model(FakeRecommendationRepository((_) async => _answered())));
     await _answerForm(tester, protein: 'Peixe');
     await _tapLabel(tester, 'Sem frutos do mar');
     expect(find.text(RecommendationViewModel.fishAndSeafoodMessage), findsOneWidget);
@@ -100,16 +96,19 @@ void main() {
     expect(find.text('Peixe'), findsWidgets);
   });
 
-  testWidgets('loading impede outro envio e o resultado lista só o motivo', (tester) async {
+  testWidgets('loading impede outro envio e o card mostra o prato real', (tester) async {
     final pending = Completer<RecommendationAttempt>();
+    final catalog = Completer<ProductList>();
     var calls = 0;
-    final viewModel = RecommendationViewModel(
+    final burger = _product('p3', name: 'Burger da casa', priceCents: 1890);
+    final viewModel = _model(
       FakeRecommendationRepository((_) {
         calls += 1;
         return calls == 1
             ? pending.future
             : Future<RecommendationAttempt>.value(_answered(reason: 'Frango, Salgado'));
       }),
+      products: FakeProductRepository(() => catalog.future),
     );
     await _pump(tester, viewModel);
     await _answerForm(tester);
@@ -122,11 +121,22 @@ void main() {
     expect(calls, 1);
 
     pending.complete(_answered());
+    await tester.pump();
+    expect(find.text('Preparando uma sugestão…'), findsOneWidget);
+    expect(find.text('Burger da casa'), findsNothing);
+
+    catalog.complete(ProductList.ready([burger]));
     await tester.pumpAndSettle();
 
+    expect(find.text('Burger da casa'), findsOneWidget);
+    expect(find.text(formatOrderTotal(1890)), findsOneWidget);
     expect(find.text('Carne, Salgado'), findsOneWidget);
-    expect(find.text(_allergy), findsOneWidget);
+    expect(find.text('Descrição interna'), findsNothing);
     expect(find.text('p3'), findsNothing);
+    expect(find.text('Adicionar'), findsNothing);
+    expect(find.byType(ProductImage), findsOneWidget);
+    expect(tester.widget<ProductImage>(find.byType(ProductImage)).product, burger);
+    expect(find.text(_allergy), findsOneWidget);
     expect(find.text('A Dinna não respondeu agora'), findsNothing);
     expect(find.text('Ver cardápio completo'), findsOneWidget);
 
@@ -140,7 +150,7 @@ void main() {
 
   testWidgets('fallback mostra a faixa e a nova tentativa', (tester) async {
     var calls = 0;
-    final viewModel = RecommendationViewModel(
+    final viewModel = _model(
       FakeRecommendationRepository((_) async {
         calls += 1;
         return RecommendationAttempt.ready(
@@ -151,6 +161,9 @@ void main() {
           ),
         );
       }),
+      products: FakeProductRepository(
+        () async => ProductList.ready([_product('p2', name: 'Salada da casa', priceCents: 2200)]),
+      ),
     );
     await _pump(tester, viewModel);
     await _answerForm(tester);
@@ -165,7 +178,10 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(find.text('Salada da casa'), findsOneWidget);
+    expect(find.text(formatOrderTotal(2200)), findsOneWidget);
     expect(find.text('Carne, Salgado'), findsOneWidget);
+    expect(find.byType(ProductImage), findsOneWidget);
     expect(find.text(_allergy), findsOneWidget);
 
     await _tapLabel(tester, 'Tentar a Dinna de novo');
@@ -198,8 +214,11 @@ void main() {
       _answered(reason: 'Frango, Salgado'),
     ];
     var index = 0;
-    final viewModel = RecommendationViewModel(
+    final viewModel = _model(
       FakeRecommendationRepository((_) async => outcomes[index++]),
+      products: FakeProductRepository(
+        () async => ProductList.ready([_product('p3', name: 'Burger da casa', priceCents: 1890)]),
+      ),
     );
     await _pump(tester, viewModel);
     await _answerForm(tester);
@@ -235,6 +254,8 @@ void main() {
 
     await _tapLabel(tester, 'Tentar de novo');
     await tester.pumpAndSettle();
+    expect(find.text('Burger da casa'), findsOneWidget);
+    expect(find.text(formatOrderTotal(1890)), findsOneWidget);
     expect(find.text('Frango, Salgado'), findsOneWidget);
     expect(viewModel.phase, RecommendationPhase.suggestions);
   });
@@ -256,6 +277,133 @@ void main() {
     expect(find.text('Me sugere um prato'), findsNothing);
   });
 
+  testWidgets('mostra os cards na ordem da sugestão e omite prato esgotado', (tester) async {
+    tester.view.physicalSize = const Size(400, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final salad = _product('p2', name: 'Salada da casa', priceCents: 2200);
+    final burger = _product('p1', name: 'Burger da casa', priceCents: 1890);
+    await _pump(
+      tester,
+      _model(
+        FakeRecommendationRepository(
+          (_) async => RecommendationAttempt.ready(
+            Recommendation(
+              provider: RecommendationProvider.answered,
+              outcome: RecommendationOutcome.suggestions,
+              products: [
+                RecommendationSuggestion(productId: 'p2', reason: 'Leve, Salgado'),
+                RecommendationSuggestion(productId: 'p3', reason: 'Peixe, Salgado'),
+                RecommendationSuggestion(productId: 'p1', reason: 'Carne, Salgado'),
+              ],
+            ),
+          ),
+        ),
+        products: FakeProductRepository(
+          () async => ProductList.ready([
+            burger,
+            _product('p3', name: 'Peixe grelhado', available: false),
+            salad,
+          ]),
+        ),
+      ),
+    );
+    await _answerForm(tester);
+    await _tapLabel(tester, 'Me sugere um prato');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Salada da casa'), findsOneWidget);
+    expect(find.text('Burger da casa'), findsOneWidget);
+    expect(find.text(formatOrderTotal(2200)), findsOneWidget);
+    expect(find.text(formatOrderTotal(1890)), findsOneWidget);
+    expect(find.text('Leve, Salgado'), findsOneWidget);
+    expect(find.text('Carne, Salgado'), findsOneWidget);
+    expect(find.text('Peixe grelhado'), findsNothing);
+    expect(find.text('Peixe, Salgado'), findsNothing);
+    expect(find.text('p3'), findsNothing);
+    expect(find.text('Descrição interna'), findsNothing);
+    expect(find.text('Adicionar'), findsNothing);
+    expect(find.byType(ProductImage), findsNWidgets(2));
+    expect(
+      tester.getTopLeft(find.text('Salada da casa')).dy,
+      lessThan(tester.getTopLeft(find.text('Burger da casa')).dy),
+    );
+    expect(
+      tester.getTopLeft(find.text('Leve, Salgado')).dy,
+      lessThan(tester.getTopLeft(find.text('Carne, Salgado')).dy),
+    );
+    expect(
+      tester.widgetList<ProductImage>(find.byType(ProductImage)).map((image) => image.product),
+      [salad, burger],
+    );
+  });
+
+  testWidgets('falha ao consultar o cardápio não inventa prato e a nova tentativa mostra o card', (
+    tester,
+  ) async {
+    var calls = 0;
+    final viewModel = _model(
+      FakeRecommendationRepository((_) async => _answered()),
+      products: FakeProductRepository(() async {
+        calls += 1;
+        if (calls == 1) return const ProductList.unavailable('timeout cru');
+        return ProductList.ready([_product('p3', name: 'Burger da casa', priceCents: 1890)]);
+      }),
+    );
+    await _pump(tester, viewModel);
+    await _answerForm(tester);
+    await _tapLabel(tester, 'Me sugere um prato');
+    await tester.pumpAndSettle();
+
+    expect(find.text(RecommendationViewModel.catalogFailureTitle), findsOneWidget);
+    expect(find.text(RecommendationViewModel.catalogFailureMessage), findsOneWidget);
+    expect(find.text('timeout cru'), findsNothing);
+    expect(find.text('Burger da casa'), findsNothing);
+    expect(find.text('Carne, Salgado'), findsNothing);
+
+    await _tapLabel(tester, 'Tentar de novo');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Burger da casa'), findsOneWidget);
+    expect(find.text(formatOrderTotal(1890)), findsOneWidget);
+    expect(find.text('Carne, Salgado'), findsOneWidget);
+    expect(find.byType(ProductImage), findsOneWidget);
+    expect(viewModel.phase, RecommendationPhase.suggestions);
+    expect(calls, 2);
+  });
+
+  testWidgets('sugestão sem prato válido não exibe nome, preço nem motivo', (tester) async {
+    await _pump(
+      tester,
+      _model(
+        FakeRecommendationRepository((_) async => _answered()),
+        products: FakeProductRepository(
+          () async => ProductList.ready([
+            _product('p3', name: 'Peixe grelhado', priceCents: 3100, available: false),
+          ]),
+        ),
+      ),
+    );
+    await _answerForm(tester);
+    await _tapLabel(tester, 'Me sugere um prato');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Nenhum prato disponível'), findsOneWidget);
+    expect(
+      find.text('As sugestões recebidas não estão no cardápio disponível agora.'),
+      findsOneWidget,
+    );
+    expect(find.text('Peixe grelhado'), findsNothing);
+    expect(find.text(formatOrderTotal(3100)), findsNothing);
+    expect(find.text('Carne, Salgado'), findsNothing);
+    expect(find.text('p3'), findsNothing);
+    expect(find.text('Adicionar'), findsNothing);
+    expect(find.text(_allergy), findsOneWidget);
+    expect(find.text('Ver cardápio completo'), findsOneWidget);
+  });
+
   testWidgets('texto ampliado rola sem overflow', (tester) async {
     tester.view.physicalSize = const Size(360, 640);
     tester.view.devicePixelRatio = 1;
@@ -269,8 +417,7 @@ void main() {
           child: child!,
         ),
         home: RecommendationView(
-          createViewModel: () =>
-              RecommendationViewModel(FakeRecommendationRepository((_) async => _answered())),
+          createViewModel: () => _model(FakeRecommendationRepository((_) async => _answered())),
           onShowMenu: (_) {},
         ),
       ),
@@ -314,6 +461,30 @@ Future<void> _answerForm(WidgetTester tester, {String protein = 'Frango'}) async
   await _tapLabel(tester, protein);
   await _tapLabel(tester, 'Equilibrado');
   await _tapLabel(tester, 'Salgado');
+}
+
+RecommendationViewModel _model(
+  RecommendationRepository repository, {
+  ProductRepository? products,
+  String? table,
+}) {
+  return RecommendationViewModel(
+    repository,
+    products: products ?? FakeProductRepository(() async => ProductList.ready(const [])),
+    table: table,
+  );
+}
+
+Product _product(String id, {required String name, int priceCents = 1890, bool available = true}) {
+  return Product(
+    id: id,
+    name: name,
+    description: 'Descrição interna',
+    category: 'burgers',
+    priceCents: priceCents,
+    imageUrl: null,
+    available: available,
+  );
 }
 
 FilledButton _submitButton(WidgetTester tester) {
@@ -360,8 +531,13 @@ class _MenuHostState extends State<_MenuHost> {
                   MaterialPageRoute<void>(
                     settings: const RouteSettings(name: '/recommendation', arguments: '12'),
                     builder: (routeContext) => RecommendationView(
-                      createViewModel: () => RecommendationViewModel(
+                      createViewModel: () => _model(
                         FakeRecommendationRepository((_) async => _answered()),
+                        products: FakeProductRepository(
+                          () async => ProductList.ready([
+                            _product('p3', name: 'Burger da casa', priceCents: 1890),
+                          ]),
+                        ),
                         table: '12',
                       ),
                       onShowMenu: (menuContext) => Navigator.of(menuContext).pop(),

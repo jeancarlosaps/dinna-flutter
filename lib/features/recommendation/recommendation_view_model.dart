@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 
+import '../menu/product_repository.dart';
 import 'recommendation.dart';
+import 'recommendation_catalog.dart';
 import 'recommendation_preferences.dart';
 import 'recommendation_repository.dart';
 import 'recommendation_request.dart';
@@ -13,10 +15,11 @@ enum RecommendationPhase {
   /// Há um POST em andamento. Outro toque não dispara outro envio.
   loading,
 
-  /// `answered` + `suggestions`.
+  /// `answered` + `suggestions`, com ao menos um prato disponível no cardápio.
   suggestions,
 
-  /// `unavailable` + `suggestions`. Sucesso com fallback, não é erro.
+  /// `unavailable` + `suggestions`, com ao menos um prato disponível.
+  /// Sucesso com fallback, não é erro.
   fallback,
 
   /// `not_called` + `no_compatible_products`.
@@ -24,6 +27,12 @@ enum RecommendationPhase {
 
   /// `not_called` + `empty_catalog`.
   emptyCatalog,
+
+  /// A IA devolveu ids, mas nenhum existe e está disponível.
+  noAvailableProducts,
+
+  /// A consulta ao cardápio falhou depois de uma recomendação com sugestões.
+  catalogFailed,
 
   /// HTTP, transporte ou JSON fora dos quatro pares.
   failed,
@@ -34,15 +43,25 @@ enum RecommendationPhase {
 /// As cinco escolhas não ganham default. Restrição marcada permanece no
 /// pedido. Contradição desabilita o envio e não apaga o que a pessoa marcou.
 class RecommendationViewModel extends ChangeNotifier {
-  RecommendationViewModel(this._repository, {this.table, this.limit = 3});
+  RecommendationViewModel(
+    this._repository, {
+    required ProductRepository products,
+    this.table,
+    this.limit = 3,
+  }) : _catalog = RecommendationCatalog(products);
 
   final RecommendationRepository _repository;
+  final RecommendationCatalog _catalog;
   final String? table;
   final int limit;
 
   static const fishAndSeafoodMessage = 'Peixe não combina com a restrição sem frutos do mar.';
 
   static const animalAndVeganMessage = 'A proteína escolhida não cabe numa restrição vegana.';
+
+  static const catalogFailureTitle = 'Não foi possível carregar os pratos sugeridos';
+
+  static const catalogFailureMessage = 'O cardápio, o carrinho e o pedido continuam disponíveis.';
 
   MealBudget? _budget;
   MealHunger? _hunger;
@@ -52,7 +71,8 @@ class RecommendationViewModel extends ChangeNotifier {
   List<DietaryRestriction> _restrictions = const [];
 
   RecommendationPhase _phase = RecommendationPhase.editing;
-  List<RecommendationSuggestion> _suggestions = const [];
+  List<RecommendedProduct> _recommendedProducts = const [];
+  bool _usedFallback = false;
   String? _errorTitle;
   String? _errorMessage;
   RecommendationFailure? _failure;
@@ -67,7 +87,14 @@ class RecommendationViewModel extends ChangeNotifier {
   MealTaste? get taste => _taste;
   List<DietaryRestriction> get restrictions => _restrictions;
   RecommendationPhase get phase => _phase;
-  List<RecommendationSuggestion> get suggestions => _suggestions;
+
+  /// Pratos reais, na ordem das sugestões. Vazio fora de [RecommendationPhase.suggestions]
+  /// e [RecommendationPhase.fallback].
+  List<RecommendedProduct> get recommendedProducts => _recommendedProducts;
+
+  /// Verdadeiro só quando há card e a lista veio do fallback.
+  bool get usedFallback => _usedFallback;
+
   String? get errorTitle => _errorTitle;
   String? get errorMessage => _errorMessage;
   RecommendationFailure? get failure => _failure;
@@ -132,7 +159,8 @@ class RecommendationViewModel extends ChangeNotifier {
     final generation = ++_generation;
     _inFlight = true;
     _phase = RecommendationPhase.loading;
-    _suggestions = const [];
+    _recommendedProducts = const [];
+    _usedFallback = false;
     _errorTitle = null;
     _errorMessage = null;
     _failure = null;
@@ -162,8 +190,43 @@ class RecommendationViewModel extends ChangeNotifier {
     }
     if (_disposed || generation != _generation) return;
 
+    final recommendation = attempt.recommendation;
+    if (recommendation == null || recommendation.outcome != RecommendationOutcome.suggestions) {
+      _inFlight = false;
+      _apply(attempt);
+      notifyListeners();
+      return;
+    }
+
+    final lookup = await _catalog.lookup(recommendation.products);
+    if (_disposed || generation != _generation) return;
+
     _inFlight = false;
-    _apply(attempt);
+    _failure = null;
+    final resolved = lookup.products;
+    if (resolved == null) {
+      _phase = RecommendationPhase.catalogFailed;
+      _recommendedProducts = const [];
+      _usedFallback = false;
+      _errorTitle = catalogFailureTitle;
+      _errorMessage = catalogFailureMessage;
+      notifyListeners();
+      return;
+    }
+
+    _errorTitle = null;
+    _errorMessage = null;
+    if (resolved.isEmpty) {
+      _phase = RecommendationPhase.noAvailableProducts;
+      _recommendedProducts = const [];
+      _usedFallback = false;
+      notifyListeners();
+      return;
+    }
+
+    _recommendedProducts = resolved;
+    _usedFallback = recommendation.usedFallback;
+    _phase = _usedFallback ? RecommendationPhase.fallback : RecommendationPhase.suggestions;
     notifyListeners();
   }
 
@@ -174,44 +237,44 @@ class RecommendationViewModel extends ChangeNotifier {
     _generation++;
     _inFlight = false;
     _phase = RecommendationPhase.editing;
-    _suggestions = const [];
+    _recommendedProducts = const [];
+    _usedFallback = false;
     _errorTitle = null;
     _errorMessage = null;
     _failure = null;
     notifyListeners();
   }
 
+  /// Outcomes sem sugestão e falha da recomendação. Sugestão com card passa
+  /// pelo catálogo em [submit].
   void _apply(RecommendationAttempt attempt) {
     final recommendation = attempt.recommendation;
+    _recommendedProducts = const [];
+    _usedFallback = false;
     if (recommendation == null) {
       _phase = RecommendationPhase.failed;
       _failure = attempt.failure ?? RecommendationFailure.unavailable;
       _errorTitle = attempt.title ?? RecommendationRepository.failureTitle;
       _errorMessage = attempt.message ?? RecommendationRepository.failureMessage;
-      _suggestions = const [];
       return;
     }
 
-    _failure = null;
-    _errorTitle = null;
-    _errorMessage = null;
-    _suggestions = recommendation.products;
-    _phase = switch ((recommendation.provider, recommendation.outcome)) {
-      (RecommendationProvider.unavailable, RecommendationOutcome.suggestions) =>
-        RecommendationPhase.fallback,
-      (RecommendationProvider.answered, RecommendationOutcome.suggestions) =>
-        RecommendationPhase.suggestions,
-      (RecommendationProvider.notCalled, RecommendationOutcome.noCompatibleProducts) =>
-        RecommendationPhase.noCompatibleProducts,
-      (RecommendationProvider.notCalled, RecommendationOutcome.emptyCatalog) =>
-        RecommendationPhase.emptyCatalog,
-      _ => RecommendationPhase.failed,
-    };
-    if (_phase == RecommendationPhase.failed) {
-      _failure = RecommendationFailure.unavailable;
-      _errorTitle = RecommendationRepository.failureTitle;
-      _errorMessage = RecommendationRepository.failureMessage;
-      _suggestions = const [];
+    switch (recommendation.outcome) {
+      case RecommendationOutcome.suggestions:
+        _phase = RecommendationPhase.failed;
+        _failure = RecommendationFailure.unavailable;
+        _errorTitle = RecommendationRepository.failureTitle;
+        _errorMessage = RecommendationRepository.failureMessage;
+      case RecommendationOutcome.noCompatibleProducts:
+        _failure = null;
+        _errorTitle = null;
+        _errorMessage = null;
+        _phase = RecommendationPhase.noCompatibleProducts;
+      case RecommendationOutcome.emptyCatalog:
+        _failure = null;
+        _errorTitle = null;
+        _errorMessage = null;
+        _phase = RecommendationPhase.emptyCatalog;
     }
   }
 

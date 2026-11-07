@@ -146,6 +146,7 @@ class AppRouter {
       AppRoutes.recommendation => RecommendationView(
         createViewModel: () => RecommendationViewModel(
           recommendationRepository ?? const _MissingRecommendationRepository(),
+          products: productRepository,
           table: _tableArgument(settings.arguments),
         ),
         onShowMenu: (context) => Navigator.of(context).pop(),
