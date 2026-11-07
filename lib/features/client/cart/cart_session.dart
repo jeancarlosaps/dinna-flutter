@@ -39,6 +39,7 @@ final class CartSession extends ChangeNotifier {
       _isRestoring = false;
       _notify();
     } catch (error) {
+      _isReady = false;
       _isRestoring = false;
       _restoreError = error;
       _notify();
@@ -75,6 +76,36 @@ final class CartSession extends ChangeNotifier {
         quantity: quantity,
         note: note,
       );
+      if (!await _repository.update(updated)) {
+        await _reload();
+        return null;
+      }
+
+      final next = List<CartItem>.of(_items)..[index] = updated;
+      _items = List<CartItem>.unmodifiable(next);
+      _notify();
+      return updated;
+    });
+  }
+
+  /// Aplica uma variação sobre a quantidade mais recente, dentro da fila
+  /// compartilhada da sessão. Isso evita perder incrementos concorrentes vindos
+  /// de duas instâncias de tela/ViewModel.
+  Future<CartItem?> changeQuantity({required String lineId, required int delta}) {
+    return _enqueue(() async {
+      _ensureReady();
+      final index = _items.indexWhere((item) => item.lineId == lineId);
+      if (index < 0) return null;
+
+      final current = _items[index];
+      final nextQuantity = current.quantity + delta;
+      final updated = CartItem(
+        lineId: current.lineId,
+        productId: current.productId,
+        quantity: nextQuantity < 1 ? 1 : nextQuantity,
+        note: current.note,
+      );
+      if (updated.quantity == current.quantity) return current;
       if (!await _repository.update(updated)) {
         await _reload();
         return null;

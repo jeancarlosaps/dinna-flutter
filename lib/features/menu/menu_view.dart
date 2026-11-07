@@ -87,6 +87,14 @@ class _MenuViewState extends State<MenuView> {
     await session.addLine(productId: product.id, quantity: quantity);
   }
 
+  Future<void> _retryCartRestore(CartSession session) async {
+    try {
+      await session.restore();
+    } catch (_) {
+      // A mensagem de erro fica visível na faixa para permitir nova tentativa.
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final table = widget.table;
@@ -112,28 +120,57 @@ class _MenuViewState extends State<MenuView> {
       ),
       body: SafeArea(
         top: false,
-        child: ListenableBuilder(
-          listenable: _viewModel,
-          builder: (context, _) => switch (_viewModel.status) {
-            MenuStatus.loading => const Center(child: CircularProgressIndicator()),
-            MenuStatus.failed => _ScrollableStatus(
-              child: DinnaEmptyState(
-                icon: Icons.wifi_off,
-                title: 'Não foi possível carregar o cardápio',
-                message: _viewModel.errorMessage ?? MenuViewModel.fallbackErrorMessage,
-                actionLabel: 'Tentar de novo',
-                onAction: _viewModel.load,
+        child: Column(
+          children: [
+            if (widget.cartSession?.restoreError != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Row(
+                  children: [
+                    const Expanded(child: Text('Não foi possível recuperar o carrinho salvo.')),
+                    TextButton(
+                      onPressed: widget.cartSession!.isRestoring
+                          ? null
+                          : () => unawaited(_retryCartRestore(widget.cartSession!)),
+                      child: widget.cartSession!.isRestoring
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Tentar novamente'),
+                    ),
+                  ],
+                ),
+              ),
+            Expanded(
+              child: ListenableBuilder(
+                listenable: _viewModel,
+                builder: (context, _) => switch (_viewModel.status) {
+                  MenuStatus.loading => const Center(child: CircularProgressIndicator()),
+                  MenuStatus.failed => _ScrollableStatus(
+                    child: DinnaEmptyState(
+                      icon: Icons.wifi_off,
+                      title: 'Não foi possível carregar o cardápio',
+                      message: _viewModel.errorMessage ?? MenuViewModel.fallbackErrorMessage,
+                      actionLabel: 'Tentar de novo',
+                      onAction: _viewModel.load,
+                    ),
+                  ),
+                  MenuStatus.ready when _viewModel.isEmpty => const _ScrollableStatus(
+                    child: DinnaEmptyState(
+                      icon: Icons.restaurant_menu,
+                      title: 'Cardápio vazio',
+                      message: 'O restaurante ainda não cadastrou pratos.',
+                    ),
+                  ),
+                  MenuStatus.ready => _MenuContent(
+                    viewModel: _viewModel,
+                    onOpenProduct: _openProduct,
+                  ),
+                },
               ),
             ),
-            MenuStatus.ready when _viewModel.isEmpty => const _ScrollableStatus(
-              child: DinnaEmptyState(
-                icon: Icons.restaurant_menu,
-                title: 'Cardápio vazio',
-                message: 'O restaurante ainda não cadastrou pratos.',
-              ),
-            ),
-            MenuStatus.ready => _MenuContent(viewModel: _viewModel, onOpenProduct: _openProduct),
-          },
+          ],
         ),
       ),
     );

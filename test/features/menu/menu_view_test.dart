@@ -1,5 +1,8 @@
 import 'package:dinna/app/theme/dinna_theme.dart';
+import 'package:dinna/core/domain/cart_item.dart';
 import 'package:dinna/core/domain/product.dart';
+import 'package:dinna/features/client/cart/cart_repository.dart';
+import 'package:dinna/features/client/cart/cart_session.dart';
 import 'package:dinna/features/menu/menu_view.dart';
 import 'package:dinna/features/menu/menu_view_model.dart';
 import 'package:dinna/features/menu/product_repository.dart';
@@ -71,6 +74,40 @@ void main() {
     await _pumpMenu(tester, [_product('1', 'Margherita', 'pizzas')], table: null);
 
     expect(find.textContaining('Mesa'), findsNothing);
+  });
+
+  testWidgets('falha ao restaurar o carrinho oferece nova tentativa no cardápio', (tester) async {
+    final repository = _MenuCartRepository()..failLoad = true;
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await expectLater(session.restore(), throwsStateError);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: MenuView(
+          createViewModel: () => MenuViewModel(
+            FakeProductRepository(
+              () async => ProductList.ready([_product('1', 'Margherita', 'pizzas')]),
+            ),
+          ),
+          onOpenCart: (_, _) {},
+          cartSession: session,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Não foi possível recuperar o carrinho salvo.'), findsOneWidget);
+    expect(find.text('Tentar novamente'), findsOneWidget);
+    expect(find.text('Margherita'), findsOneWidget);
+
+    repository.failLoad = false;
+    await tester.tap(find.text('Tentar novamente'));
+    await tester.pumpAndSettle();
+
+    expect(session.isReady, isTrue);
+    expect(find.text('Não foi possível recuperar o carrinho salvo.'), findsNothing);
   });
 
   testWidgets('erro e cardápio vazio cabem numa tela de 360 por 220', (tester) async {
@@ -356,4 +393,27 @@ void main() {
     expect(mesaLeft, greaterThanOrEqualTo(barLeft - 0.5));
     expect(mesaLeft + mesa.size.width, lessThanOrEqualTo(barLeft + appBar.size.width + 0.5));
   });
+}
+
+class _MenuCartRepository implements CartRepository {
+  bool failLoad = false;
+
+  @override
+  Future<List<CartItem>> load() async {
+    if (failLoad) throw StateError('SQLite indisponível');
+    return const [];
+  }
+
+  @override
+  Future<CartItem> add({required String productId, required int quantity, String? note}) async =>
+      CartItem(lineId: 'line-1', productId: productId, quantity: quantity, note: note);
+
+  @override
+  Future<bool> update(CartItem item) async => false;
+
+  @override
+  Future<bool> remove(String lineId) async => false;
+
+  @override
+  Future<List<CartItem>> removeConfirmed(List<CartItem> confirmedItems) async => const [];
 }

@@ -162,7 +162,12 @@ class _CartViewState extends State<CartView> {
 
   Future<void> _submit() async {
     final viewModel = _viewModel;
-    if (!_submission.canRequestSubmit || viewModel == null || viewModel.items.isEmpty) return;
+    if (!_submission.canRequestSubmit ||
+        viewModel == null ||
+        viewModel.isMutating ||
+        viewModel.items.isEmpty) {
+      return;
+    }
     await _submission.submit(table: widget.table ?? '', items: viewModel.items);
     _scheduleAutomaticConfirmation();
   }

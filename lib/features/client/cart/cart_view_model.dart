@@ -167,15 +167,15 @@ class CartViewModel extends ChangeNotifier {
   Future<void> increase(int index) {
     if (_disposed || _isMutating || !_contains(index)) return Future.value();
     final current = _items[index];
-    return _changeQuantity(index, current, current.quantity + 1);
+    return _changeQuantity(index, current, 1);
   }
 
   /// Quantidade 1 permanece. A saída da linha é [removeAt].
   Future<void> decrease(int index) {
     if (_disposed || _isMutating || !_contains(index)) return Future.value();
     final current = _items[index];
-    if (current.quantity <= 1) return Future.value();
-    return _changeQuantity(index, current, current.quantity - 1);
+    if (_session == null && current.quantity <= 1) return Future.value();
+    return _changeQuantity(index, current, -1);
   }
 
   Future<void> removeAt(int index) {
@@ -191,21 +191,17 @@ class CartViewModel extends ChangeNotifier {
     return _persistMutation(() => session.removeLine(lineId));
   }
 
-  Future<void> _changeQuantity(int index, CartItem current, int quantity) {
+  Future<void> _changeQuantity(int index, CartItem current, int delta) {
     final session = _session;
     if (session == null) {
-      _items[index] = _withQuantity(current, quantity);
+      _items[index] = _withQuantity(current, current.quantity + delta);
       _publishLegacy();
       return Future.value();
     }
     final lineId = current.lineId;
     if (lineId == null) return _reportCartWriteFailure();
     return _persistMutation(() async {
-      final updated = await session.updateLine(
-        lineId: lineId,
-        quantity: quantity,
-        note: current.note,
-      );
+      final updated = await session.changeQuantity(lineId: lineId, delta: delta);
       if (updated == null) throw StateError('A linha do carrinho não existe mais');
     });
   }
@@ -284,13 +280,13 @@ class CartViewModel extends ChangeNotifier {
     final next = _session!.read();
     final oldProductIds = _items.map((item) => item.productId).toSet();
     final nextProductIds = next.map((item) => item.productId).toSet();
-    final productsChanged = !_sameSet(oldProductIds, nextProductIds);
+    final hasNewProducts = nextProductIds.any((productId) => !oldProductIds.contains(productId));
     _items
       ..clear()
       ..addAll(next);
     // `list()` returns the full catalog, so an in-flight lookup already covers
     // any cart changes that arrive before it completes.
-    if (productsChanged && !_resolving) {
+    if (hasNewProducts && !_resolving) {
       _requested = false;
       _settled = next.isEmpty;
       _failed = false;
@@ -300,7 +296,7 @@ class CartViewModel extends ChangeNotifier {
       _availability = const {};
     }
     _notify();
-    if (productsChanged && next.isNotEmpty && !_resolving) {
+    if (hasNewProducts && next.isNotEmpty && !_resolving) {
       unawaited(resolveProducts());
     }
   }
@@ -328,11 +324,6 @@ class CartViewModel extends ChangeNotifier {
     _session?.removeListener(_onSessionChanged);
     super.dispose();
   }
-}
-
-bool _sameSet<T>(Set<T> first, Set<T> second) {
-  if (first.length != second.length) return false;
-  return first.containsAll(second);
 }
 
 /// Copia a linha com outra quantidade, inclusive a identidade local.

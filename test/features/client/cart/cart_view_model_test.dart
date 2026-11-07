@@ -226,6 +226,67 @@ void main() {
     expect(catalogCalls, 1);
   });
 
+  test('incrementos de dois ViewModels compartilham a quantidade atual da sessão', () async {
+    final cart = _MemoryCartRepository([
+      CartItem(lineId: 'line-1', productId: 'p1', quantity: 1, note: null),
+    ]);
+    final session = CartSession(cart);
+    addTearDown(session.dispose);
+    await session.restore();
+    final products = catalog([priced('p1', 'Moqueca', 1000)]);
+    final first = CartViewModel.persisted(products, session: session);
+    final second = CartViewModel.persisted(products, session: session);
+    addTearDown(first.dispose);
+    addTearDown(second.dispose);
+
+    await Future.wait([first.increase(0), second.increase(0)]);
+
+    expect(session.read().single.quantity, 3);
+    expect(first.rows.single.quantity, 3);
+    expect(second.rows.single.quantity, 3);
+  });
+
+  test('remover produto preserva dados do catálogo para as linhas restantes', () async {
+    final cart = _MemoryCartRepository([
+      CartItem(lineId: 'line-1', productId: 'p1', quantity: 1, note: null),
+      CartItem(lineId: 'line-2', productId: 'p2', quantity: 1, note: null),
+    ]);
+    final session = CartSession(cart);
+    addTearDown(session.dispose);
+    await session.restore();
+    var catalogCalls = 0;
+    final products = FakeProductRepository(() async {
+      catalogCalls++;
+      return ProductList.ready([priced('p1', 'Moqueca', 1000), priced('p2', 'Salada', 500)]);
+    });
+    final viewModel = CartViewModel.persisted(products, session: session);
+    addTearDown(viewModel.dispose);
+    await viewModel.resolveProducts();
+
+    await viewModel.removeAt(0);
+
+    expect(catalogCalls, 1);
+    expect(viewModel.rows.single.name, 'Salada');
+    expect(viewModel.rows.single.lineTotalCents, 500);
+  });
+
+  test('restauração que falha após sucesso volta a bloquear a sessão', () async {
+    final cart = _MemoryCartRepository([
+      CartItem(lineId: 'line-1', productId: 'p1', quantity: 1, note: null),
+    ]);
+    final session = CartSession(cart);
+    addTearDown(session.dispose);
+    await session.restore();
+    expect(session.isReady, isTrue);
+
+    cart.loadFailure = StateError('SQLite indisponível');
+    await expectLater(session.restore(), throwsStateError);
+
+    expect(session.isReady, isFalse);
+    expect(session.restoreError, isA<StateError>());
+    expect(session.read, throwsStateError);
+  });
+
   test('índice fora da lista não grava', () async {
     final lines = _RecordingLines([line('p1', 1)]);
     final viewModel = viewModelOf(const [], catalog([priced('p1', 'Moqueca', 1000)]), lines: lines);
@@ -338,9 +399,13 @@ class _MemoryCartRepository implements CartRepository {
   _MemoryCartRepository(this.items);
 
   List<CartItem> items;
+  Object? loadFailure;
 
   @override
-  Future<List<CartItem>> load() async => List<CartItem>.of(items);
+  Future<List<CartItem>> load() async {
+    if (loadFailure case final error?) throw error;
+    return List<CartItem>.of(items);
+  }
 
   @override
   Future<CartItem> add({required String productId, required int quantity, String? note}) async {
@@ -348,7 +413,12 @@ class _MemoryCartRepository implements CartRepository {
   }
 
   @override
-  Future<bool> update(CartItem item) async => false;
+  Future<bool> update(CartItem item) async {
+    final index = items.indexWhere((current) => current.lineId == item.lineId);
+    if (index < 0) return false;
+    items[index] = item;
+    return true;
+  }
 
   @override
   Future<bool> remove(String lineId) async {
