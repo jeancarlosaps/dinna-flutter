@@ -237,6 +237,14 @@ class RecommendationViewModel extends ChangeNotifier {
     }
   }
 
+  RecommendationSelection? _stored(RecommendationPreferencesStore store) {
+    try {
+      return store.current;
+    } catch (_) {
+      return null;
+    }
+  }
+
   RecommendationSelection _capture() {
     return RecommendationSelection(
       budget: _budget,
@@ -258,7 +266,7 @@ class RecommendationViewModel extends ChangeNotifier {
     if (store == null) return;
     final next = _capture();
     if (next == _queued) return;
-    if (_queued == null && next == _lastSaved) return;
+    if (_queued == null && next == _lastSaved && next == _stored(store)) return;
     _queued = next;
     final pending = store.save(next);
     _settled = pending.then<void>(

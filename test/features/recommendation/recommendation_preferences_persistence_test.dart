@@ -323,6 +323,37 @@ void main() {
     expect(fake.calls, 0);
   });
 
+  test('falha da escolha seguinte não impede gravar de novo o valor anterior', () async {
+    final store = MemoryRecommendationPreferencesStore(
+      initial: RecommendationSelection(budget: MealBudget.upTo20),
+    );
+    final gates = <Completer<void>>[];
+    store.delaySaves(() {
+      final gate = Completer<void>();
+      gates.add(gate);
+      return gate.future;
+    });
+    final viewModel = _model(_repository(), store: store);
+
+    viewModel.selectBudget(MealBudget.from21To35);
+    await pumpEventQueue();
+    viewModel.selectBudget(MealBudget.from36To60);
+    gates.single.complete();
+    await pumpEventQueue();
+    store.failNextSave();
+    gates[1].complete();
+    await viewModel.preferencesSettled;
+    expect(store.current!.budget, MealBudget.from21To35);
+
+    viewModel.selectBudget(MealBudget.upTo20);
+    await _release(gates);
+    await viewModel.preferencesSettled;
+
+    expect(viewModel.budget, MealBudget.upTo20);
+    expect(store.current!.budget, MealBudget.upTo20);
+    expect(_model(_repository(), store: store).budget, MealBudget.upTo20);
+  });
+
   test('voltar ao valor anterior durante a gravação não perde essa escolha', () async {
     final store = MemoryRecommendationPreferencesStore(
       initial: RecommendationSelection(budget: MealBudget.upTo20),
