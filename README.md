@@ -276,12 +276,12 @@ Para mudar a URL, passe `--dart-define=API_BASE_URL=<url>` no `flutter run`. O t
 
 A API local de desenvolvimento não pede token. `flutter run`, sem defines, continua apontando para `localhost` ou `10.0.2.2` e o `ApiClient` não envia `X-Dinna-Api-Token`.
 
-Quando a URL HTTPS do Railway estiver confirmada, o mesmo binário fala com o ambiente protegido. O endereço abaixo é um placeholder: ainda não é a URL pública do deploy.
+Quando a URL HTTPS do Railway estiver confirmada, rode de novo com os dois defines. `API_BASE_URL` e `API_TOKEN` entram na compilação: um app já gerado para a API local não passa a usar o Railway sem um novo `flutter run`. O endereço abaixo é um placeholder: ainda não é a URL pública do deploy.
 
 ```bash
 flutter run \
-  --dart-define=API_BASE_URL=https://<url-publica-do-railway> \
-  --dart-define=API_TOKEN=<token-do-ambiente>
+  --dart-define=API_BASE_URL="https://<url-publica-do-railway>" \
+  --dart-define=API_TOKEN="<token-do-ambiente>"
 ```
 
 O `ApiClient` acrescenta `X-Dinna-Api-Token` em GET e POST somente se `API_TOKEN` tiver valor. `Content-Type`, `Idempotency-Key` e os demais headers do repositório permanecem. Não há login, JWT nem sessão de usuário.
