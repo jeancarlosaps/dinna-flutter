@@ -284,6 +284,34 @@ void main() {
     expect(find.text('Mesa 12'), findsOneWidget);
     expect(ModalRoute.of(tester.element(find.byType(MenuView)))!.settings.arguments, '12');
   });
+
+  testWidgets('cardápio, recomendação e carrinho compartilham a mesma mesa', (tester) async {
+    await _pumpApp(tester);
+    await _push(tester, AppRoutes.menu, arguments: '12');
+
+    await tester.tap(find.text('Me ajuda a escolher'));
+    await tester.pumpAndSettle();
+    expect(
+      ModalRoute.of(tester.element(find.text('Quanto pretende gastar?')))!.settings.arguments,
+      '12',
+    );
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    Navigator.of(tester.element(find.byType(MenuView))).pushNamed(AppRoutes.cart, arguments: '12');
+    await tester.pumpAndSettle();
+    expect(find.text('Seu carrinho'), findsOneWidget);
+    expect(ModalRoute.of(tester.element(find.text('Seu carrinho')))!.settings.arguments, '12');
+
+    await tester.tap(find.text('Ver cardápio'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MenuView), findsOneWidget);
+    expect(find.text('Mesa 12'), findsOneWidget);
+    expect(find.text('Me ajuda a escolher'), findsOneWidget);
+    expect(ModalRoute.of(tester.element(find.byType(MenuView)))!.settings.arguments, '12');
+  });
 }
 
 /// Texto da `TableView`, usado como ponto de partida para navegar a partir dela.

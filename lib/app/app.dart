@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../features/client/cart/cart_lines.dart';
+import '../features/client/cart/cart_session.dart';
 import '../features/client/order/order_intent_store.dart';
 import '../features/client/order/order_submission_view_model.dart';
 import '../features/home/api_status_repository.dart';
@@ -19,18 +20,23 @@ class DinnaApp extends StatefulWidget {
     required this.orderRepository,
     required this.productRepository,
     this.cartLines,
+    this.cartSession,
     this.orderIntentStore,
     this.recommendationRepository,
     this.routeObserver,
     this.pollDelay,
-  });
+  }) : assert(cartSession == null || cartLines == null);
 
   final ApiStatusRepository apiStatusRepository;
   final OrderRepository orderRepository;
   final ProductRepository productRepository;
 
-  /// Nula cria [ProcessCartLines] neste State. Testes e o `main` podem injetar.
+  /// Compatibilidade para fluxos em memória usados por testes. Produção injeta
+  /// [cartSession] e não cria um segundo carrinho.
   final CartLines? cartLines;
+
+  /// Sessão SQLite compartilhada pela revisão do carrinho e pela inclusão.
+  final CartSession? cartSession;
 
   /// Nula guarda a intenção de pedido só na memória desta sessão.
   final OrderIntentStore? orderIntentStore;
@@ -51,14 +57,18 @@ class DinnaApp extends StatefulWidget {
 
 class _DinnaAppState extends State<DinnaApp> {
   late final RouteObserver<PageRoute<dynamic>> _routeObserver;
-  late final CartLines _cartLines;
+  CartLines? _cartLines;
+  CartSession? _cartSession;
   late final OrderSubmissionViewModel _submission;
 
   @override
   void initState() {
     super.initState();
     _routeObserver = widget.routeObserver ?? RouteObserver<PageRoute<dynamic>>();
-    _cartLines = widget.cartLines ?? ProcessCartLines();
+    _cartSession = widget.cartSession;
+    _cartLines = _cartSession == null ? widget.cartLines ?? ProcessCartLines() : null;
+    final cartSession = _cartSession;
+    if (cartSession != null) unawaited(_restoreCart(cartSession));
     _submission = OrderSubmissionViewModel(
       widget.orderRepository,
       intentStore: widget.orderIntentStore,
@@ -66,8 +76,17 @@ class _DinnaAppState extends State<DinnaApp> {
     unawaited(_submission.restore());
   }
 
+  Future<void> _restoreCart(CartSession session) async {
+    try {
+      await session.restore();
+    } catch (_) {
+      // CartSession conserva o erro para a tela distinguir falha de carrinho vazio.
+    }
+  }
+
   @override
   void dispose() {
+    _cartSession?.dispose();
     _submission.dispose();
     super.dispose();
   }
@@ -85,6 +104,7 @@ class _DinnaAppState extends State<DinnaApp> {
         orderRepository: widget.orderRepository,
         productRepository: widget.productRepository,
         cartLines: _cartLines,
+        cartSession: _cartSession,
         orderSubmission: _submission,
         routeObserver: _routeObserver,
         recommendationRepository: widget.recommendationRepository,

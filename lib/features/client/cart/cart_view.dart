@@ -7,14 +7,16 @@ import '../../../shared/widgets/dinna_banner.dart';
 import '../../../shared/widgets/dinna_empty_state.dart';
 import '../../restaurant/order_format.dart';
 import '../order/order_submission_view_model.dart';
+import 'cart_session.dart';
 import 'cart_view_model.dart';
 
 /// Revisão do carrinho, na rota `/cart`.
 ///
 /// O [CartViewModel] nasce e morre com o State. O [OrderSubmissionViewModel]
 /// vem da sessão: esta tela observa e não descarta, para um retorno a `/cart`
-/// não começar outro POST. A lista vem de [CartLines] e cada alteração volta
-/// por `replace`. O primeiro envio usa a mesa da navegação e as linhas atuais.
+/// não começar outro POST. Em produção, a lista vem da [CartSession] e cada
+/// alteração espera o SQLite; fluxos em memória ainda podem ser injetados.
+/// O primeiro envio usa a mesa da navegação e as linhas confirmadas atuais.
 /// Falha confirmada oferece nova tentativa. Resultado incerto só reenvia a
 /// mesma tentativa depois de uma confirmação. [onOpenMenu] abre o cardápio no
 /// estado vazio; a rota fica no router. [onOrderConfirmed] abre a confirmação
@@ -25,6 +27,7 @@ class CartView extends StatefulWidget {
     required this.createViewModel,
     required this.submission,
     required this.onOpenMenu,
+    this.cartSession,
     this.onOrderConfirmed,
     this.table,
   });
@@ -32,6 +35,7 @@ class CartView extends StatefulWidget {
   final CartViewModel Function() createViewModel;
   final OrderSubmissionViewModel submission;
   final void Function(BuildContext context) onOpenMenu;
+  final CartSession? cartSession;
 
   /// Abre `/order` com o pedido persistido. A rota fica no router.
   final Future<void> Function(BuildContext context, Order order)? onOrderConfirmed;
@@ -44,18 +48,25 @@ class CartView extends StatefulWidget {
 }
 
 class _CartViewState extends State<CartView> {
-  late final CartViewModel _viewModel;
+  CartViewModel? _viewModel;
   String? _presentedIntentId;
   var _confirmationFrame = false;
   var _confirmationOpen = false;
+  bool? _lastSessionReadiness;
 
   OrderSubmissionViewModel get _submission => widget.submission;
 
   @override
   void initState() {
     super.initState();
-    _viewModel = widget.createViewModel();
-    unawaited(_viewModel.resolveProducts());
+    final session = widget.cartSession;
+    if (session == null) {
+      _initializeViewModel();
+    } else {
+      session.addListener(_onCartSession);
+      _lastSessionReadiness = session.isReady;
+      if (session.isReady) _initializeViewModel();
+    }
     _submission.addListener(_onSubmission);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -66,8 +77,34 @@ class _CartViewState extends State<CartView> {
   @override
   void dispose() {
     _submission.removeListener(_onSubmission);
-    _viewModel.dispose();
+    widget.cartSession?.removeListener(_onCartSession);
+    _viewModel?.dispose();
     super.dispose();
+  }
+
+  void _onCartSession() {
+    final session = widget.cartSession;
+    if (!mounted || session == null) return;
+    final readinessChanged = session.isReady != _lastSessionReadiness;
+    _lastSessionReadiness = session.isReady;
+    if (session.isReady && _viewModel == null) {
+      setState(_initializeViewModel);
+    } else if (readinessChanged) {
+      setState(() {});
+    }
+  }
+
+  void _initializeViewModel() {
+    _viewModel = widget.createViewModel();
+    unawaited(_viewModel!.resolveProducts());
+  }
+
+  Future<void> _retryRestore(CartSession session) async {
+    try {
+      await session.restore();
+    } catch (_) {
+      // A sessão mantém o erro e a tela continua distinguindo falha de lista vazia.
+    }
   }
 
   void _onSubmission() {
@@ -133,8 +170,16 @@ class _CartViewState extends State<CartView> {
   }
 
   Future<void> _submit() async {
-    if (!_submission.canRequestSubmit || _viewModel.items.isEmpty) return;
-    await _submission.submit(table: widget.table ?? '', items: _viewModel.items);
+    final viewModel = _viewModel;
+    if (!_submission.canRequestSubmit ||
+        viewModel == null ||
+        widget.cartSession?.isReady == false ||
+        widget.cartSession?.hasPendingOperations == true ||
+        viewModel.isMutating ||
+        viewModel.items.isEmpty) {
+      return;
+    }
+    await _submission.submit(table: widget.table ?? '', items: viewModel.items);
     _scheduleAutomaticConfirmation();
   }
 
@@ -147,19 +192,70 @@ class _CartViewState extends State<CartView> {
 
   @override
   Widget build(BuildContext context) {
+    final session = widget.cartSession;
+    if (session != null && (!session.isReady || _viewModel == null)) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Seu carrinho')),
+        body: ListenableBuilder(
+          listenable: session,
+          builder: (context, _) {
+            if (session.isReady) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final hasError = session.restoreError != null;
+            final content = Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!hasError || session.isRestoring)
+                    const CircularProgressIndicator()
+                  else ...[
+                    const Icon(Icons.storage_rounded, size: 36),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Não foi possível carregar seu carrinho. Tente novamente.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: () => unawaited(_retryRestore(session)),
+                      child: const Text('Tentar novamente'),
+                    ),
+                  ],
+                ],
+              ),
+            );
+            return LayoutBuilder(
+              builder: (context, constraints) => SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Center(child: content),
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    }
+    final viewModel = _viewModel!;
     return Scaffold(
       appBar: AppBar(title: const Text('Seu carrinho')),
       body: ListenableBuilder(
-        listenable: Listenable.merge([_viewModel, _submission]),
+        listenable: Listenable.merge([viewModel, _submission, ?session]),
         builder: (context, _) {
-          final hasRows = _viewModel.rows.isNotEmpty;
+          final hasRows = viewModel.rows.isNotEmpty;
           final submission = _SubmissionSection(
             submission: _submission,
             onSubmit: _submit,
             onResume: _resume,
             onBeginAnother: _beginAnother,
             onViewConfirmation: widget.onOrderConfirmed == null ? null : _viewConfirmation,
-            allowSend: hasRows,
+            allowSend:
+                hasRows &&
+                !viewModel.isMutating &&
+                session?.isReady != false &&
+                session?.hasPendingOperations != true,
           );
           if (!hasRows && _submission.status == OrderSubmissionStatus.idle) {
             return _EmptyCart(onOpenMenu: () => widget.onOpenMenu(context));
@@ -167,7 +263,7 @@ class _CartViewState extends State<CartView> {
           if (!hasRows) {
             return _EmptyCart(onOpenMenu: () => widget.onOpenMenu(context), notice: submission);
           }
-          return _CartBody(viewModel: _viewModel, submission: submission);
+          return _CartBody(viewModel: viewModel, submission: submission);
         },
       ),
     );
@@ -242,7 +338,11 @@ class _CartBody extends StatelessWidget {
     final theme = Theme.of(context);
     final rows = viewModel.rows;
     final lookupMessage = viewModel.productLookupMessage;
+    final cartWriteError = viewModel.cartWriteErrorMessage;
     final total = viewModel.estimatedTotalCents;
+    final unavailable = rows.any(
+      (row) => !row.isAvailable || row.name == CartViewModel.missingProductName,
+    );
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
@@ -255,18 +355,35 @@ class _CartBody extends StatelessWidget {
             message: lookupMessage,
           ),
         ],
+        if (cartWriteError != null) ...[
+          const SizedBox(height: 12),
+          DinnaBanner(
+            tone: DinnaBannerTone.error,
+            title: 'Carrinho não atualizado',
+            message: cartWriteError,
+          ),
+        ],
+        if (unavailable) ...[
+          const SizedBox(height: 12),
+          const DinnaBanner(
+            tone: DinnaBannerTone.warning,
+            title: 'Revise os itens do carrinho',
+            message: 'Há produto indisponível ou ausente no cardápio. Remova-o ou confirme a disponibilidade antes de enviar.',
+          ),
+        ],
         if (viewModel.isResolvingProducts) ...[
           const SizedBox(height: 12),
           const _ResolvingPrices(),
         ],
+        if (viewModel.isMutating) ...[const SizedBox(height: 12), const _SavingCart()],
         const SizedBox(height: 12),
         for (var index = 0; index < rows.length; index++) ...[
           if (index > 0) const SizedBox(height: 12),
           _LineCard(
             row: rows[index],
-            onDecrease: () => viewModel.decrease(index),
-            onIncrease: () => viewModel.increase(index),
-            onRemove: () => viewModel.removeAt(index),
+            onDecrease: viewModel.isMutating ? null : () => unawaited(viewModel.decrease(index)),
+            onIncrease: viewModel.isMutating ? null : () => unawaited(viewModel.increase(index)),
+            onRemove: viewModel.isMutating ? null : () => unawaited(viewModel.removeAt(index)),
           ),
         ],
         if (total != null) ...[const SizedBox(height: 16), _EstimatedTotal(totalCents: total)],
@@ -422,6 +539,27 @@ class _ResolvingPrices extends StatelessWidget {
   }
 }
 
+class _SavingCart extends StatelessWidget {
+  const _SavingCart();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            'Salvando carrinho',
+            style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _LineCard extends StatelessWidget {
   const _LineCard({
     required this.row,
@@ -431,9 +569,9 @@ class _LineCard extends StatelessWidget {
   });
 
   final CartRow row;
-  final VoidCallback onDecrease;
-  final VoidCallback onIncrease;
-  final VoidCallback onRemove;
+  final VoidCallback? onDecrease;
+  final VoidCallback? onIncrease;
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
