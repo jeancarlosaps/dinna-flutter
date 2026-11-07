@@ -569,6 +569,48 @@ void main() {
     expect(closed.isReady, isFalse);
   });
 
+  test('falha recuperável da consulta permite tentar de novo', () async {
+    final repository = _CartRepository();
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final burger = _product('p3', name: 'Burger da casa');
+    var lookupFails = true;
+    final viewModel = _model(
+      FakeRecommendationRepository((_) async => _answered()),
+      products: FakeProductRepository(
+        () async => ProductList.ready([burger]),
+        onFindById: (_) async {
+          if (lookupFails) {
+            return const ProductDetail.unavailable('timeout cru', failure: DataFailure.unavailable);
+          }
+          return ProductDetail.ready(burger);
+        },
+      ),
+      cartSession: session,
+    );
+    _answer(viewModel);
+    await viewModel.submit();
+
+    final failed = await viewModel.addRecommended('p3');
+
+    expect(failed, isA<RecommendationCartRejected>());
+    expect(
+      (failed as RecommendationCartRejected).message,
+      RecommendationViewModel.addFailureMessage,
+    );
+    expect(failed.message, isNot(contains('timeout')));
+    expect(repository.adds, 0);
+    expect(session.read(), isEmpty);
+    expect(viewModel.phase, RecommendationPhase.suggestions);
+
+    lookupFails = false;
+    final added = await viewModel.addRecommended('p3');
+    expect(added, isA<RecommendationCartAdded>());
+    expect(session.read().single.quantity, 1);
+    expect(session.read().single.productId, 'p3');
+  });
+
   test('dispose durante a consulta não grava e não notifica de novo', () async {
     final lookup = Completer<ProductDetail>();
     final repository = _CartRepository();

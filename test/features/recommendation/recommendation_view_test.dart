@@ -633,6 +633,189 @@ void main() {
     expect(find.text('Me ajuda a escolher'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('inclusão concluída fora da rota não publica o aviso', (tester) async {
+    final gate = Completer<void>();
+    final repository = _ViewCartRepository(addGate: gate.future);
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final burger = _product('p3', name: 'Burger da casa');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: RecommendationView(
+          createViewModel: () => _model(
+            FakeRecommendationRepository((_) async => _answered()),
+            products: FakeProductRepository(
+              () async => ProductList.ready([burger]),
+              onFindById: (_) async => ProductDetail.ready(burger),
+            ),
+            cartSession: session,
+          ),
+          onShowMenu: (_) {},
+          onOpenCart: (context) {
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('revisão'))));
+          },
+        ),
+      ),
+    );
+    await _answerForm(tester);
+    await _tapLabel(tester, 'Me sugere um prato');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Adicionar ao carrinho'));
+    await tester.pump();
+
+    Navigator.of(tester.element(find.text('Me ajuda a escolher')))
+        .push(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('Outra rota'))));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    gate.complete();
+    await tester.pump();
+
+    expect(find.text('Outra rota'), findsOneWidget);
+    expect(find.text('Burger da casa adicionado ao carrinho.').hitTestable(), findsNothing);
+    expect(find.widgetWithText(SnackBarAction, 'Ver carrinho').hitTestable(), findsNothing);
+    expect(session.read().single.quantity, 1);
+  });
+
+  testWidgets('abrir o carrinho dispensa o aviso e não empilha outra revisão', (tester) async {
+    final repository = _ViewCartRepository();
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final burger = _product('p3', name: 'Burger da casa');
+    var opens = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: RecommendationView(
+          createViewModel: () => _model(
+            FakeRecommendationRepository((_) async => _answered()),
+            products: FakeProductRepository(
+              () async => ProductList.ready([burger]),
+              onFindById: (_) async => ProductDetail.ready(burger),
+            ),
+            cartSession: session,
+          ),
+          onShowMenu: (_) {},
+          onOpenCart: (context) {
+            opens += 1;
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute<void>(builder: (_) => Scaffold(body: Text('revisão $opens'))));
+          },
+        ),
+      ),
+    );
+    await _answerForm(tester);
+    await _tapLabel(tester, 'Me sugere um prato');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Adicionar ao carrinho'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('Burger da casa adicionado ao carrinho.').hitTestable(), findsOneWidget);
+    final openCart = find.descendant(of: find.byType(AppBar), matching: find.text('Ver carrinho'));
+    await tester.tap(openCart);
+    await tester.pump();
+    await tester.tap(openCart, warnIfMissed: false);
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('revisão 1'), findsOneWidget);
+    expect(find.text('revisão 2'), findsNothing);
+    expect(opens, 1);
+    expect(find.widgetWithText(SnackBarAction, 'Ver carrinho').hitTestable(), findsNothing);
+  });
+
+  testWidgets('voltar ao formulário e pedir de novo não mantém o erro do carrinho', (tester) async {
+    final repository = _ViewCartRepository()..failure = StateError('disco cheio');
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final burger = _product('p3', name: 'Burger da casa');
+
+    await _pump(
+      tester,
+      _model(
+        FakeRecommendationRepository((_) async => _answered()),
+        products: FakeProductRepository(
+          () async => ProductList.ready([burger]),
+          onFindById: (_) async => ProductDetail.ready(burger),
+        ),
+        cartSession: session,
+      ),
+    );
+    await _answerForm(tester);
+    await _tapLabel(tester, 'Me sugere um prato');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Adicionar ao carrinho'));
+    await tester.pump();
+
+    expect(find.text(RecommendationViewModel.addFailureMessage), findsOneWidget);
+
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(find.text('Quanto pretende gastar?'), findsOneWidget);
+    expect(find.text(RecommendationViewModel.addFailureMessage), findsNothing);
+
+    await _tapLabel(tester, 'Me sugere um prato');
+    await tester.pumpAndSettle();
+    expect(find.text('Burger da casa'), findsOneWidget);
+    expect(find.text(RecommendationViewModel.addFailureMessage), findsNothing);
+    expect(session.read(), isEmpty);
+  });
+
+  testWidgets('tentar a Dinna de novo apaga o erro da inclusão anterior', (tester) async {
+    final repository = _ViewCartRepository()..failure = StateError('disco cheio');
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final salad = _product('p2', name: 'Salada da casa');
+    late final RecommendationViewModel viewModel;
+
+    await _pump(
+      tester,
+      viewModel = _model(
+        FakeRecommendationRepository(
+          (_) async => RecommendationAttempt.ready(
+            Recommendation(
+              provider: RecommendationProvider.unavailable,
+              outcome: RecommendationOutcome.suggestions,
+              products: [RecommendationSuggestion(productId: 'p2', reason: 'Leve, Salgado')],
+            ),
+          ),
+        ),
+        products: FakeProductRepository(
+          () async => ProductList.ready([salad]),
+          onFindById: (_) async => ProductDetail.ready(salad),
+        ),
+        cartSession: session,
+      ),
+    );
+    await _answerForm(tester);
+    await _tapLabel(tester, 'Me sugere um prato');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Adicionar ao carrinho'));
+    await tester.pump();
+
+    expect(find.text(RecommendationViewModel.addFailureMessage), findsOneWidget);
+    expect(find.text('A Dinna não respondeu agora'), findsOneWidget);
+
+    await _tapLabel(tester, 'Tentar a Dinna de novo');
+    await tester.pumpAndSettle();
+
+    expect(viewModel.phase, RecommendationPhase.fallback);
+    await tester.scrollUntilVisible(find.text('A Dinna não respondeu agora'), -400);
+    expect(find.text('Salada da casa'), findsOneWidget);
+    expect(find.text('A Dinna não respondeu agora'), findsOneWidget);
+    expect(find.text(RecommendationViewModel.addFailureMessage), findsNothing);
+    expect(session.read(), isEmpty);
+  });
 }
 
 Future<void> _pump(WidgetTester tester, RecommendationViewModel viewModel) {

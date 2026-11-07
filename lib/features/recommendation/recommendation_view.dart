@@ -60,13 +60,34 @@ class RecommendationView extends StatefulWidget {
 
 class _RecommendationViewState extends State<RecommendationView> {
   late final RecommendationViewModel _viewModel;
+  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
   var _canOpenCart = false;
+  var _openingCart = false;
   String? _cartError;
 
   @override
   void initState() {
     super.initState();
     _viewModel = widget.createViewModel();
+    _viewModel.addListener(_clearStaleCartError);
+  }
+
+  /// O erro da inclusão anterior não acompanha outra sugestão nem o formulário.
+  void _clearStaleCartError() {
+    if (!mounted || _cartError == null) return;
+    final phase = _viewModel.phase;
+    if (phase != RecommendationPhase.editing && phase != RecommendationPhase.loading) return;
+    setState(() => _cartError = null);
+  }
+
+  /// A recomendação ainda é a rota de cima. Um push do carrinho deixa o State
+  /// montado, mas o aviso e a navegação não podem sair desta rota.
+  bool _recommendationIsCurrent() {
+    if (!mounted) return false;
+    final route = ModalRoute.of(context);
+    if (route == null || !route.isActive || !route.isCurrent) return false;
+    final animation = route.animation;
+    return animation == null || animation.status != AnimationStatus.reverse;
   }
 
   Future<void> _addRecommended(RecommendedProduct suggestion) async {
@@ -88,20 +109,16 @@ class _RecommendationViewState extends State<RecommendationView> {
   }
 
   void _showCartFeedback(String message, {bool openCart = false}) {
+    if (!_recommendationIsCurrent()) return;
+    final messenger = _messengerKey.currentState;
     final open = widget.onOpenCart;
-    final messenger = ScaffoldMessenger.of(context);
+    if (messenger == null) return;
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
         content: Text(message),
         action: openCart && open != null
-            ? SnackBarAction(
-                label: 'Ver carrinho',
-                onPressed: () {
-                  if (!mounted) return;
-                  open(context);
-                },
-              )
+            ? SnackBarAction(label: 'Ver carrinho', onPressed: _openCart)
             : null,
       ),
     );
@@ -109,18 +126,23 @@ class _RecommendationViewState extends State<RecommendationView> {
 
   void _openCart() {
     final open = widget.onOpenCart;
-    if (!mounted || open == null) return;
+    if (!_recommendationIsCurrent() || open == null || _openingCart) return;
+    _openingCart = true;
+    _messengerKey.currentState?.hideCurrentSnackBar();
     open(context);
   }
 
   @override
   void dispose() {
+    _viewModel.removeListener(_clearStaleCartError);
+    _messengerKey.currentState?.hideCurrentSnackBar();
     _viewModel.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_openingCart && _recommendationIsCurrent()) _openingCart = false;
     return ListenableBuilder(
       listenable: _viewModel,
       builder: (context, _) {
@@ -130,77 +152,81 @@ class _RecommendationViewState extends State<RecommendationView> {
           onPopInvokedWithResult: (didPop, _) {
             if (!didPop) _viewModel.returnToEditing();
           },
-          child: Scaffold(
-            appBar: AppBar(
-              title: const Text('Me ajuda a escolher'),
-              actions: [
-                if (_canOpenCart && widget.onOpenCart != null && !editing)
-                  TextButton(onPressed: _openCart, child: const Text('Ver carrinho')),
-              ],
-              leading: BackButton(
-                onPressed: () {
-                  if (editing) {
-                    Navigator.of(context).maybePop();
-                  } else {
-                    _viewModel.returnToEditing();
-                  }
+          child: ScaffoldMessenger(
+            key: _messengerKey,
+            child: Scaffold(
+              appBar: AppBar(
+                title: const Text('Me ajuda a escolher'),
+                actions: [
+                  if (_canOpenCart && widget.onOpenCart != null && !editing)
+                    TextButton(onPressed: _openCart, child: const Text('Ver carrinho')),
+                ],
+                leading: BackButton(
+                  onPressed: () {
+                    if (editing) {
+                      Navigator.of(context).maybePop();
+                    } else {
+                      _viewModel.returnToEditing();
+                    }
+                  },
+                ),
+              ),
+              body: SafeArea(
+                child: switch (_viewModel.phase) {
+                  RecommendationPhase.editing => _PreferenceForm(viewModel: _viewModel),
+                  RecommendationPhase.loading => const _LoadingRecommendation(),
+                  RecommendationPhase.suggestions => _SuggestionResult(
+                    viewModel: _viewModel,
+                    onShowMenu: () => widget.onShowMenu(context),
+                    onAdd: (suggestion) => unawaited(_addRecommended(suggestion)),
+                    cartError: _cartError,
+                  ),
+                  RecommendationPhase.fallback => _SuggestionResult(
+                    viewModel: _viewModel,
+                    onShowMenu: () => widget.onShowMenu(context),
+                    onAdd: (suggestion) => unawaited(_addRecommended(suggestion)),
+                    cartError: _cartError,
+                    fallback: true,
+                  ),
+                  RecommendationPhase.noCompatibleProducts => _OutcomeMessage(
+                    icon: Icons.search_off,
+                    title: _noCompatibleTitle,
+                    message: _noCompatibleMessage,
+                    onShowMenu: () => widget.onShowMenu(context),
+                    showAllergy: true,
+                  ),
+                  RecommendationPhase.emptyCatalog => _OutcomeMessage(
+                    icon: Icons.restaurant_menu,
+                    title: _emptyCatalogTitle,
+                    message: _emptyCatalogMessage,
+                    onShowMenu: () => widget.onShowMenu(context),
+                  ),
+                  RecommendationPhase.noAvailableProducts => _OutcomeMessage(
+                    icon: Icons.search_off,
+                    title: _noAvailableTitle,
+                    message: _noAvailableMessage,
+                    onShowMenu: () => widget.onShowMenu(context),
+                    showAllergy: true,
+                  ),
+                  RecommendationPhase.catalogFailed => _OutcomeMessage(
+                    icon: Icons.cloud_off,
+                    title: _viewModel.errorTitle ?? RecommendationViewModel.catalogFailureTitle,
+                    message:
+                        _viewModel.errorMessage ?? RecommendationViewModel.catalogFailureMessage,
+                    onShowMenu: () => widget.onShowMenu(context),
+                    actionLabel: 'Tentar de novo',
+                    onAction: () => unawaited(_viewModel.submit()),
+                  ),
+                  RecommendationPhase.failed => _OutcomeMessage(
+                    icon: Icons.wifi_off,
+                    title: _viewModel.errorTitle ?? _failureTitle,
+                    message: _viewModel.errorMessage ?? _failureMessage,
+                    onShowMenu: () => widget.onShowMenu(context),
+                    actionLabel: 'Tentar de novo',
+                    onAction: () => unawaited(_viewModel.submit()),
+                  ),
                 },
               ),
-            ),
-            body: SafeArea(
-              child: switch (_viewModel.phase) {
-                RecommendationPhase.editing => _PreferenceForm(viewModel: _viewModel),
-                RecommendationPhase.loading => const _LoadingRecommendation(),
-                RecommendationPhase.suggestions => _SuggestionResult(
-                  viewModel: _viewModel,
-                  onShowMenu: () => widget.onShowMenu(context),
-                  onAdd: (suggestion) => unawaited(_addRecommended(suggestion)),
-                  cartError: _cartError,
-                ),
-                RecommendationPhase.fallback => _SuggestionResult(
-                  viewModel: _viewModel,
-                  onShowMenu: () => widget.onShowMenu(context),
-                  onAdd: (suggestion) => unawaited(_addRecommended(suggestion)),
-                  cartError: _cartError,
-                  fallback: true,
-                ),
-                RecommendationPhase.noCompatibleProducts => _OutcomeMessage(
-                  icon: Icons.search_off,
-                  title: _noCompatibleTitle,
-                  message: _noCompatibleMessage,
-                  onShowMenu: () => widget.onShowMenu(context),
-                  showAllergy: true,
-                ),
-                RecommendationPhase.emptyCatalog => _OutcomeMessage(
-                  icon: Icons.restaurant_menu,
-                  title: _emptyCatalogTitle,
-                  message: _emptyCatalogMessage,
-                  onShowMenu: () => widget.onShowMenu(context),
-                ),
-                RecommendationPhase.noAvailableProducts => _OutcomeMessage(
-                  icon: Icons.search_off,
-                  title: _noAvailableTitle,
-                  message: _noAvailableMessage,
-                  onShowMenu: () => widget.onShowMenu(context),
-                  showAllergy: true,
-                ),
-                RecommendationPhase.catalogFailed => _OutcomeMessage(
-                  icon: Icons.cloud_off,
-                  title: _viewModel.errorTitle ?? RecommendationViewModel.catalogFailureTitle,
-                  message: _viewModel.errorMessage ?? RecommendationViewModel.catalogFailureMessage,
-                  onShowMenu: () => widget.onShowMenu(context),
-                  actionLabel: 'Tentar de novo',
-                  onAction: () => unawaited(_viewModel.submit()),
-                ),
-                RecommendationPhase.failed => _OutcomeMessage(
-                  icon: Icons.wifi_off,
-                  title: _viewModel.errorTitle ?? _failureTitle,
-                  message: _viewModel.errorMessage ?? _failureMessage,
-                  onShowMenu: () => widget.onShowMenu(context),
-                  actionLabel: 'Tentar de novo',
-                  onAction: () => unawaited(_viewModel.submit()),
-                ),
-              },
             ),
           ),
         );

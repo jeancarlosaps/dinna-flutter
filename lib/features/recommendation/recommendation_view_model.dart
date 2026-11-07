@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../core/domain/data_failure.dart';
 import '../client/cart/cart_session.dart';
 import '../menu/product_repository.dart';
 import 'recommendation.dart';
@@ -295,7 +296,13 @@ class RecommendationViewModel extends ChangeNotifier {
       final detail = await _products.findById(productId);
       if (_disposed) return const RecommendationCartIgnored();
       final product = detail.product;
-      if (product == null || product.id != productId || !product.available) {
+      if (product == null) {
+        if (detail.failure == DataFailure.notFound) {
+          return const RecommendationCartRejected(unavailableProductMessage);
+        }
+        return const RecommendationCartRejected(addFailureMessage);
+      }
+      if (product.id != productId || !product.available) {
         return const RecommendationCartRejected(unavailableProductMessage);
       }
 
