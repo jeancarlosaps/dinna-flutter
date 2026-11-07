@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../core/domain/product.dart';
 import '../../shared/widgets/dinna_empty_state.dart';
 import '../../shared/widgets/dinna_logo.dart';
+import '../client/cart/cart_session.dart';
 import '../restaurant/order_format.dart';
 import 'menu_view_model.dart';
 import 'product_detail_view.dart';
@@ -25,6 +26,7 @@ class MenuView extends StatefulWidget {
     required this.createViewModel,
     required this.onOpenCart,
     this.createDetailViewModel,
+    this.cartSession,
     this.table,
   });
 
@@ -32,6 +34,9 @@ class MenuView extends StatefulWidget {
 
   /// Cria o ViewModel do detalhe para o id tocado. Nulo: o card não abre o detalhe.
   final ProductDetailViewModel Function(String productId)? createDetailViewModel;
+
+  /// Sessão compartilhada que confirma a inclusão no armazenamento local.
+  final CartSession? cartSession;
   final void Function(BuildContext context, String? table) onOpenCart;
 
   /// Mesa recebida da tela da mesa. Ausente quando o cardápio abre por outro caminho.
@@ -48,19 +53,46 @@ class _MenuViewState extends State<MenuView> {
   void initState() {
     super.initState();
     _viewModel = widget.createViewModel();
+    widget.cartSession?.addListener(_onCartSessionChanged);
     unawaited(_viewModel.load());
+  }
+
+  void _onCartSessionChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    widget.cartSession?.removeListener(_onCartSessionChanged);
     _viewModel.dispose();
     super.dispose();
   }
 
   void Function(Product)? get _openProduct {
     final createDetail = widget.createDetailViewModel;
-    if (createDetail == null) return null;
-    return (product) => showProductDetail(context, createViewModel: () => createDetail(product.id));
+    final session = widget.cartSession;
+    if (createDetail == null || (session != null && !session.isReady)) return null;
+    return (product) => showProductDetail(
+      context,
+      createViewModel: () => createDetail(product.id),
+      onAdd: session == null ? null : (product, quantity) => _addProduct(product, quantity),
+    );
+  }
+
+  Future<void> _addProduct(Product product, int quantity) async {
+    final session = widget.cartSession;
+    if (session == null || !session.isReady) {
+      throw StateError('O carrinho ainda não foi restaurado');
+    }
+    await session.addLine(productId: product.id, quantity: quantity);
+  }
+
+  Future<void> _retryCartRestore(CartSession session) async {
+    try {
+      await session.restore();
+    } catch (_) {
+      // A mensagem de erro fica visível na faixa para permitir nova tentativa.
+    }
   }
 
   @override
@@ -88,28 +120,57 @@ class _MenuViewState extends State<MenuView> {
       ),
       body: SafeArea(
         top: false,
-        child: ListenableBuilder(
-          listenable: _viewModel,
-          builder: (context, _) => switch (_viewModel.status) {
-            MenuStatus.loading => const Center(child: CircularProgressIndicator()),
-            MenuStatus.failed => _ScrollableStatus(
-              child: DinnaEmptyState(
-                icon: Icons.wifi_off,
-                title: 'Não foi possível carregar o cardápio',
-                message: _viewModel.errorMessage ?? MenuViewModel.fallbackErrorMessage,
-                actionLabel: 'Tentar de novo',
-                onAction: _viewModel.load,
+        child: Column(
+          children: [
+            if (widget.cartSession?.restoreError != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Row(
+                  children: [
+                    const Expanded(child: Text('Não foi possível recuperar o carrinho salvo.')),
+                    TextButton(
+                      onPressed: widget.cartSession!.isRestoring
+                          ? null
+                          : () => unawaited(_retryCartRestore(widget.cartSession!)),
+                      child: widget.cartSession!.isRestoring
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Tentar novamente'),
+                    ),
+                  ],
+                ),
+              ),
+            Expanded(
+              child: ListenableBuilder(
+                listenable: _viewModel,
+                builder: (context, _) => switch (_viewModel.status) {
+                  MenuStatus.loading => const Center(child: CircularProgressIndicator()),
+                  MenuStatus.failed => _ScrollableStatus(
+                    child: DinnaEmptyState(
+                      icon: Icons.wifi_off,
+                      title: 'Não foi possível carregar o cardápio',
+                      message: _viewModel.errorMessage ?? MenuViewModel.fallbackErrorMessage,
+                      actionLabel: 'Tentar de novo',
+                      onAction: _viewModel.load,
+                    ),
+                  ),
+                  MenuStatus.ready when _viewModel.isEmpty => const _ScrollableStatus(
+                    child: DinnaEmptyState(
+                      icon: Icons.restaurant_menu,
+                      title: 'Cardápio vazio',
+                      message: 'O restaurante ainda não cadastrou pratos.',
+                    ),
+                  ),
+                  MenuStatus.ready => _MenuContent(
+                    viewModel: _viewModel,
+                    onOpenProduct: _openProduct,
+                  ),
+                },
               ),
             ),
-            MenuStatus.ready when _viewModel.isEmpty => const _ScrollableStatus(
-              child: DinnaEmptyState(
-                icon: Icons.restaurant_menu,
-                title: 'Cardápio vazio',
-                message: 'O restaurante ainda não cadastrou pratos.',
-              ),
-            ),
-            MenuStatus.ready => _MenuContent(viewModel: _viewModel, onOpenProduct: _openProduct),
-          },
+          ],
         ),
       ),
     );

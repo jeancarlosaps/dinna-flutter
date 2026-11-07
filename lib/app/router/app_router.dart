@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/domain/order.dart';
 import '../../features/client/cart/cart_lines.dart';
+import '../../features/client/cart/cart_session.dart';
 import '../../features/client/cart/cart_view.dart';
 import '../../features/client/cart/cart_view_model.dart';
 import '../../features/client/order/order_confirmation_view.dart';
@@ -86,17 +87,19 @@ class AppRouter {
     required this.orderRepository,
     required this.productRepository,
     required this.cartLines,
+    this.cartSession,
     required this.orderSubmission,
     required this.routeObserver,
     this.pollDelay,
-  });
+  }) : assert(cartSession == null || cartLines == null);
 
   final ApiStatusRepository apiStatusRepository;
   final OrderRepository orderRepository;
   final ProductRepository productRepository;
 
   /// Linhas da revisão. A implementação que sobrevive ao processo entra aqui.
-  final CartLines cartLines;
+  final CartLines? cartLines;
+  final CartSession? cartSession;
 
   /// Envio da sessão. Sair de `/cart` não cria outro.
   final OrderSubmissionViewModel orderSubmission;
@@ -117,12 +120,16 @@ class AppRouter {
         createViewModel: () => MenuViewModel(productRepository),
         createDetailViewModel: (productId) =>
             ProductDetailViewModel(productRepository, productId: productId),
+        cartSession: cartSession,
         table: _tableArgument(settings.arguments),
         onOpenCart: (context, table) =>
             Navigator.of(context).pushNamed(AppRoutes.cart, arguments: table),
       ),
       AppRoutes.cart => CartView(
-        createViewModel: () => CartViewModel(productRepository, lines: cartLines),
+        createViewModel: () => cartSession == null
+            ? CartViewModel(productRepository, lines: cartLines!)
+            : CartViewModel.persisted(productRepository, session: cartSession!),
+        cartSession: cartSession,
         submission: orderSubmission,
         table: _tableArgument(settings.arguments),
         onOpenMenu: (context) =>

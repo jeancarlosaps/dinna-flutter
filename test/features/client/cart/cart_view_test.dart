@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:dinna/app/app.dart';
 import 'package:dinna/app/router/app_router.dart';
 import 'package:dinna/app/theme/dinna_theme.dart';
 import 'package:dinna/core/domain/cart_item.dart';
 import 'package:dinna/core/domain/product.dart';
 import 'package:dinna/features/client/cart/cart_lines.dart';
+import 'package:dinna/features/client/cart/cart_repository.dart';
+import 'package:dinna/features/client/cart/cart_session.dart';
 import 'package:dinna/features/client/cart/cart_view.dart';
 import 'package:dinna/features/client/cart/cart_view_model.dart';
 import 'package:dinna/features/client/order/order_submission_view_model.dart';
@@ -97,6 +101,236 @@ void main() {
     expect(opened, 1);
   });
 
+  testWidgets('falha ao restaurar novamente esconde linhas antigas e bloqueia envio', (
+    tester,
+  ) async {
+    final repository = _CartSessionRepository([
+      CartItem(lineId: 'line-1', productId: 'p1', quantity: 1, note: null),
+    ]);
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(() async => OrderList.ready(const [])),
+    );
+    addTearDown(submission.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: CartView(
+          createViewModel: () =>
+              CartViewModel.persisted(FakeProductRepository(() async => catalog), session: session),
+          submission: submission,
+          onOpenMenu: (_) {},
+          cartSession: session,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Moqueca de Peixe'), findsOneWidget);
+    expect(find.text('Enviar pedido'), findsOneWidget);
+
+    final pendingLoad = Completer<List<CartItem>>();
+    repository.loadOverride = () => pendingLoad.future;
+    final restore = session.restore();
+    await tester.pump();
+    await tester.pump();
+
+    expect(session.isReady, isFalse);
+    expect(find.text('Moqueca de Peixe'), findsNothing);
+    expect(find.text('Enviar pedido'), findsNothing);
+
+    pendingLoad.completeError(StateError('SQLite indisponível'));
+    await expectLater(restore, throwsStateError);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Não foi possível carregar seu carrinho. Tente novamente.'), findsOneWidget);
+    expect(find.text('Moqueca de Peixe'), findsNothing);
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    repository.loadOverride = null;
+    repository.items.add(CartItem(lineId: 'line-2', productId: 'p2', quantity: 2, note: null));
+    await tester.tap(find.text('Tentar novamente'));
+    await tester.pumpAndSettle();
+
+    expect(session.isReady, isTrue);
+    expect(find.text('Moqueca de Peixe'), findsOneWidget);
+    expect(find.text('Salada Grega'), findsOneWidget);
+    expect(find.text('Enviar pedido'), findsOneWidget);
+  });
+
+  testWidgets('envio fica bloqueado enquanto a alteração do carrinho não grava', (tester) async {
+    final repository = _CartSessionRepository([
+      CartItem(lineId: 'line-1', productId: 'p1', quantity: 1, note: null),
+    ]);
+    final pendingUpdate = Completer<bool>();
+    repository.updateOverride = (_) => pendingUpdate.future;
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    var creates = 0;
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async {
+          creates++;
+          return const OrderSubmission.failed('Não foi possível enviar o pedido');
+        },
+      ),
+    );
+    addTearDown(submission.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: CartView(
+          createViewModel: () =>
+              CartViewModel.persisted(FakeProductRepository(() async => catalog), session: session),
+          submission: submission,
+          onOpenMenu: (_) {},
+          cartSession: session,
+          table: '12',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Enviar pedido'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Aumentar quantidade'));
+    await tester.pump();
+
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(creates, 0);
+
+    pendingUpdate.complete(true);
+    await tester.pumpAndSettle();
+
+    expect(session.read().single.quantity, 2);
+    expect(find.text('Enviar pedido'), findsOneWidget);
+    expect(creates, 0);
+  });
+
+  testWidgets('reabrir o carrinho com alteração pendente mantém o envio bloqueado', (tester) async {
+    final repository = _CartSessionRepository([
+      CartItem(lineId: 'line-1', productId: 'p1', quantity: 1, note: null),
+    ]);
+    final pendingUpdate = Completer<bool>();
+    repository.updateOverride = (_) => pendingUpdate.future;
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final sent = <List<CartItem>>[];
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async {
+          sent.add(items);
+          return const OrderSubmission.failed('Não foi possível enviar o pedido');
+        },
+      ),
+    );
+    addTearDown(submission.dispose);
+    Widget cart() => MaterialApp(
+      theme: DinnaTheme.light(),
+      home: CartView(
+        createViewModel: () =>
+            CartViewModel.persisted(FakeProductRepository(() async => catalog), session: session),
+        submission: submission,
+        onOpenMenu: (_) {},
+        cartSession: session,
+        table: '12',
+      ),
+    );
+
+    await tester.pumpWidget(cart());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Aumentar quantidade'));
+    await tester.pump();
+    expect(session.hasPendingOperations, isTrue);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(cart());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(sent, isEmpty);
+
+    pendingUpdate.complete(true);
+    await tester.pumpAndSettle();
+
+    expect(session.hasPendingOperations, isFalse);
+    expect(find.text('Enviar pedido'), findsOneWidget);
+    await tester.tap(find.text('Enviar pedido'));
+    await tester.pumpAndSettle();
+
+    expect(sent.single.single.quantity, 2);
+  });
+
+  testWidgets('falha ao reconciliar alteração rejeitada bloqueia envio até restaurar', (
+    tester,
+  ) async {
+    final repository = _CartSessionRepository([
+      CartItem(lineId: 'line-1', productId: 'p1', quantity: 1, note: null),
+    ]);
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final sent = <List<CartItem>>[];
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async {
+          sent.add(items);
+          return const OrderSubmission.failed('Não foi possível enviar o pedido');
+        },
+      ),
+    );
+    addTearDown(submission.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: CartView(
+          createViewModel: () =>
+              CartViewModel.persisted(FakeProductRepository(() async => catalog), session: session),
+          submission: submission,
+          onOpenMenu: (_) {},
+          cartSession: session,
+          table: '12',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    repository.updateOverride = (_) async => false;
+    repository.loadOverride = () async => throw StateError('SQLite indisponível');
+    await tester.tap(find.byTooltip('Aumentar quantidade'));
+    await tester.pumpAndSettle();
+
+    if (find.text('Enviar pedido').evaluate().isNotEmpty) {
+      await tester.tap(find.text('Enviar pedido'));
+      await tester.pumpAndSettle();
+    }
+    expect(sent, isEmpty);
+    expect(session.isReady, isFalse);
+    expect(session.restoreError, isA<StateError>());
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(find.text('Não foi possível carregar seu carrinho. Tente novamente.'), findsOneWidget);
+
+    repository.updateOverride = null;
+    repository.loadOverride = null;
+    repository.items[0] = CartItem(lineId: 'line-1', productId: 'p1', quantity: 4, note: null);
+    await tester.tap(find.text('Tentar novamente'));
+    await tester.pumpAndSettle();
+
+    expect(session.isReady, isTrue);
+    expect(session.read().single.quantity, 4);
+    await tester.tap(find.text('Enviar pedido'));
+    await tester.pumpAndSettle();
+
+    expect(sent.single.single.quantity, 4);
+  });
+
   testWidgets('o estado vazio rola até o cardápio em tela baixa', (tester) async {
     tester.view.physicalSize = const Size(360, 220);
     tester.view.devicePixelRatio = 1;
@@ -111,6 +345,55 @@ void main() {
     await tester.pump();
 
     expect(opened, 1);
+  });
+
+  testWidgets('falha ao restaurar rola até tentar de novo em tela baixa com texto a 200%', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 220);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final repository = _CartSessionRepository([
+      CartItem(lineId: 'line-1', productId: 'p1', quantity: 1, note: null),
+    ]);
+    repository.loadOverride = () async => throw StateError('SQLite indisponível');
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await expectLater(session.restore(), throwsStateError);
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(() async => OrderList.ready(const [])),
+    );
+    addTearDown(submission.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(2)),
+          child: child ?? const SizedBox.shrink(),
+        ),
+        home: CartView(
+          createViewModel: () =>
+              CartViewModel.persisted(FakeProductRepository(() async => catalog), session: session),
+          submission: submission,
+          onOpenMenu: (_) {},
+          cartSession: session,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Não foi possível carregar seu carrinho. Tente novamente.'), findsOneWidget);
+    final retry = find.text('Tentar novamente');
+    await tester.ensureVisible(retry);
+    await tester.pumpAndSettle();
+    repository.loadOverride = null;
+    await tester.tap(retry);
+    await tester.pumpAndSettle();
+
+    expect(session.isReady, isTrue);
+    expect(find.text('Moqueca de Peixe'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('o preço da linha cabe em tela estreita com texto ampliado', (tester) async {
@@ -203,4 +486,31 @@ void main() {
     expect(find.text(formatOrderTotal(9780)), findsWidgets);
     expect(lines.read().single.quantity, 2);
   });
+}
+
+class _CartSessionRepository implements CartRepository {
+  _CartSessionRepository(this.items);
+
+  final List<CartItem> items;
+  Future<List<CartItem>> Function()? loadOverride;
+  Future<bool> Function(CartItem item)? updateOverride;
+
+  @override
+  Future<List<CartItem>> load() async =>
+      loadOverride == null ? List<CartItem>.of(items) : loadOverride!();
+
+  @override
+  Future<CartItem> add({required String productId, required int quantity, String? note}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<bool> update(CartItem item) =>
+      updateOverride == null ? throw UnimplementedError() : updateOverride!(item);
+
+  @override
+  Future<bool> remove(String lineId) => throw UnimplementedError();
+
+  @override
+  Future<List<CartItem>> removeConfirmed(List<CartItem> confirmedItems) =>
+      throw UnimplementedError();
 }
