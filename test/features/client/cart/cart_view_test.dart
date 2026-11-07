@@ -283,6 +283,55 @@ void main() {
     expect(opened, 1);
   });
 
+  testWidgets('falha ao restaurar rola até tentar de novo em tela baixa com texto a 200%', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 220);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final repository = _CartSessionRepository([
+      CartItem(lineId: 'line-1', productId: 'p1', quantity: 1, note: null),
+    ]);
+    repository.loadOverride = () async => throw StateError('SQLite indisponível');
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await expectLater(session.restore(), throwsStateError);
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(() async => OrderList.ready(const [])),
+    );
+    addTearDown(submission.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(2)),
+          child: child ?? const SizedBox.shrink(),
+        ),
+        home: CartView(
+          createViewModel: () =>
+              CartViewModel.persisted(FakeProductRepository(() async => catalog), session: session),
+          submission: submission,
+          onOpenMenu: (_) {},
+          cartSession: session,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Não foi possível carregar seu carrinho. Tente novamente.'), findsOneWidget);
+    final retry = find.text('Tentar novamente');
+    await tester.ensureVisible(retry);
+    await tester.pumpAndSettle();
+    repository.loadOverride = null;
+    await tester.tap(retry);
+    await tester.pumpAndSettle();
+
+    expect(session.isReady, isTrue);
+    expect(find.text('Moqueca de Peixe'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('o preço da linha cabe em tela estreita com texto ampliado', (tester) async {
     tester.view.physicalSize = const Size(320, 640);
     tester.view.devicePixelRatio = 1;

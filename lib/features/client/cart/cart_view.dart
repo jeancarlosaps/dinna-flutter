@@ -203,28 +203,34 @@ class _CartViewState extends State<CartView> {
               return const Center(child: CircularProgressIndicator());
             }
             final hasError = session.restoreError != null;
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (!hasError || session.isRestoring)
-                      const CircularProgressIndicator()
-                    else ...[
-                      const Icon(Icons.storage_rounded, size: 36),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Não foi possível carregar seu carrinho. Tente novamente.',
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 12),
-                      FilledButton(
-                        onPressed: () => unawaited(_retryRestore(session)),
-                        child: const Text('Tentar novamente'),
-                      ),
-                    ],
+            final content = Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!hasError || session.isRestoring)
+                    const CircularProgressIndicator()
+                  else ...[
+                    const Icon(Icons.storage_rounded, size: 36),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Não foi possível carregar seu carrinho. Tente novamente.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: () => unawaited(_retryRestore(session)),
+                      child: const Text('Tentar novamente'),
+                    ),
                   ],
+                ],
+              ),
+            );
+            return LayoutBuilder(
+              builder: (context, constraints) => SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Center(child: content),
                 ),
               ),
             );
