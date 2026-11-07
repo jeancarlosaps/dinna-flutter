@@ -142,6 +142,12 @@ class RecommendationViewModel extends ChangeNotifier {
   /// A gravação deste prato ainda não foi confirmada pela sessão.
   bool isAdding(String productId) => _addingProductIds.contains(productId);
 
+  /// Alguma inclusão ainda espera a consulta ou a gravação.
+  ///
+  /// Nesse intervalo a sessão ainda não tem operação pendente, porque
+  /// [CartSession.addLine] só começa depois do detalhe do prato.
+  bool get hasPendingAddition => _addingProductIds.isNotEmpty;
+
   bool get _answered =>
       _budget != null && _hunger != null && _protein != null && _style != null && _taste != null;
 
@@ -273,8 +279,8 @@ class RecommendationViewModel extends ChangeNotifier {
   /// Inclui um prato que está na lista atual, com quantidade 1.
   ///
   /// Um segundo toque no mesmo prato espera a sessão confirmar a gravação.
-  /// Produto ausente ou indisponível não chega ao repositório. Depois do
-  /// [dispose], a resposta pendente não altera este ViewModel.
+  /// Produto ausente ou indisponível não chega ao repositório. Uma resposta
+  /// de geração anterior, ou que chega depois do [dispose], não vira aviso.
   Future<RecommendationCartAddition> addRecommended(String productId) async {
     if (_disposed || _addingProductIds.contains(productId)) {
       return const RecommendationCartIgnored();
@@ -290,11 +296,12 @@ class RecommendationViewModel extends ChangeNotifier {
       return const RecommendationCartRejected(addFailureMessage);
     }
 
+    final generation = _generation;
     _addingProductIds.add(productId);
     notifyListeners();
     try {
       final detail = await _products.findById(productId);
-      if (_disposed) return const RecommendationCartIgnored();
+      if (_disposed || generation != _generation) return const RecommendationCartIgnored();
       final product = detail.product;
       if (product == null) {
         if (detail.failure == DataFailure.notFound) {
@@ -307,10 +314,10 @@ class RecommendationViewModel extends ChangeNotifier {
       }
 
       await session.addLine(productId: productId, quantity: 1);
-      if (_disposed) return const RecommendationCartIgnored();
+      if (_disposed || generation != _generation) return const RecommendationCartIgnored();
       return RecommendationCartAdded(product.name);
     } catch (_) {
-      if (_disposed) return const RecommendationCartIgnored();
+      if (_disposed || generation != _generation) return const RecommendationCartIgnored();
       return const RecommendationCartRejected(addFailureMessage);
     } finally {
       _addingProductIds.remove(productId);

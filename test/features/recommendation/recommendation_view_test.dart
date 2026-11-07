@@ -816,6 +816,130 @@ void main() {
     expect(find.text(RecommendationViewModel.addFailureMessage), findsNothing);
     expect(session.read(), isEmpty);
   });
+
+  testWidgets('lookup pendente bloqueia Ver carrinho até a inclusão terminar', (tester) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final pending = Completer<ProductDetail>();
+    var lookups = 0;
+    final repository = _ViewCartRepository();
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final burger = _product('p3', name: 'Burger da casa');
+    var opens = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: RecommendationView(
+          createViewModel: () => _model(
+            FakeRecommendationRepository((_) async => _answered()),
+            products: FakeProductRepository(
+              () async => ProductList.ready([burger]),
+              onFindById: (_) {
+                lookups += 1;
+                if (lookups == 1) return Future.value(ProductDetail.ready(burger));
+                return pending.future;
+              },
+            ),
+            cartSession: session,
+          ),
+          onShowMenu: (_) {},
+          onOpenCart: (context) {
+            opens += 1;
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute<void>(builder: (_) => Scaffold(body: Text('revisão $opens'))));
+          },
+        ),
+      ),
+    );
+    await _answerForm(tester);
+    await _tapLabel(tester, 'Me sugere um prato');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Adicionar ao carrinho'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(session.read(), hasLength(1));
+    await tester.tap(find.text('Adicionar ao carrinho'));
+    await tester.pump();
+
+    final appBarCart = find.descendant(
+      of: find.byType(AppBar),
+      matching: find.widgetWithText(TextButton, 'Ver carrinho'),
+    );
+    expect(tester.widget<TextButton>(appBarCart).onPressed, isNull);
+    await tester.tap(find.widgetWithText(SnackBarAction, 'Ver carrinho'));
+    await tester.pump();
+    await tester.tap(appBarCart, warnIfMissed: false);
+    await tester.pump();
+
+    expect(opens, 0);
+    expect(find.text('revisão 1'), findsNothing);
+    expect(session.read(), hasLength(1));
+
+    pending.complete(ProductDetail.ready(burger));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(session.read(), hasLength(2));
+    expect(tester.widget<TextButton>(appBarCart).onPressed, isNotNull);
+    await tester.tap(appBarCart);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(opens, 1);
+    expect(find.text('revisão 1'), findsOneWidget);
+  });
+
+  testWidgets('falha tardia da inclusão anterior não aparece na nova sugestão', (tester) async {
+    final lookup = Completer<ProductDetail>();
+    final repository = _ViewCartRepository();
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final burger = _product('p3', name: 'Burger da casa');
+
+    await _pump(
+      tester,
+      _model(
+        FakeRecommendationRepository((_) async => _answered()),
+        products: FakeProductRepository(
+          () async => ProductList.ready([burger]),
+          onFindById: (_) => lookup.future,
+        ),
+        cartSession: session,
+      ),
+    );
+    await _answerForm(tester);
+    await _tapLabel(tester, 'Me sugere um prato');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Adicionar ao carrinho'));
+    await tester.pump();
+
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(find.text('Quanto pretende gastar?'), findsOneWidget);
+
+    await _tapLabel(tester, 'Me sugere um prato');
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Burger da casa'), findsOneWidget);
+
+    lookup.complete(const ProductDetail.unavailable('timeout cru'));
+    await tester.pump();
+
+    expect(find.text('Burger da casa'), findsOneWidget);
+    expect(find.text(RecommendationViewModel.addFailureMessage), findsNothing);
+    expect(find.text('Burger da casa adicionado ao carrinho.'), findsNothing);
+    expect(find.text('Este prato não está disponível para pedir agora.'), findsNothing);
+    expect(session.read(), isEmpty);
+  });
 }
 
 Future<void> _pump(WidgetTester tester, RecommendationViewModel viewModel) {

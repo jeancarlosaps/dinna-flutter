@@ -126,7 +126,12 @@ class _RecommendationViewState extends State<RecommendationView> {
 
   void _openCart() {
     final open = widget.onOpenCart;
-    if (!_recommendationIsCurrent() || open == null || _openingCart) return;
+    if (!_recommendationIsCurrent() ||
+        open == null ||
+        _openingCart ||
+        _viewModel.hasPendingAddition) {
+      return;
+    }
     _openingCart = true;
     _messengerKey.currentState?.hideCurrentSnackBar();
     open(context);
@@ -159,7 +164,10 @@ class _RecommendationViewState extends State<RecommendationView> {
                 title: const Text('Me ajuda a escolher'),
                 actions: [
                   if (_canOpenCart && widget.onOpenCart != null && !editing)
-                    TextButton(onPressed: _openCart, child: const Text('Ver carrinho')),
+                    TextButton(
+                      onPressed: _viewModel.hasPendingAddition ? null : _openCart,
+                      child: const Text('Ver carrinho'),
+                    ),
                 ],
                 leading: BackButton(
                   onPressed: () {
