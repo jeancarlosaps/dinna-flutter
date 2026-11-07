@@ -39,12 +39,20 @@ const _failureMessage = 'O cardápio, o carrinho e o pedido continuam disponíve
 ///
 /// O [RecommendationViewModel] nasce e morre com o State. Voltar no resultado
 /// ou no carregamento retorna ao formulário. "Ver cardápio completo" chama
-/// [onShowMenu], que desempilha esta rota.
+/// [onShowMenu], que desempilha esta rota. "Adicionar ao carrinho" grava na
+/// sessão já aberta e não fecha esta tela. [onOpenCart] abre o carrinho
+/// existente, com a mesma mesa.
 class RecommendationView extends StatefulWidget {
-  const RecommendationView({super.key, required this.createViewModel, required this.onShowMenu});
+  const RecommendationView({
+    super.key,
+    required this.createViewModel,
+    required this.onShowMenu,
+    this.onOpenCart,
+  });
 
   final RecommendationViewModel Function() createViewModel;
   final void Function(BuildContext context) onShowMenu;
+  final void Function(BuildContext context)? onOpenCart;
 
   @override
   State<RecommendationView> createState() => _RecommendationViewState();
@@ -52,21 +60,94 @@ class RecommendationView extends StatefulWidget {
 
 class _RecommendationViewState extends State<RecommendationView> {
   late final RecommendationViewModel _viewModel;
+  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+  var _canOpenCart = false;
+  var _openingCart = false;
+  String? _cartError;
 
   @override
   void initState() {
     super.initState();
     _viewModel = widget.createViewModel();
+    _viewModel.addListener(_clearStaleCartError);
+  }
+
+  /// O erro da inclusão anterior não acompanha outra sugestão nem o formulário.
+  void _clearStaleCartError() {
+    if (!mounted || _cartError == null) return;
+    final phase = _viewModel.phase;
+    if (phase != RecommendationPhase.editing && phase != RecommendationPhase.loading) return;
+    setState(() => _cartError = null);
+  }
+
+  /// A recomendação ainda é a rota de cima. Um push do carrinho deixa o State
+  /// montado, mas o aviso e a navegação não podem sair desta rota.
+  bool _recommendationIsCurrent() {
+    if (!mounted) return false;
+    final route = ModalRoute.of(context);
+    if (route == null || !route.isActive || !route.isCurrent) return false;
+    final animation = route.animation;
+    return animation == null || animation.status != AnimationStatus.reverse;
+  }
+
+  Future<void> _addRecommended(RecommendedProduct suggestion) async {
+    if (mounted && _cartError != null) setState(() => _cartError = null);
+    final result = await _viewModel.addRecommended(suggestion.product.id);
+    if (!mounted) return;
+    switch (result) {
+      case RecommendationCartAdded(:final productName):
+        setState(() {
+          _canOpenCart = true;
+          _cartError = null;
+        });
+        _showCartFeedback('$productName adicionado ao carrinho.', openCart: true);
+      case RecommendationCartRejected(:final message):
+        setState(() => _cartError = message);
+      case RecommendationCartIgnored():
+        break;
+    }
+  }
+
+  void _showCartFeedback(String message, {bool openCart = false}) {
+    if (!_recommendationIsCurrent()) return;
+    final messenger = _messengerKey.currentState;
+    final open = widget.onOpenCart;
+    if (messenger == null) return;
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        action: openCart && open != null
+            ? SnackBarAction(label: 'Ver carrinho', onPressed: _openCart)
+            : null,
+      ),
+    );
+  }
+
+  void _openCart() {
+    final open = widget.onOpenCart;
+    if (!_recommendationIsCurrent() ||
+        open == null ||
+        _openingCart ||
+        _viewModel.hasPendingAddition) {
+      return;
+    }
+    _openingCart = true;
+    _messengerKey.currentState?.hideCurrentSnackBar();
+    open(context);
   }
 
   @override
   void dispose() {
+    _viewModel.removeListener(_clearStaleCartError);
+    _messengerKey.currentState?.hideCurrentSnackBar();
     _viewModel.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_openingCart && _recommendationIsCurrent()) _openingCart = false;
     return ListenableBuilder(
       listenable: _viewModel,
       builder: (context, _) {
@@ -76,69 +157,84 @@ class _RecommendationViewState extends State<RecommendationView> {
           onPopInvokedWithResult: (didPop, _) {
             if (!didPop) _viewModel.returnToEditing();
           },
-          child: Scaffold(
-            appBar: AppBar(
-              title: const Text('Me ajuda a escolher'),
-              leading: BackButton(
-                onPressed: () {
-                  if (editing) {
-                    Navigator.of(context).maybePop();
-                  } else {
-                    _viewModel.returnToEditing();
-                  }
+          child: ScaffoldMessenger(
+            key: _messengerKey,
+            child: Scaffold(
+              appBar: AppBar(
+                title: const Text('Me ajuda a escolher'),
+                actions: [
+                  if (_canOpenCart && widget.onOpenCart != null && !editing)
+                    TextButton(
+                      onPressed: _viewModel.hasPendingAddition ? null : _openCart,
+                      child: const Text('Ver carrinho'),
+                    ),
+                ],
+                leading: BackButton(
+                  onPressed: () {
+                    if (editing) {
+                      Navigator.of(context).maybePop();
+                    } else {
+                      _viewModel.returnToEditing();
+                    }
+                  },
+                ),
+              ),
+              body: SafeArea(
+                child: switch (_viewModel.phase) {
+                  RecommendationPhase.editing => _PreferenceForm(viewModel: _viewModel),
+                  RecommendationPhase.loading => const _LoadingRecommendation(),
+                  RecommendationPhase.suggestions => _SuggestionResult(
+                    viewModel: _viewModel,
+                    onShowMenu: () => widget.onShowMenu(context),
+                    onAdd: (suggestion) => unawaited(_addRecommended(suggestion)),
+                    cartError: _cartError,
+                  ),
+                  RecommendationPhase.fallback => _SuggestionResult(
+                    viewModel: _viewModel,
+                    onShowMenu: () => widget.onShowMenu(context),
+                    onAdd: (suggestion) => unawaited(_addRecommended(suggestion)),
+                    cartError: _cartError,
+                    fallback: true,
+                  ),
+                  RecommendationPhase.noCompatibleProducts => _OutcomeMessage(
+                    icon: Icons.search_off,
+                    title: _noCompatibleTitle,
+                    message: _noCompatibleMessage,
+                    onShowMenu: () => widget.onShowMenu(context),
+                    showAllergy: true,
+                  ),
+                  RecommendationPhase.emptyCatalog => _OutcomeMessage(
+                    icon: Icons.restaurant_menu,
+                    title: _emptyCatalogTitle,
+                    message: _emptyCatalogMessage,
+                    onShowMenu: () => widget.onShowMenu(context),
+                  ),
+                  RecommendationPhase.noAvailableProducts => _OutcomeMessage(
+                    icon: Icons.search_off,
+                    title: _noAvailableTitle,
+                    message: _noAvailableMessage,
+                    onShowMenu: () => widget.onShowMenu(context),
+                    showAllergy: true,
+                  ),
+                  RecommendationPhase.catalogFailed => _OutcomeMessage(
+                    icon: Icons.cloud_off,
+                    title: _viewModel.errorTitle ?? RecommendationViewModel.catalogFailureTitle,
+                    message:
+                        _viewModel.errorMessage ?? RecommendationViewModel.catalogFailureMessage,
+                    onShowMenu: () => widget.onShowMenu(context),
+                    actionLabel: 'Tentar de novo',
+                    onAction: () => unawaited(_viewModel.submit()),
+                  ),
+                  RecommendationPhase.failed => _OutcomeMessage(
+                    icon: Icons.wifi_off,
+                    title: _viewModel.errorTitle ?? _failureTitle,
+                    message: _viewModel.errorMessage ?? _failureMessage,
+                    onShowMenu: () => widget.onShowMenu(context),
+                    actionLabel: 'Tentar de novo',
+                    onAction: () => unawaited(_viewModel.submit()),
+                  ),
                 },
               ),
-            ),
-            body: SafeArea(
-              child: switch (_viewModel.phase) {
-                RecommendationPhase.editing => _PreferenceForm(viewModel: _viewModel),
-                RecommendationPhase.loading => const _LoadingRecommendation(),
-                RecommendationPhase.suggestions => _SuggestionResult(
-                  viewModel: _viewModel,
-                  onShowMenu: () => widget.onShowMenu(context),
-                ),
-                RecommendationPhase.fallback => _SuggestionResult(
-                  viewModel: _viewModel,
-                  onShowMenu: () => widget.onShowMenu(context),
-                  fallback: true,
-                ),
-                RecommendationPhase.noCompatibleProducts => _OutcomeMessage(
-                  icon: Icons.search_off,
-                  title: _noCompatibleTitle,
-                  message: _noCompatibleMessage,
-                  onShowMenu: () => widget.onShowMenu(context),
-                  showAllergy: true,
-                ),
-                RecommendationPhase.emptyCatalog => _OutcomeMessage(
-                  icon: Icons.restaurant_menu,
-                  title: _emptyCatalogTitle,
-                  message: _emptyCatalogMessage,
-                  onShowMenu: () => widget.onShowMenu(context),
-                ),
-                RecommendationPhase.noAvailableProducts => _OutcomeMessage(
-                  icon: Icons.search_off,
-                  title: _noAvailableTitle,
-                  message: _noAvailableMessage,
-                  onShowMenu: () => widget.onShowMenu(context),
-                  showAllergy: true,
-                ),
-                RecommendationPhase.catalogFailed => _OutcomeMessage(
-                  icon: Icons.cloud_off,
-                  title: _viewModel.errorTitle ?? RecommendationViewModel.catalogFailureTitle,
-                  message: _viewModel.errorMessage ?? RecommendationViewModel.catalogFailureMessage,
-                  onShowMenu: () => widget.onShowMenu(context),
-                  actionLabel: 'Tentar de novo',
-                  onAction: () => unawaited(_viewModel.submit()),
-                ),
-                RecommendationPhase.failed => _OutcomeMessage(
-                  icon: Icons.wifi_off,
-                  title: _viewModel.errorTitle ?? _failureTitle,
-                  message: _viewModel.errorMessage ?? _failureMessage,
-                  onShowMenu: () => widget.onShowMenu(context),
-                  actionLabel: 'Tentar de novo',
-                  onAction: () => unawaited(_viewModel.submit()),
-                ),
-              },
             ),
           ),
         );
@@ -299,11 +395,15 @@ class _SuggestionResult extends StatelessWidget {
   const _SuggestionResult({
     required this.viewModel,
     required this.onShowMenu,
+    required this.onAdd,
+    this.cartError,
     this.fallback = false,
   });
 
   final RecommendationViewModel viewModel;
   final VoidCallback onShowMenu;
+  final ValueChanged<RecommendedProduct> onAdd;
+  final String? cartError;
   final bool fallback;
 
   @override
@@ -320,9 +420,17 @@ class _SuggestionResult extends StatelessWidget {
           const SizedBox(height: 12),
         ],
         const DinnaBanner(tone: DinnaBannerTone.info, message: _allergyNotice),
+        if (cartError != null) ...[
+          const SizedBox(height: 12),
+          DinnaBanner(tone: DinnaBannerTone.error, message: cartError!),
+        ],
         const SizedBox(height: 16),
         for (final suggestion in viewModel.recommendedProducts) ...[
-          _RecommendationCard(suggestion: suggestion),
+          _RecommendationCard(
+            suggestion: suggestion,
+            isAdding: viewModel.isAdding(suggestion.product.id),
+            onAdd: () => onAdd(suggestion),
+          ),
           const SizedBox(height: 12),
         ],
         if (fallback) ...[
@@ -340,9 +448,15 @@ class _SuggestionResult extends StatelessWidget {
 }
 
 class _RecommendationCard extends StatelessWidget {
-  const _RecommendationCard({required this.suggestion});
+  const _RecommendationCard({
+    required this.suggestion,
+    required this.isAdding,
+    required this.onAdd,
+  });
 
   final RecommendedProduct suggestion;
+  final bool isAdding;
+  final VoidCallback onAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -372,6 +486,16 @@ class _RecommendationCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(suggestion.reason, style: theme.textTheme.bodySmall),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: isAdding ? null : onAdd,
+                  child: isAdding
+                      ? const SizedBox.square(
+                          dimension: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Adicionar ao carrinho', textAlign: TextAlign.center),
+                ),
               ],
             ),
           ),
