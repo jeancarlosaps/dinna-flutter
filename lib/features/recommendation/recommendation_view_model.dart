@@ -6,6 +6,7 @@ import '../menu/product_repository.dart';
 import 'recommendation.dart';
 import 'recommendation_catalog.dart';
 import 'recommendation_preferences.dart';
+import 'recommendation_preferences_store.dart';
 import 'recommendation_repository.dart';
 import 'recommendation_request.dart';
 
@@ -68,19 +69,38 @@ final class RecommendationCartIgnored extends RecommendationCartAddition {
 ///
 /// As cinco escolhas não ganham default. Restrição marcada permanece no
 /// pedido. Contradição desabilita o envio e não apaga o que a pessoa marcou.
+///
+/// O armazenamento, quando existe, devolve o formulário já salvo e grava cada
+/// alteração. Abrir a tela não chama [RecommendationRepository.recommend].
 class RecommendationViewModel extends ChangeNotifier {
   RecommendationViewModel(
     this._repository, {
     required ProductRepository products,
     this.cartSession,
+    this.preferencesStore,
     this.table,
     this.limit = 3,
   }) : _products = products,
-       _catalog = RecommendationCatalog(products);
+       _catalog = RecommendationCatalog(products) {
+    final stored = _readStored();
+    if (stored != null) {
+      _budget = stored.budget;
+      _hunger = stored.hunger;
+      _protein = stored.protein;
+      _style = stored.style;
+      _taste = stored.taste;
+      _restrictions = stored.restrictions;
+    }
+    _lastSaved = _capture();
+    _seenEpoch = _epoch(preferencesStore);
+  }
 
   final RecommendationRepository _repository;
   final ProductRepository _products;
   final RecommendationCatalog _catalog;
+
+  /// Nulo deixa o formulário só nesta instância. A tela não lê o armazenamento.
+  final RecommendationPreferencesStore? preferencesStore;
 
   /// Carrinho já restaurado da sessão. Nulo não cria outro carrinho.
   final CartSession? cartSession;
@@ -105,6 +125,16 @@ class RecommendationViewModel extends ChangeNotifier {
   MealStyle? _style;
   MealTaste? _taste;
   List<DietaryRestriction> _restrictions = const [];
+  late RecommendationSelection _lastSaved;
+  RecommendationSelection? _queued;
+  var _seenEpoch = 0;
+  Future<void> _settled = Future<void>.value();
+
+  /// Termina quando a gravação já pedida chega ao armazenamento.
+  ///
+  /// A tela não espera esta future. Quem recria o fluxo espera, para ler a
+  /// última escolha e não uma gravação que ainda estava na fila.
+  Future<void> get preferencesSettled => _settled;
 
   RecommendationPhase _phase = RecommendationPhase.editing;
   List<RecommendedProduct> _recommendedProducts = const [];
@@ -177,6 +207,7 @@ class RecommendationViewModel extends ChangeNotifier {
     if (value == null || _disposed) return;
     apply();
     notifyListeners();
+    _persist();
   }
 
   /// Marca ou desmarca uma restrição. As outras escolhas ficam onde estão.
@@ -193,6 +224,119 @@ class RecommendationViewModel extends ChangeNotifier {
         if (next.contains(item)) item,
     ]);
     notifyListeners();
+    _persist();
+  }
+
+  RecommendationSelection? _readStored() {
+    final store = preferencesStore;
+    if (store == null) return null;
+    try {
+      final stored = store.current;
+      if (stored == null || stored.isEmpty) return null;
+      return stored;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  RecommendationSelection? _stored(RecommendationPreferencesStore store) {
+    try {
+      return store.current;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  RecommendationSelection _capture() {
+    return RecommendationSelection(
+      budget: _budget,
+      hunger: _hunger,
+      protein: _protein,
+      style: _style,
+      taste: _taste,
+      restrictions: _restrictions,
+    );
+  }
+
+  /// A rota voltou a ficar visível. Outra abertura pode ter gravado escolhas
+  /// mais novas enquanto esta instância continuava montada.
+  ///
+  /// Um marco novo é alteração externa: a tela passa a mostrá-la, inclusive
+  /// quando a seleção veio vazia, e descarta sugestão da preferência anterior.
+  /// O mesmo marco, com o store de volta ao durável, é falha desta tela. A
+  /// edição continua visível e é republicada, sem novo POST.
+  void syncFromStore() {
+    if (_disposed) return;
+    final store = preferencesStore;
+    if (store == null) return;
+    final int epoch;
+    final RecommendationSelection? stored;
+    try {
+      epoch = store.epoch;
+      stored = store.current;
+    } catch (_) {
+      return;
+    }
+    final incoming = stored ?? RecommendationSelection();
+    if (epoch == _seenEpoch) {
+      if (_queued == null && incoming != _capture()) _persist();
+      return;
+    }
+
+    final changed = incoming != _capture();
+    if (changed) {
+      _budget = incoming.budget;
+      _hunger = incoming.hunger;
+      _protein = incoming.protein;
+      _style = incoming.style;
+      _taste = incoming.taste;
+      _restrictions = incoming.restrictions;
+    }
+    _seenEpoch = epoch;
+    if (_queued == null) _lastSaved = _capture();
+    if (changed && (_phase != RecommendationPhase.editing || _inFlight)) {
+      returnToEditing();
+    } else if (changed) {
+      notifyListeners();
+    }
+  }
+
+  int _epoch(RecommendationPreferencesStore? store) {
+    if (store == null) return _seenEpoch;
+    try {
+      return store.epoch;
+    } catch (_) {
+      return _seenEpoch;
+    }
+  }
+
+  /// Cada alteração segue na hora para o armazenamento compartilhado.
+  ///
+  /// A fila de lá ordena as escritas, inclusive entre uma tela que está
+  /// fechando e outra que já reabriu. Repetir a seleção que esta instância
+  /// já pediu só é redundante enquanto o store ainda está nela. Se outra
+  /// instância mudou a revisão compartilhada, voltar ao valor anterior é
+  /// uma intenção nova.
+  void _persist() {
+    final store = preferencesStore;
+    if (store == null) return;
+    final next = _capture();
+    final stored = _stored(store);
+    if (next == _queued && next == stored) return;
+    if (_queued == null && next == _lastSaved && next == stored) return;
+    _queued = next;
+    final pending = store.save(next);
+    _seenEpoch = _epoch(store);
+    _settled = pending.then<void>(
+      (_) {
+        if (!identical(_queued, next)) return;
+        _lastSaved = next;
+        _queued = null;
+      },
+      onError: (Object _, StackTrace _) {
+        if (identical(_queued, next)) _queued = null;
+      },
+    );
   }
 
   /// Envia o body atual. Ignora toque repetido enquanto o POST não volta.

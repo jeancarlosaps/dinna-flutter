@@ -16,6 +16,7 @@ import '../../features/menu/menu_view.dart';
 import '../../features/menu/menu_view_model.dart';
 import '../../features/menu/product_detail_view_model.dart';
 import '../../features/menu/product_repository.dart';
+import '../../features/recommendation/recommendation_preferences_store.dart';
 import '../../features/recommendation/recommendation_repository.dart';
 import '../../features/recommendation/recommendation_request.dart';
 import '../../features/recommendation/recommendation_view.dart';
@@ -103,6 +104,7 @@ class AppRouter {
     required this.orderSubmission,
     required this.routeObserver,
     this.recommendationRepository,
+    this.recommendationPreferencesStore,
     this.pollDelay,
   }) : assert(cartSession == null || cartLines == null);
 
@@ -120,6 +122,9 @@ class AppRouter {
 
   /// Nulo responde à rota com falha traduzida, sem consultar a API.
   final RecommendationRepository? recommendationRepository;
+
+  /// Nulo deixa o formulário só na memória deste ViewModel.
+  final RecommendationPreferencesStore? recommendationPreferencesStore;
   final Future<void> Function(Duration duration)? pollDelay;
 
   /// Sempre devolve uma rota. Nome fora do mapa cai em [UnknownRouteView].
@@ -148,8 +153,10 @@ class AppRouter {
           recommendationRepository ?? const _MissingRecommendationRepository(),
           products: productRepository,
           cartSession: cartSession,
+          preferencesStore: recommendationPreferencesStore,
           table: _tableArgument(settings.arguments),
         ),
+        routeObserver: routeObserver,
         onShowMenu: (context) => Navigator.of(context).pop(),
         onOpenCart: (context) =>
             Navigator.of(context)
