@@ -1,0 +1,377 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import '../../shared/widgets/dinna_banner.dart';
+import '../../shared/widgets/dinna_empty_state.dart';
+import 'recommendation.dart';
+import 'recommendation_preferences.dart';
+import 'recommendation_view_model.dart';
+
+/// Aviso fixo do desenho. Não é um selo do prato.
+const _allergyNotice = 'Tem alergia? Confirme os ingredientes com a equipe antes de pedir.';
+
+const _fallbackTitle = 'A Dinna não respondeu agora';
+
+const _fallbackMessage =
+    'Seu pedido continua funcionando normalmente. Separei pratos do cardápio que batem com os seus filtros.';
+
+const _noCompatibleTitle = 'Nenhum prato compatível';
+
+const _noCompatibleMessage =
+    'Não há, no cardápio disponível, um prato que respeite essas respostas sem completar informação que o cadastro não tem.';
+
+const _emptyCatalogTitle = 'Cardápio vazio';
+
+const _emptyCatalogMessage = 'O restaurante ainda não tem pratos disponíveis para sugerir.';
+
+const _failureTitle = 'Não foi possível pedir uma sugestão';
+
+const _failureMessage = 'O cardápio, o carrinho e o pedido continuam disponíveis.';
+
+/// Formulário e resultado de "Me ajuda a escolher".
+///
+/// O [RecommendationViewModel] nasce e morre com o State. Voltar no resultado
+/// ou no carregamento retorna ao formulário. "Ver cardápio completo" chama
+/// [onShowMenu], que desempilha esta rota.
+class RecommendationView extends StatefulWidget {
+  const RecommendationView({super.key, required this.createViewModel, required this.onShowMenu});
+
+  final RecommendationViewModel Function() createViewModel;
+  final void Function(BuildContext context) onShowMenu;
+
+  @override
+  State<RecommendationView> createState() => _RecommendationViewState();
+}
+
+class _RecommendationViewState extends State<RecommendationView> {
+  late final RecommendationViewModel _viewModel;
+
+  @override
+  void initState() {
+    super.initState();
+    _viewModel = widget.createViewModel();
+  }
+
+  @override
+  void dispose() {
+    _viewModel.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: _viewModel,
+      builder: (context, _) {
+        final editing = _viewModel.phase == RecommendationPhase.editing;
+        return PopScope(
+          canPop: editing,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) _viewModel.returnToEditing();
+          },
+          child: Scaffold(
+            appBar: AppBar(
+              title: const Text('Me ajuda a escolher'),
+              leading: BackButton(
+                onPressed: () {
+                  if (editing) {
+                    Navigator.of(context).maybePop();
+                  } else {
+                    _viewModel.returnToEditing();
+                  }
+                },
+              ),
+            ),
+            body: SafeArea(
+              child: switch (_viewModel.phase) {
+                RecommendationPhase.editing => _PreferenceForm(viewModel: _viewModel),
+                RecommendationPhase.loading => const _LoadingRecommendation(),
+                RecommendationPhase.suggestions => _SuggestionResult(
+                  viewModel: _viewModel,
+                  onShowMenu: () => widget.onShowMenu(context),
+                ),
+                RecommendationPhase.fallback => _SuggestionResult(
+                  viewModel: _viewModel,
+                  onShowMenu: () => widget.onShowMenu(context),
+                  fallback: true,
+                ),
+                RecommendationPhase.noCompatibleProducts => _OutcomeMessage(
+                  icon: Icons.search_off,
+                  title: _noCompatibleTitle,
+                  message: _noCompatibleMessage,
+                  onShowMenu: () => widget.onShowMenu(context),
+                  showAllergy: true,
+                ),
+                RecommendationPhase.emptyCatalog => _OutcomeMessage(
+                  icon: Icons.restaurant_menu,
+                  title: _emptyCatalogTitle,
+                  message: _emptyCatalogMessage,
+                  onShowMenu: () => widget.onShowMenu(context),
+                ),
+                RecommendationPhase.failed => _OutcomeMessage(
+                  icon: Icons.wifi_off,
+                  title: _viewModel.errorTitle ?? _failureTitle,
+                  message: _viewModel.errorMessage ?? _failureMessage,
+                  onShowMenu: () => widget.onShowMenu(context),
+                  actionLabel: 'Tentar de novo',
+                  onAction: () => unawaited(_viewModel.submit()),
+                ),
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PreferenceForm extends StatelessWidget {
+  const _PreferenceForm({required this.viewModel});
+
+  final RecommendationViewModel viewModel;
+
+  @override
+  Widget build(BuildContext context) {
+    final contradiction = viewModel.contradiction;
+    final colors = Theme.of(context).colorScheme;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: [
+        const DinnaBanner(tone: DinnaBannerTone.info, message: _allergyNotice),
+        const SizedBox(height: 20),
+        _SingleChoice<MealBudget>(
+          title: 'Quanto pretende gastar?',
+          groupValue: viewModel.budget,
+          options: MealBudget.values,
+          labelOf: (option) => option.label,
+          onChanged: viewModel.selectBudget,
+        ),
+        _SingleChoice<MealHunger>(
+          title: 'Qual é o tamanho da sua fome?',
+          groupValue: viewModel.hunger,
+          options: MealHunger.values,
+          labelOf: (option) => option.label,
+          onChanged: viewModel.selectHunger,
+        ),
+        _SingleChoice<MealProtein>(
+          title: 'Qual proteína prefere?',
+          groupValue: viewModel.protein,
+          options: MealProtein.values,
+          labelOf: (option) => option.label,
+          onChanged: viewModel.selectProtein,
+        ),
+        _SingleChoice<MealStyle>(
+          title: 'Que tipo de refeição deseja?',
+          groupValue: viewModel.style,
+          options: MealStyle.values,
+          labelOf: (option) => option.label,
+          onChanged: viewModel.selectStyle,
+        ),
+        _SingleChoice<MealTaste>(
+          title: 'Prefere salgado ou doce?',
+          groupValue: viewModel.taste,
+          options: MealTaste.values,
+          labelOf: (option) => option.label,
+          onChanged: viewModel.selectTaste,
+        ),
+        Text('Possui alguma restrição alimentar?', style: Theme.of(context).textTheme.titleMedium),
+        Text(
+          'Opcional. Pode marcar várias.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+        ),
+        for (final restriction in DietaryRestriction.values)
+          CheckboxListTile(
+            value: viewModel.restrictions.contains(restriction),
+            onChanged: (selected) =>
+                viewModel.setRestriction(restriction, selected: selected ?? false),
+            title: Text(restriction.label),
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            minTileHeight: 48,
+          ),
+        if (contradiction != null) ...[
+          const SizedBox(height: 8),
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              contradiction,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.error),
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
+        FilledButton(
+          onPressed: viewModel.canSubmit ? () => unawaited(viewModel.submit()) : null,
+          child: const Text('Me sugere um prato'),
+        ),
+      ],
+    );
+  }
+}
+
+class _SingleChoice<T> extends StatelessWidget {
+  const _SingleChoice({
+    required this.title,
+    required this.groupValue,
+    required this.options,
+    required this.labelOf,
+    required this.onChanged,
+  });
+
+  final String title;
+  final T? groupValue;
+  final List<T> options;
+  final String Function(T value) labelOf;
+  final ValueChanged<T?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          RadioGroup<T>(
+            groupValue: groupValue,
+            onChanged: onChanged,
+            child: Column(
+              children: [
+                for (final option in options)
+                  RadioListTile<T>(
+                    value: option,
+                    title: Text(labelOf(option)),
+                    selected: option == groupValue,
+                    contentPadding: EdgeInsets.zero,
+                    minTileHeight: 48,
+                    controlAffinity: ListTileControlAffinity.leading,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingRecommendation extends StatelessWidget {
+  const _LoadingRecommendation();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: const [
+        SizedBox(height: 48),
+        Center(child: CircularProgressIndicator(semanticsLabel: 'Preparando uma sugestão')),
+        SizedBox(height: 16),
+        Text('Preparando uma sugestão…', textAlign: TextAlign.center),
+      ],
+    );
+  }
+}
+
+class _SuggestionResult extends StatelessWidget {
+  const _SuggestionResult({
+    required this.viewModel,
+    required this.onShowMenu,
+    this.fallback = false,
+  });
+
+  final RecommendationViewModel viewModel;
+  final VoidCallback onShowMenu;
+  final bool fallback;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: [
+        if (fallback) ...[
+          const DinnaBanner(
+            tone: DinnaBannerTone.warning,
+            title: _fallbackTitle,
+            message: _fallbackMessage,
+          ),
+          const SizedBox(height: 12),
+        ],
+        const DinnaBanner(tone: DinnaBannerTone.info, message: _allergyNotice),
+        const SizedBox(height: 16),
+        for (final suggestion in viewModel.suggestions) ...[
+          _ReasonCard(suggestion: suggestion),
+          const SizedBox(height: 12),
+        ],
+        if (fallback) ...[
+          const SizedBox(height: 4),
+          FilledButton(
+            onPressed: () => unawaited(viewModel.submit()),
+            child: const Text('Tentar a Dinna de novo'),
+          ),
+          const SizedBox(height: 12),
+        ],
+        OutlinedButton(onPressed: onShowMenu, child: const Text('Ver cardápio completo')),
+      ],
+    );
+  }
+}
+
+class _ReasonCard extends StatelessWidget {
+  const _ReasonCard({required this.suggestion});
+
+  final RecommendationSuggestion suggestion;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text(suggestion.reason, style: Theme.of(context).textTheme.bodySmall),
+      ),
+    );
+  }
+}
+
+class _OutcomeMessage extends StatelessWidget {
+  const _OutcomeMessage({
+    required this.icon,
+    required this.title,
+    required this.message,
+    required this.onShowMenu,
+    this.actionLabel,
+    this.onAction,
+    this.showAllergy = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final VoidCallback onShowMenu;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  final bool showAllergy;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: [
+        DinnaEmptyState(
+          centered: false,
+          icon: icon,
+          title: title,
+          message: message,
+          actionLabel: actionLabel,
+          onAction: onAction,
+        ),
+        if (showAllergy) ...[
+          const DinnaBanner(tone: DinnaBannerTone.info, message: _allergyNotice),
+          const SizedBox(height: 12),
+        ],
+        OutlinedButton(onPressed: onShowMenu, child: const Text('Ver cardápio completo')),
+      ],
+    );
+  }
+}

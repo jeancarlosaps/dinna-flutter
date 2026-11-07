@@ -15,6 +15,10 @@ import '../../features/menu/menu_view.dart';
 import '../../features/menu/menu_view_model.dart';
 import '../../features/menu/product_detail_view_model.dart';
 import '../../features/menu/product_repository.dart';
+import '../../features/recommendation/recommendation_repository.dart';
+import '../../features/recommendation/recommendation_request.dart';
+import '../../features/recommendation/recommendation_view.dart';
+import '../../features/recommendation/recommendation_view_model.dart';
 import '../../features/restaurant/order_details_view.dart';
 import '../../features/restaurant/order_details_view_model.dart';
 import '../../features/restaurant/order_repository.dart';
@@ -31,8 +35,10 @@ export 'app_route_args.dart';
 /// [clientFlow] e [restaurantFlow] nomeiam a jornada da R1, na ordem do
 /// produto. A home, a mesa, o carrinho (`/cart`), a confirmação (`/order`),
 /// o acompanhamento (`/order/tracking`), a fila (`/restaurant`) e o detalhe
-/// do pedido (`/restaurant/order`) têm tela. O acompanhamento não consulta
-/// status. O restante ainda usa [RoutePlaceholder].
+/// do pedido (`/restaurant/order`) têm tela. [recommendation] abre a partir
+/// do cardápio e fica fora de [clientFlow], para o placeholder continuar
+/// só nas rotas da jornada que ainda não têm tela. O acompanhamento não
+/// consulta status. O restante ainda usa [RoutePlaceholder].
 ///
 /// A entrada do cliente é [table] (`/table`), o mesmo nome da `TableView`
 /// na branch `feature/client-ui`. A integração coloca essa tela num case
@@ -45,6 +51,12 @@ abstract final class AppRoutes {
 
   /// Cardápio do cliente.
   static const menu = '/menu';
+
+  /// Formulário "Me ajuda a escolher". Argumento: mesa (`String`), como em [menu].
+  ///
+  /// Fora de [clientFlow]: quem abre é o cardápio, e a rota não ocupa o
+  /// placeholder das telas ainda sem View.
+  static const recommendation = '/recommendation';
 
   /// Detalhe de produto. Argumento: [AppRouteId].
   static const product = '/product';
@@ -88,6 +100,7 @@ class AppRouter {
     required this.cartLines,
     required this.orderSubmission,
     required this.routeObserver,
+    this.recommendationRepository,
     this.pollDelay,
   });
 
@@ -101,6 +114,9 @@ class AppRouter {
   /// Envio da sessão. Sair de `/cart` não cria outro.
   final OrderSubmissionViewModel orderSubmission;
   final RouteObserver<PageRoute<dynamic>> routeObserver;
+
+  /// Nulo responde à rota com falha traduzida, sem consultar a API.
+  final RecommendationRepository? recommendationRepository;
   final Future<void> Function(Duration duration)? pollDelay;
 
   /// Sempre devolve uma rota. Nome fora do mapa cai em [UnknownRouteView].
@@ -120,6 +136,15 @@ class AppRouter {
         table: _tableArgument(settings.arguments),
         onOpenCart: (context, table) =>
             Navigator.of(context).pushNamed(AppRoutes.cart, arguments: table),
+        onOpenRecommendation: (context, table) =>
+            Navigator.of(context).pushNamed(AppRoutes.recommendation, arguments: table),
+      ),
+      AppRoutes.recommendation => RecommendationView(
+        createViewModel: () => RecommendationViewModel(
+          recommendationRepository ?? const _MissingRecommendationRepository(),
+          table: _tableArgument(settings.arguments),
+        ),
+        onShowMenu: (context) => Navigator.of(context).pop(),
       ),
       AppRoutes.cart => CartView(
         createViewModel: () => CartViewModel(productRepository, lines: cartLines),
@@ -171,5 +196,20 @@ class AppRouter {
   bool _isFlowRoute(String? name) {
     if (name == null) return false;
     return AppRoutes.clientFlow.contains(name) || AppRoutes.restaurantFlow.contains(name);
+  }
+}
+
+/// Usada quando o app de teste não injeta a recomendação. O formulário abre
+/// e o envio cai na mensagem da tela, sem HTTP.
+final class _MissingRecommendationRepository implements RecommendationRepository {
+  const _MissingRecommendationRepository();
+
+  @override
+  Future<RecommendationAttempt> recommend(RecommendationRequest request) async {
+    return const RecommendationAttempt.failed(
+      RecommendationFailure.unavailable,
+      title: RecommendationRepository.failureTitle,
+      message: RecommendationRepository.failureMessage,
+    );
   }
 }

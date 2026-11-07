@@ -7,6 +7,7 @@ import '../features/client/order/order_intent_store.dart';
 import '../features/client/order/order_submission_view_model.dart';
 import '../features/home/api_status_repository.dart';
 import '../features/menu/product_repository.dart';
+import '../features/recommendation/recommendation_repository.dart';
 import '../features/restaurant/order_repository.dart';
 import 'router/app_router.dart';
 import 'theme/dinna_theme.dart';
@@ -19,6 +20,7 @@ class DinnaApp extends StatefulWidget {
     required this.productRepository,
     this.cartLines,
     this.orderIntentStore,
+    this.recommendationRepository,
     this.routeObserver,
     this.pollDelay,
   });
@@ -32,6 +34,9 @@ class DinnaApp extends StatefulWidget {
 
   /// Nula guarda a intenção de pedido só na memória desta sessão.
   final OrderIntentStore? orderIntentStore;
+
+  /// Nula deixa a rota de recomendação sem HTTP. O `main` injeta a implementação.
+  final RecommendationRepository? recommendationRepository;
 
   /// Instância ligada à fila. Nula cria um observer estável neste State.
   final RouteObserver<PageRoute<dynamic>>? routeObserver;
@@ -82,6 +87,7 @@ class _DinnaAppState extends State<DinnaApp> {
         cartLines: _cartLines,
         orderSubmission: _submission,
         routeObserver: _routeObserver,
+        recommendationRepository: widget.recommendationRepository,
         pollDelay: widget.pollDelay,
       ).onGenerateRoute,
     );

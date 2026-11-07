@@ -19,12 +19,14 @@ import 'product_image.dart';
 /// no header: o acesso volta com a barra do carrinho, ao adicionar itens (SCRUM-39).
 ///
 /// Tocar um produto abre o detalhe em bottom sheet com [createDetailViewModel].
+/// [onOpenRecommendation] abre "Me ajuda a escolher" sem trocar o cardápio.
 class MenuView extends StatefulWidget {
   const MenuView({
     super.key,
     required this.createViewModel,
     required this.onOpenCart,
     this.createDetailViewModel,
+    this.onOpenRecommendation,
     this.table,
   });
 
@@ -33,6 +35,9 @@ class MenuView extends StatefulWidget {
   /// Cria o ViewModel do detalhe para o id tocado. Nulo: o card não abre o detalhe.
   final ProductDetailViewModel Function(String productId)? createDetailViewModel;
   final void Function(BuildContext context, String? table) onOpenCart;
+
+  /// Abre a recomendação com a mesma mesa. Nulo esconde o atalho.
+  final void Function(BuildContext context, String? table)? onOpenRecommendation;
 
   /// Mesa recebida da tela da mesa. Ausente quando o cardápio abre por outro caminho.
   final String? table;
@@ -67,6 +72,7 @@ class _MenuViewState extends State<MenuView> {
   Widget build(BuildContext context) {
     final table = widget.table;
     final colors = Theme.of(context).colorScheme;
+    final openRecommendation = widget.onOpenRecommendation;
 
     // Header do Figma: faixa branca com linha embaixo, sem seta de voltar.
     // A altura acompanha o selo quando o texto da mesa cresce.
@@ -88,28 +94,46 @@ class _MenuViewState extends State<MenuView> {
       ),
       body: SafeArea(
         top: false,
-        child: ListenableBuilder(
-          listenable: _viewModel,
-          builder: (context, _) => switch (_viewModel.status) {
-            MenuStatus.loading => const Center(child: CircularProgressIndicator()),
-            MenuStatus.failed => _ScrollableStatus(
-              child: DinnaEmptyState(
-                icon: Icons.wifi_off,
-                title: 'Não foi possível carregar o cardápio',
-                message: _viewModel.errorMessage ?? MenuViewModel.fallbackErrorMessage,
-                actionLabel: 'Tentar de novo',
-                onAction: _viewModel.load,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (openRecommendation != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: OutlinedButton(
+                  onPressed: () => openRecommendation(context, table),
+                  child: const Text('Me ajuda a escolher'),
+                ),
+              ),
+            Expanded(
+              child: ListenableBuilder(
+                listenable: _viewModel,
+                builder: (context, _) => switch (_viewModel.status) {
+                  MenuStatus.loading => const Center(child: CircularProgressIndicator()),
+                  MenuStatus.failed => _ScrollableStatus(
+                    child: DinnaEmptyState(
+                      icon: Icons.wifi_off,
+                      title: 'Não foi possível carregar o cardápio',
+                      message: _viewModel.errorMessage ?? MenuViewModel.fallbackErrorMessage,
+                      actionLabel: 'Tentar de novo',
+                      onAction: _viewModel.load,
+                    ),
+                  ),
+                  MenuStatus.ready when _viewModel.isEmpty => const _ScrollableStatus(
+                    child: DinnaEmptyState(
+                      icon: Icons.restaurant_menu,
+                      title: 'Cardápio vazio',
+                      message: 'O restaurante ainda não cadastrou pratos.',
+                    ),
+                  ),
+                  MenuStatus.ready => _MenuContent(
+                    viewModel: _viewModel,
+                    onOpenProduct: _openProduct,
+                  ),
+                },
               ),
             ),
-            MenuStatus.ready when _viewModel.isEmpty => const _ScrollableStatus(
-              child: DinnaEmptyState(
-                icon: Icons.restaurant_menu,
-                title: 'Cardápio vazio',
-                message: 'O restaurante ainda não cadastrou pratos.',
-              ),
-            ),
-            MenuStatus.ready => _MenuContent(viewModel: _viewModel, onOpenProduct: _openProduct),
-          },
+          ],
         ),
       ),
     );
