@@ -29,6 +29,8 @@ void main() {
     expect(client.union(restaurant), containsAll(AppRoutes.detailRoutes));
     expect(AppRoutes.clientFlow.first, AppRoutes.table);
     expect(AppRoutes.restaurantFlow.first, AppRoutes.restaurant);
+    expect(AppRoutes.clientFlow.contains(AppRoutes.recommendation), isFalse);
+    expect(AppRoutes.restaurantFlow.contains(AppRoutes.recommendation), isFalse);
   });
 
   testWidgets('abre na home', (tester) async {
@@ -259,6 +261,56 @@ void main() {
 
     expect(find.text('dinna'), findsOneWidget);
     expect(find.text('API não verificada'), findsOneWidget);
+  });
+
+  testWidgets('abre Me ajuda a escolher com a mesa do cardápio e volta para ele', (tester) async {
+    await _pumpApp(tester);
+    await _push(tester, AppRoutes.menu, arguments: '12');
+
+    expect(find.text('Me ajuda a escolher'), findsOneWidget);
+    expect(find.text('Mesa 12'), findsOneWidget);
+    await tester.tap(find.text('Me ajuda a escolher'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Quanto pretende gastar?'), findsOneWidget);
+    final context = tester.element(find.text('Quanto pretende gastar?'));
+    expect(ModalRoute.of(context)!.settings.name, AppRoutes.recommendation);
+    expect(ModalRoute.of(context)!.settings.arguments, '12');
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MenuView), findsOneWidget);
+    expect(find.text('Mesa 12'), findsOneWidget);
+    expect(ModalRoute.of(tester.element(find.byType(MenuView)))!.settings.arguments, '12');
+  });
+
+  testWidgets('cardápio, recomendação e carrinho compartilham a mesma mesa', (tester) async {
+    await _pumpApp(tester);
+    await _push(tester, AppRoutes.menu, arguments: '12');
+
+    await tester.tap(find.text('Me ajuda a escolher'));
+    await tester.pumpAndSettle();
+    expect(
+      ModalRoute.of(tester.element(find.text('Quanto pretende gastar?')))!.settings.arguments,
+      '12',
+    );
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    Navigator.of(tester.element(find.byType(MenuView))).pushNamed(AppRoutes.cart, arguments: '12');
+    await tester.pumpAndSettle();
+    expect(find.text('Seu carrinho'), findsOneWidget);
+    expect(ModalRoute.of(tester.element(find.text('Seu carrinho')))!.settings.arguments, '12');
+
+    await tester.tap(find.text('Ver cardápio'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MenuView), findsOneWidget);
+    expect(find.text('Mesa 12'), findsOneWidget);
+    expect(find.text('Me ajuda a escolher'), findsOneWidget);
+    expect(ModalRoute.of(tester.element(find.byType(MenuView)))!.settings.arguments, '12');
   });
 }
 

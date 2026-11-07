@@ -20,6 +20,7 @@ import 'product_image.dart';
 /// no header: o acesso volta com a barra do carrinho, ao adicionar itens (SCRUM-39).
 ///
 /// Tocar um produto abre o detalhe em bottom sheet com [createDetailViewModel].
+/// [onOpenRecommendation] abre "Me ajuda a escolher" sem trocar o cardápio.
 class MenuView extends StatefulWidget {
   const MenuView({
     super.key,
@@ -27,6 +28,7 @@ class MenuView extends StatefulWidget {
     required this.onOpenCart,
     this.createDetailViewModel,
     this.cartSession,
+    this.onOpenRecommendation,
     this.table,
   });
 
@@ -38,6 +40,9 @@ class MenuView extends StatefulWidget {
   /// Sessão compartilhada que confirma a inclusão no armazenamento local.
   final CartSession? cartSession;
   final void Function(BuildContext context, String? table) onOpenCart;
+
+  /// Abre a recomendação com a mesma mesa. Nulo esconde o atalho.
+  final void Function(BuildContext context, String? table)? onOpenRecommendation;
 
   /// Mesa recebida da tela da mesa. Ausente quando o cardápio abre por outro caminho.
   final String? table;
@@ -99,6 +104,7 @@ class _MenuViewState extends State<MenuView> {
   Widget build(BuildContext context) {
     final table = widget.table;
     final colors = Theme.of(context).colorScheme;
+    final openRecommendation = widget.onOpenRecommendation;
 
     // Header do Figma: faixa branca com linha embaixo, sem seta de voltar.
     // A altura acompanha o selo quando o texto da mesa cresce.
@@ -121,6 +127,7 @@ class _MenuViewState extends State<MenuView> {
       body: SafeArea(
         top: false,
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (widget.cartSession?.restoreError != null)
               Padding(
@@ -140,6 +147,14 @@ class _MenuViewState extends State<MenuView> {
                           : const Text('Tentar novamente'),
                     ),
                   ],
+                ),
+              ),
+            if (openRecommendation != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: OutlinedButton(
+                  onPressed: () => openRecommendation(context, table),
+                  child: const Text('Me ajuda a escolher'),
                 ),
               ),
             Expanded(
