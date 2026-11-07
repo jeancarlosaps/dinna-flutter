@@ -147,9 +147,13 @@ class AppRouter {
         createViewModel: () => RecommendationViewModel(
           recommendationRepository ?? const _MissingRecommendationRepository(),
           products: productRepository,
+          cartSession: cartSession,
           table: _tableArgument(settings.arguments),
         ),
         onShowMenu: (context) => Navigator.of(context).pop(),
+        onOpenCart: (context) =>
+            Navigator.of(context)
+                .pushNamed(AppRoutes.cart, arguments: _tableArgument(settings.arguments)),
       ),
       AppRoutes.cart => CartView(
         createViewModel: () => cartSession == null

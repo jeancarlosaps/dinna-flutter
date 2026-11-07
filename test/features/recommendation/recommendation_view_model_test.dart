@@ -1,6 +1,10 @@
 import 'dart:async';
 
+import 'package:dinna/core/domain/cart_item.dart';
+import 'package:dinna/core/domain/data_failure.dart';
 import 'package:dinna/core/domain/product.dart';
+import 'package:dinna/features/client/cart/cart_repository.dart';
+import 'package:dinna/features/client/cart/cart_session.dart';
 import 'package:dinna/features/menu/product_repository.dart';
 import 'package:dinna/features/recommendation/recommendation.dart';
 import 'package:dinna/features/recommendation/recommendation_preferences.dart';
@@ -344,18 +348,342 @@ void main() {
     lateCatalog.complete(ProductList.ready([_product('p3', name: 'Burger da casa')]));
     await late;
   });
+
+  test('inclui o prato válido com quantidade 1 na sessão aberta', () async {
+    final repository = _CartRepository();
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final burger = _product('p3', name: 'Burger da casa', priceCents: 1890);
+    final viewModel = _model(
+      FakeRecommendationRepository((_) async => _answered()),
+      products: FakeProductRepository(
+        () async => ProductList.ready([burger]),
+        onFindById: (_) async => ProductDetail.ready(burger),
+      ),
+      cartSession: session,
+      table: '12',
+    );
+    _answer(viewModel);
+    viewModel.setRestriction(DietaryRestriction.noOnion, selected: true);
+    await viewModel.submit();
+
+    final result = await viewModel.addRecommended('p3');
+
+    expect(result, isA<RecommendationCartAdded>());
+    expect((result as RecommendationCartAdded).productName, 'Burger da casa');
+    final line = session.read().single;
+    expect(line.lineId, 'line-1');
+    expect(line.productId, 'p3');
+    expect(line.quantity, 1);
+    expect(repository.added, [('p3', 1)]);
+    expect(viewModel.phase, RecommendationPhase.suggestions);
+    expect(viewModel.usedFallback, isFalse);
+    expect(viewModel.recommendedProducts.single.reason, 'Carne, Salgado');
+    expect(viewModel.table, '12');
+    expect(viewModel.restrictions, [DietaryRestriction.noOnion]);
+    expect(viewModel.isAdding('p3'), isFalse);
+  });
+
+  test('fallback permanece fallback depois da inclusão', () async {
+    final repository = _CartRepository();
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final salad = _product('p2', name: 'Salada da casa');
+    final viewModel = _model(
+      FakeRecommendationRepository(
+        (_) async => RecommendationAttempt.ready(
+          Recommendation(
+            provider: RecommendationProvider.unavailable,
+            outcome: RecommendationOutcome.suggestions,
+            products: [_dish('p2', reason: 'Leve, Salgado')],
+          ),
+        ),
+      ),
+      products: FakeProductRepository(
+        () async => ProductList.ready([salad]),
+        onFindById: (_) async => ProductDetail.ready(salad),
+      ),
+      cartSession: session,
+      table: '7',
+    );
+    _answer(viewModel);
+    await viewModel.submit();
+
+    final result = await viewModel.addRecommended('p2');
+
+    expect(result, isA<RecommendationCartAdded>());
+    expect(session.read().single.quantity, 1);
+    expect(viewModel.phase, RecommendationPhase.fallback);
+    expect(viewModel.usedFallback, isTrue);
+    expect(viewModel.recommendedProducts.single.reason, 'Leve, Salgado');
+    expect(viewModel.table, '7');
+  });
+
+  test('toque duplicado grava uma linha e a falha não publica outra', () async {
+    final lookup = Completer<ProductDetail>();
+    final repository = _CartRepository();
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final burger = _product('p3', name: 'Burger da casa');
+    final viewModel = _model(
+      FakeRecommendationRepository((_) async => _answered()),
+      products: FakeProductRepository(
+        () async => ProductList.ready([burger]),
+        onFindById: (_) => lookup.future,
+      ),
+      cartSession: session,
+    );
+    _answer(viewModel);
+    await viewModel.submit();
+
+    final first = viewModel.addRecommended('p3');
+    final second = viewModel.addRecommended('p3');
+    expect(viewModel.isAdding('p3'), isTrue);
+    expect(repository.adds, 0);
+
+    lookup.complete(ProductDetail.ready(burger));
+    final results = await Future.wait([first, second]);
+
+    expect(results.whereType<RecommendationCartAdded>(), hasLength(1));
+    expect(results.whereType<RecommendationCartIgnored>(), hasLength(1));
+    expect(repository.added, [('p3', 1)]);
+    expect(session.read().single.quantity, 1);
+    expect(viewModel.isAdding('p3'), isFalse);
+    expect(viewModel.phase, RecommendationPhase.suggestions);
+
+    repository.failure = StateError('disco cheio');
+    final failed = await viewModel.addRecommended('p3');
+    expect(failed, isA<RecommendationCartRejected>());
+    expect(
+      (failed as RecommendationCartRejected).message,
+      RecommendationViewModel.addFailureMessage,
+    );
+    expect(failed.message, isNot(contains('disco')));
+    expect(session.read(), hasLength(1));
+    expect(session.read().single.quantity, 1);
+    expect(viewModel.isAdding('p3'), isFalse);
+  });
+
+  test('não grava prato ausente, indisponível ou sem sessão pronta', () async {
+    final repository = _CartRepository();
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final burger = _product('p3', name: 'Burger da casa');
+    final products = FakeProductRepository(
+      () async => ProductList.ready([burger]),
+      onFindById: (_) async =>
+          ProductDetail.ready(_product('p3', name: 'Burger da casa', available: false)),
+    );
+    final viewModel = _model(
+      FakeRecommendationRepository((_) async => _answered()),
+      products: products,
+      cartSession: session,
+      table: '4',
+    );
+    _answer(viewModel);
+    await viewModel.submit();
+
+    final missing = await viewModel.addRecommended('p9');
+    expect(missing, isA<RecommendationCartRejected>());
+    expect(
+      (missing as RecommendationCartRejected).message,
+      RecommendationViewModel.unavailableProductMessage,
+    );
+    expect(products.findCalls, 0);
+
+    final unavailable = await viewModel.addRecommended('p3');
+    expect(unavailable, isA<RecommendationCartRejected>());
+    expect(
+      (unavailable as RecommendationCartRejected).message,
+      RecommendationViewModel.unavailableProductMessage,
+    );
+    expect(unavailable.message, isNot(contains('false')));
+    expect(products.findCalls, 1);
+    expect(repository.adds, 0);
+    expect(session.read(), isEmpty);
+    expect(viewModel.recommendedProducts.single.reason, 'Carne, Salgado');
+    expect(viewModel.table, '4');
+
+    final notFoundProducts = FakeProductRepository(
+      () async => ProductList.ready([burger]),
+      onFindById: (_) async =>
+          const ProductDetail.unavailable('sumiu da base', failure: DataFailure.notFound),
+    );
+    final notFound = _model(
+      FakeRecommendationRepository((_) async => _answered()),
+      products: notFoundProducts,
+      cartSession: session,
+    );
+    _answer(notFound);
+    await notFound.submit();
+    final absent = await notFound.addRecommended('p3');
+    expect(absent, isA<RecommendationCartRejected>());
+    expect(
+      (absent as RecommendationCartRejected).message,
+      RecommendationViewModel.unavailableProductMessage,
+    );
+    expect(absent.message, isNot(contains('sumiu')));
+    expect(notFoundProducts.findCalls, 1);
+    expect(repository.adds, 0);
+
+    final closed = CartSession(_CartRepository());
+    addTearDown(closed.dispose);
+    final withoutSession = _model(
+      FakeRecommendationRepository((_) async => _answered()),
+      products: FakeProductRepository(
+        () async => ProductList.ready([burger]),
+        onFindById: (_) async => ProductDetail.ready(burger),
+      ),
+      table: '4',
+    );
+    _answer(withoutSession);
+    await withoutSession.submit();
+    final noCart = await withoutSession.addRecommended('p3');
+    expect(noCart, isA<RecommendationCartRejected>());
+    expect(
+      (noCart as RecommendationCartRejected).message,
+      RecommendationViewModel.addFailureMessage,
+    );
+
+    final notReady = _model(
+      FakeRecommendationRepository((_) async => _answered()),
+      products: FakeProductRepository(
+        () async => ProductList.ready([burger]),
+        onFindById: (_) async => ProductDetail.ready(burger),
+      ),
+      cartSession: closed,
+    );
+    _answer(notReady);
+    await notReady.submit();
+    final waiting = await notReady.addRecommended('p3');
+    expect(waiting, isA<RecommendationCartRejected>());
+    expect(
+      (waiting as RecommendationCartRejected).message,
+      RecommendationViewModel.addFailureMessage,
+    );
+    expect(session.read(), isEmpty);
+    expect(closed.isReady, isFalse);
+  });
+
+  test('dispose durante a consulta não grava e não notifica de novo', () async {
+    final lookup = Completer<ProductDetail>();
+    final repository = _CartRepository();
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final burger = _product('p3', name: 'Burger da casa');
+    final viewModel = _model(
+      FakeRecommendationRepository((_) async => _answered()),
+      products: FakeProductRepository(
+        () async => ProductList.ready([burger]),
+        onFindById: (_) => lookup.future,
+      ),
+      cartSession: session,
+    );
+    _answer(viewModel);
+    await viewModel.submit();
+
+    var notifications = 0;
+    viewModel.addListener(() => notifications++);
+    final pending = viewModel.addRecommended('p3');
+    expect(viewModel.isAdding('p3'), isTrue);
+    expect(notifications, 1);
+
+    viewModel.dispose();
+    lookup.complete(ProductDetail.ready(burger));
+    final result = await pending;
+
+    expect(result, isA<RecommendationCartIgnored>());
+    expect(repository.adds, 0);
+    expect(session.read(), isEmpty);
+    expect(notifications, 1);
+  });
+
+  test('gravação já enviada termina sem notificar o view model encerrado', () async {
+    final write = Completer<CartItem>();
+    final repository = _CartRepository(addGate: write.future);
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final burger = _product('p3', name: 'Burger da casa');
+    final viewModel = _model(
+      FakeRecommendationRepository((_) async => _answered()),
+      products: FakeProductRepository(
+        () async => ProductList.ready([burger]),
+        onFindById: (_) async => ProductDetail.ready(burger),
+      ),
+      cartSession: session,
+      table: '9',
+    );
+    _answer(viewModel);
+    await viewModel.submit();
+
+    final pending = viewModel.addRecommended('p3');
+    await pumpEventQueue();
+    expect(repository.adds, 1);
+
+    var notifications = 0;
+    viewModel.addListener(() => notifications++);
+    viewModel.dispose();
+    write.complete(CartItem(lineId: 'line-1', productId: 'p3', quantity: 1, note: null));
+    final result = await pending;
+
+    expect(result, isA<RecommendationCartIgnored>());
+    expect(notifications, 0);
+    expect(session.read().single.quantity, 1);
+    expect(session.read().single.productId, 'p3');
+  });
 }
 
 RecommendationViewModel _model(
   RecommendationRepository repository, {
   ProductRepository? products,
+  CartSession? cartSession,
   String? table,
 }) {
   return RecommendationViewModel(
     repository,
     products: products ?? FakeProductRepository(() async => ProductList.ready(const [])),
+    cartSession: cartSession,
     table: table,
   );
+}
+
+class _CartRepository implements CartRepository {
+  _CartRepository({this.addGate});
+
+  final Future<CartItem>? addGate;
+  final added = <(String, int)>[];
+  Object? failure;
+  int adds = 0;
+
+  @override
+  Future<List<CartItem>> load() async => const [];
+
+  @override
+  Future<CartItem> add({required String productId, required int quantity, String? note}) async {
+    adds += 1;
+    final gate = addGate;
+    final item = gate == null
+        ? CartItem(lineId: 'line-$adds', productId: productId, quantity: quantity, note: note)
+        : await gate;
+    if (failure case final error?) throw error;
+    added.add((productId, quantity));
+    return item;
+  }
+
+  @override
+  Future<bool> update(CartItem item) async => false;
+
+  @override
+  Future<bool> remove(String lineId) async => false;
+
+  @override
+  Future<List<CartItem>> removeConfirmed(List<CartItem> confirmedItems) async => const [];
 }
 
 void _answer(RecommendationViewModel viewModel, {MealProtein protein = MealProtein.chicken}) {

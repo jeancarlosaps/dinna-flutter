@@ -1,11 +1,17 @@
 import 'package:dinna/app/app.dart';
 import 'package:dinna/app/router/app_router.dart';
+import 'package:dinna/core/domain/cart_item.dart';
+import 'package:dinna/core/domain/product.dart';
+import 'package:dinna/features/client/cart/cart_repository.dart';
+import 'package:dinna/features/client/cart/cart_session.dart';
 import 'package:dinna/features/client/order/order_confirmation_view.dart';
 import 'package:dinna/features/client/order/order_tracking_view.dart';
 import 'package:dinna/features/client/table/table_view.dart';
 import 'package:dinna/features/home/api_status_repository.dart';
 import 'package:dinna/features/menu/menu_view.dart';
 import 'package:dinna/features/menu/product_repository.dart';
+import 'package:dinna/features/recommendation/recommendation.dart';
+import 'package:dinna/features/recommendation/recommendation_repository.dart';
 import 'package:dinna/features/restaurant/order_details_view.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:dinna/features/restaurant/orders_queue_view.dart';
@@ -14,6 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../features/home/fake_api_status_repository.dart';
 import '../features/menu/fake_product_repository.dart';
+import '../features/recommendation/fake_recommendation_repository.dart';
 import '../features/restaurant/fake_order_repository.dart';
 
 void main() {
@@ -312,6 +319,86 @@ void main() {
     expect(find.text('Me ajuda a escolher'), findsOneWidget);
     expect(ModalRoute.of(tester.element(find.byType(MenuView)))!.settings.arguments, '12');
   });
+
+  testWidgets('a sugestão entra no carrinho aberto e a revisão segue na mesma mesa', (
+    tester,
+  ) async {
+    final cartRepository = _RouterCartRepository();
+    final session = CartSession(cartRepository);
+    final burger = Product(
+      id: 'p3',
+      name: 'Burger da casa',
+      description: 'Descrição interna',
+      category: 'burgers',
+      priceCents: 1890,
+      imageUrl: null,
+      available: true,
+    );
+    final products = FakeProductRepository(
+      () async => ProductList.ready([burger]),
+      onFindById: (_) async => ProductDetail.ready(burger),
+    );
+
+    await tester.pumpWidget(
+      DinnaApp(
+        apiStatusRepository: FakeApiStatusRepository(() async => const ApiAvailability.online()),
+        orderRepository: FakeOrderRepository(() async => OrderList.ready(const [])),
+        productRepository: products,
+        cartSession: session,
+        recommendationRepository: FakeRecommendationRepository(
+          (_) async => RecommendationAttempt.ready(
+            Recommendation(
+              provider: RecommendationProvider.answered,
+              outcome: RecommendationOutcome.suggestions,
+              products: [RecommendationSuggestion(productId: 'p3', reason: 'Carne, Salgado')],
+            ),
+          ),
+        ),
+        pollDelay: pendingPollDelay,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(session.isReady, isTrue);
+    expect(session.read(), isEmpty);
+
+    await _push(tester, AppRoutes.menu, arguments: '12');
+    await tester.tap(find.text('Me ajuda a escolher'));
+    await tester.pumpAndSettle();
+    await _tapMenuText(tester, 'Até R\$ 20');
+    await _tapMenuText(tester, 'Normal');
+    await _tapMenuText(tester, 'Frango');
+    await _tapMenuText(tester, 'Equilibrado');
+    await _tapMenuText(tester, 'Salgado');
+    await _tapMenuText(tester, 'Me sugere um prato');
+
+    expect(find.text('Burger da casa'), findsOneWidget);
+    expect(find.text('Carne, Salgado'), findsOneWidget);
+    expect(find.text('Adicionar ao carrinho'), findsOneWidget);
+
+    await tester.tap(find.text('Adicionar ao carrinho'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Me ajuda a escolher'), findsOneWidget);
+    expect(session.read().single.productId, 'p3');
+    expect(session.read().single.quantity, 1);
+    expect(cartRepository.items.single.quantity, 1);
+
+    await tester.tap(find.descendant(of: find.byType(AppBar), matching: find.text('Ver carrinho')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Seu carrinho'), findsOneWidget);
+    expect(find.text('Burger da casa'), findsWidgets);
+    expect(find.text('Enviar pedido'), findsOneWidget);
+    expect(ModalRoute.of(tester.element(find.text('Seu carrinho')))!.settings.name, AppRoutes.cart);
+    expect(ModalRoute.of(tester.element(find.text('Seu carrinho')))!.settings.arguments, '12');
+    expect(session.read().single.lineId, cartRepository.items.single.lineId);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('Me ajuda a escolher'), findsOneWidget);
+    expect(find.text('Burger da casa'), findsOneWidget);
+    expect(ModalRoute.of(tester.element(find.text('Carne, Salgado')))!.settings.arguments, '12');
+  });
 }
 
 /// Texto da `TableView`, usado como ponto de partida para navegar a partir dela.
@@ -333,4 +420,39 @@ Future<void> _push(WidgetTester tester, String route, {String? from, Object? arg
   final context = tester.element(find.text(from ?? 'dinna'));
   Navigator.of(context).pushNamed(route, arguments: arguments);
   await tester.pumpAndSettle();
+}
+
+Future<void> _tapMenuText(WidgetTester tester, String text) async {
+  final finder = find.text(text);
+  await tester.scrollUntilVisible(finder, 400);
+  await tester.tap(finder);
+  await tester.pumpAndSettle();
+}
+
+class _RouterCartRepository implements CartRepository {
+  final items = <CartItem>[];
+
+  @override
+  Future<List<CartItem>> load() async => List<CartItem>.of(items);
+
+  @override
+  Future<CartItem> add({required String productId, required int quantity, String? note}) async {
+    final item = CartItem(
+      lineId: 'line-${items.length + 1}',
+      productId: productId,
+      quantity: quantity,
+      note: note,
+    );
+    items.add(item);
+    return item;
+  }
+
+  @override
+  Future<bool> update(CartItem item) async => false;
+
+  @override
+  Future<bool> remove(String lineId) async => false;
+
+  @override
+  Future<List<CartItem>> removeConfirmed(List<CartItem> confirmedItems) async => items;
 }

@@ -39,12 +39,20 @@ const _failureMessage = 'O cardápio, o carrinho e o pedido continuam disponíve
 ///
 /// O [RecommendationViewModel] nasce e morre com o State. Voltar no resultado
 /// ou no carregamento retorna ao formulário. "Ver cardápio completo" chama
-/// [onShowMenu], que desempilha esta rota.
+/// [onShowMenu], que desempilha esta rota. "Adicionar ao carrinho" grava na
+/// sessão já aberta e não fecha esta tela. [onOpenCart] abre o carrinho
+/// existente, com a mesma mesa.
 class RecommendationView extends StatefulWidget {
-  const RecommendationView({super.key, required this.createViewModel, required this.onShowMenu});
+  const RecommendationView({
+    super.key,
+    required this.createViewModel,
+    required this.onShowMenu,
+    this.onOpenCart,
+  });
 
   final RecommendationViewModel Function() createViewModel;
   final void Function(BuildContext context) onShowMenu;
+  final void Function(BuildContext context)? onOpenCart;
 
   @override
   State<RecommendationView> createState() => _RecommendationViewState();
@@ -52,11 +60,57 @@ class RecommendationView extends StatefulWidget {
 
 class _RecommendationViewState extends State<RecommendationView> {
   late final RecommendationViewModel _viewModel;
+  var _canOpenCart = false;
+  String? _cartError;
 
   @override
   void initState() {
     super.initState();
     _viewModel = widget.createViewModel();
+  }
+
+  Future<void> _addRecommended(RecommendedProduct suggestion) async {
+    if (mounted && _cartError != null) setState(() => _cartError = null);
+    final result = await _viewModel.addRecommended(suggestion.product.id);
+    if (!mounted) return;
+    switch (result) {
+      case RecommendationCartAdded(:final productName):
+        setState(() {
+          _canOpenCart = true;
+          _cartError = null;
+        });
+        _showCartFeedback('$productName adicionado ao carrinho.', openCart: true);
+      case RecommendationCartRejected(:final message):
+        setState(() => _cartError = message);
+      case RecommendationCartIgnored():
+        break;
+    }
+  }
+
+  void _showCartFeedback(String message, {bool openCart = false}) {
+    final open = widget.onOpenCart;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        action: openCart && open != null
+            ? SnackBarAction(
+                label: 'Ver carrinho',
+                onPressed: () {
+                  if (!mounted) return;
+                  open(context);
+                },
+              )
+            : null,
+      ),
+    );
+  }
+
+  void _openCart() {
+    final open = widget.onOpenCart;
+    if (!mounted || open == null) return;
+    open(context);
   }
 
   @override
@@ -79,6 +133,10 @@ class _RecommendationViewState extends State<RecommendationView> {
           child: Scaffold(
             appBar: AppBar(
               title: const Text('Me ajuda a escolher'),
+              actions: [
+                if (_canOpenCart && widget.onOpenCart != null && !editing)
+                  TextButton(onPressed: _openCart, child: const Text('Ver carrinho')),
+              ],
               leading: BackButton(
                 onPressed: () {
                   if (editing) {
@@ -96,10 +154,14 @@ class _RecommendationViewState extends State<RecommendationView> {
                 RecommendationPhase.suggestions => _SuggestionResult(
                   viewModel: _viewModel,
                   onShowMenu: () => widget.onShowMenu(context),
+                  onAdd: (suggestion) => unawaited(_addRecommended(suggestion)),
+                  cartError: _cartError,
                 ),
                 RecommendationPhase.fallback => _SuggestionResult(
                   viewModel: _viewModel,
                   onShowMenu: () => widget.onShowMenu(context),
+                  onAdd: (suggestion) => unawaited(_addRecommended(suggestion)),
+                  cartError: _cartError,
                   fallback: true,
                 ),
                 RecommendationPhase.noCompatibleProducts => _OutcomeMessage(
@@ -299,11 +361,15 @@ class _SuggestionResult extends StatelessWidget {
   const _SuggestionResult({
     required this.viewModel,
     required this.onShowMenu,
+    required this.onAdd,
+    this.cartError,
     this.fallback = false,
   });
 
   final RecommendationViewModel viewModel;
   final VoidCallback onShowMenu;
+  final ValueChanged<RecommendedProduct> onAdd;
+  final String? cartError;
   final bool fallback;
 
   @override
@@ -320,9 +386,17 @@ class _SuggestionResult extends StatelessWidget {
           const SizedBox(height: 12),
         ],
         const DinnaBanner(tone: DinnaBannerTone.info, message: _allergyNotice),
+        if (cartError != null) ...[
+          const SizedBox(height: 12),
+          DinnaBanner(tone: DinnaBannerTone.error, message: cartError!),
+        ],
         const SizedBox(height: 16),
         for (final suggestion in viewModel.recommendedProducts) ...[
-          _RecommendationCard(suggestion: suggestion),
+          _RecommendationCard(
+            suggestion: suggestion,
+            isAdding: viewModel.isAdding(suggestion.product.id),
+            onAdd: () => onAdd(suggestion),
+          ),
           const SizedBox(height: 12),
         ],
         if (fallback) ...[
@@ -340,9 +414,15 @@ class _SuggestionResult extends StatelessWidget {
 }
 
 class _RecommendationCard extends StatelessWidget {
-  const _RecommendationCard({required this.suggestion});
+  const _RecommendationCard({
+    required this.suggestion,
+    required this.isAdding,
+    required this.onAdd,
+  });
 
   final RecommendedProduct suggestion;
+  final bool isAdding;
+  final VoidCallback onAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -372,6 +452,16 @@ class _RecommendationCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(suggestion.reason, style: theme.textTheme.bodySmall),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: isAdding ? null : onAdd,
+                  child: isAdding
+                      ? const SizedBox.square(
+                          dimension: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Adicionar ao carrinho', textAlign: TextAlign.center),
+                ),
               ],
             ),
           ),

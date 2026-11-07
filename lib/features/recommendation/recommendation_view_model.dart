@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../client/cart/cart_session.dart';
 import '../menu/product_repository.dart';
 import 'recommendation.dart';
 import 'recommendation_catalog.dart';
@@ -38,6 +39,30 @@ enum RecommendationPhase {
   failed,
 }
 
+/// Inclusão de uma sugestão no carrinho já aberto.
+sealed class RecommendationCartAddition {
+  const RecommendationCartAddition();
+}
+
+/// A sessão confirmou a nova linha.
+final class RecommendationCartAdded extends RecommendationCartAddition {
+  const RecommendationCartAdded(this.productName);
+
+  final String productName;
+}
+
+/// O toque não gravou. [message] é o que a tela pode mostrar.
+final class RecommendationCartRejected extends RecommendationCartAddition {
+  const RecommendationCartRejected(this.message);
+
+  final String message;
+}
+
+/// Toque repetido ou resposta que chegou depois do encerramento da tela.
+final class RecommendationCartIgnored extends RecommendationCartAddition {
+  const RecommendationCartIgnored();
+}
+
 /// Formulário "Me ajuda a escolher" e o resultado do POST.
 ///
 /// As cinco escolhas não ganham default. Restrição marcada permanece no
@@ -46,12 +71,18 @@ class RecommendationViewModel extends ChangeNotifier {
   RecommendationViewModel(
     this._repository, {
     required ProductRepository products,
+    this.cartSession,
     this.table,
     this.limit = 3,
-  }) : _catalog = RecommendationCatalog(products);
+  }) : _products = products,
+       _catalog = RecommendationCatalog(products);
 
   final RecommendationRepository _repository;
+  final ProductRepository _products;
   final RecommendationCatalog _catalog;
+
+  /// Carrinho já restaurado da sessão. Nulo não cria outro carrinho.
+  final CartSession? cartSession;
   final String? table;
   final int limit;
 
@@ -62,6 +93,10 @@ class RecommendationViewModel extends ChangeNotifier {
   static const catalogFailureTitle = 'Não foi possível carregar os pratos sugeridos';
 
   static const catalogFailureMessage = 'O cardápio, o carrinho e o pedido continuam disponíveis.';
+
+  static const unavailableProductMessage = 'Este prato não está disponível para pedir agora.';
+
+  static const addFailureMessage = 'Não foi possível adicionar o produto. Tente novamente.';
 
   MealBudget? _budget;
   MealHunger? _hunger;
@@ -79,6 +114,7 @@ class RecommendationViewModel extends ChangeNotifier {
   bool _inFlight = false;
   bool _disposed = false;
   int _generation = 0;
+  final Set<String> _addingProductIds = <String>{};
 
   MealBudget? get budget => _budget;
   MealHunger? get hunger => _hunger;
@@ -101,6 +137,9 @@ class RecommendationViewModel extends ChangeNotifier {
 
   /// As cinco perguntas respondidas, sem contradição e sem POST em curso.
   bool get canSubmit => _answered && contradiction == null && !_inFlight;
+
+  /// A gravação deste prato ainda não foi confirmada pela sessão.
+  bool isAdding(String productId) => _addingProductIds.contains(productId);
 
   bool get _answered =>
       _budget != null && _hunger != null && _protein != null && _style != null && _taste != null;
@@ -228,6 +267,55 @@ class RecommendationViewModel extends ChangeNotifier {
     _usedFallback = recommendation.usedFallback;
     _phase = _usedFallback ? RecommendationPhase.fallback : RecommendationPhase.suggestions;
     notifyListeners();
+  }
+
+  /// Inclui um prato que está na lista atual, com quantidade 1.
+  ///
+  /// Um segundo toque no mesmo prato espera a sessão confirmar a gravação.
+  /// Produto ausente ou indisponível não chega ao repositório. Depois do
+  /// [dispose], a resposta pendente não altera este ViewModel.
+  Future<RecommendationCartAddition> addRecommended(String productId) async {
+    if (_disposed || _addingProductIds.contains(productId)) {
+      return const RecommendationCartIgnored();
+    }
+
+    final suggested = _suggested(productId);
+    if (suggested == null || !suggested.product.available) {
+      return const RecommendationCartRejected(unavailableProductMessage);
+    }
+
+    final session = cartSession;
+    if (session == null || !session.isReady) {
+      return const RecommendationCartRejected(addFailureMessage);
+    }
+
+    _addingProductIds.add(productId);
+    notifyListeners();
+    try {
+      final detail = await _products.findById(productId);
+      if (_disposed) return const RecommendationCartIgnored();
+      final product = detail.product;
+      if (product == null || product.id != productId || !product.available) {
+        return const RecommendationCartRejected(unavailableProductMessage);
+      }
+
+      await session.addLine(productId: productId, quantity: 1);
+      if (_disposed) return const RecommendationCartIgnored();
+      return RecommendationCartAdded(product.name);
+    } catch (_) {
+      if (_disposed) return const RecommendationCartIgnored();
+      return const RecommendationCartRejected(addFailureMessage);
+    } finally {
+      _addingProductIds.remove(productId);
+      if (!_disposed) notifyListeners();
+    }
+  }
+
+  RecommendedProduct? _suggested(String productId) {
+    for (final suggestion in _recommendedProducts) {
+      if (suggestion.product.id == productId) return suggestion;
+    }
+    return null;
   }
 
   /// Volta ao formulário com as mesmas respostas e invalida o POST em curso.
