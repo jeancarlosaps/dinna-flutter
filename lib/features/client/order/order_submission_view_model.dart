@@ -39,7 +39,9 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     String Function()? newIntentId,
   }) : _store = intentStore ?? MemoryOrderIntentStore(),
        _now = now ?? DateTime.now,
-       _newIntentId = newIntentId ?? newOrderIntentId;
+       _newIntentId = newIntentId ?? newOrderIntentId {
+    lastOrderSession?.addListener(_onLastOrderSessionChanged);
+  }
 
   final OrderRepository _repository;
   final OrderIntentStore _store;
@@ -422,7 +424,9 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     if (intent.phase == OrderIntentPhase.succeeded) {
       _rememberTerminal(intent, persisted: true);
       final order = intent.order;
-      if (order != null) await _persistLastOrder(order);
+      if (order != null && !(lastOrderSession?.isPersisted(order) ?? false)) {
+        await _persistLastOrder(order);
+      }
       if (_disposed) return;
       _publishSuccess(intent);
       return;
@@ -696,9 +700,12 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _onLastOrderSessionChanged() => _notify();
+
   @override
   void dispose() {
     if (_disposed) return;
+    lastOrderSession?.removeListener(_onLastOrderSessionChanged);
     _disposed = true;
     super.dispose();
   }

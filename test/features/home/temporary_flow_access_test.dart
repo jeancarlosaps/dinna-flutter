@@ -57,6 +57,30 @@ void main() {
     expect(ModalRoute.of(context)!.settings.arguments, isA<OrderConfirmationArgs>());
   });
 
+  testWidgets('a home abre uma única confirmação com ativações rápidas', (tester) async {
+    final order = sampleOrder(id: 'o-history', table: '7');
+    final store = MemoryLastOrderStore();
+    await store.save(order);
+    await _pumpApp(tester, lastOrders: store);
+    await tester.pumpAndSettle();
+
+    final button = tester.widget<OutlinedButton>(
+      find.ancestor(of: find.text('Ver último pedido'), matching: find.byType(OutlinedButton)),
+    );
+    final onPressed = button.onPressed!;
+    onPressed();
+    onPressed();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(OrderConfirmationView), findsOneWidget);
+    final context = tester.element(find.byType(OrderConfirmationView));
+    Navigator.of(context).pop();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(OrderConfirmationView), findsNothing);
+    expect(find.text('dinna'), findsOneWidget);
+  });
+
   testWidgets('abre a mesa e volta para a home', (tester) async {
     await _pumpApp(tester);
     await _open(tester, 'Mesa');

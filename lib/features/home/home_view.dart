@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/domain/order.dart';
@@ -29,6 +31,7 @@ class HomeView extends StatefulWidget {
 
 class _HomeViewState extends State<HomeView> {
   late final HomeViewModel _viewModel = widget.createViewModel();
+  var _openingLastOrder = false;
 
   @override
   void dispose() {
@@ -77,9 +80,9 @@ class _HomeViewState extends State<HomeView> {
                               const SizedBox(height: 24),
                               _LastOrderCard(
                                 session: session,
-                                onOpen: widget.onOpenLastOrder == null
+                                onOpen: widget.onOpenLastOrder == null || _openingLastOrder
                                     ? null
-                                    : (order) => widget.onOpenLastOrder!(context, order),
+                                    : (order) => _openLastOrder(context, order),
                               ),
                             ],
                             const SizedBox(height: 32),
@@ -101,6 +104,27 @@ class _HomeViewState extends State<HomeView> {
         ),
       ),
     );
+  }
+
+  void _openLastOrder(BuildContext context, Order order) {
+    if (_openingLastOrder || ModalRoute.of(context)?.isCurrent != true) return;
+    final onOpenLastOrder = widget.onOpenLastOrder;
+    if (onOpenLastOrder == null) return;
+
+    setState(() => _openingLastOrder = true);
+    unawaited(_waitForLastOrderRoute(context, order, onOpenLastOrder));
+  }
+
+  Future<void> _waitForLastOrderRoute(
+    BuildContext context,
+    Order order,
+    Future<void> Function(BuildContext context, Order order) onOpenLastOrder,
+  ) async {
+    try {
+      await onOpenLastOrder(context, order);
+    } finally {
+      if (mounted) setState(() => _openingLastOrder = false);
+    }
   }
 }
 
