@@ -16,8 +16,9 @@ import 'product_image.dart';
 /// Cardápio do cliente, na rota `/menu`.
 ///
 /// O [MenuViewModel] nasce e morre com o State. A mesa chega pela navegação
-/// e segue para o carrinho por [onOpenCart]. O Figma não tem ícone de carrinho
-/// no header: o acesso volta com a barra do carrinho, ao adicionar itens (SCRUM-39).
+/// e segue para o carrinho por [onOpenCart]. O header não leva ícone de
+/// carrinho: com itens na [CartSession], a barra inferior abre o mesmo
+/// carrinho e mostra a quantidade e o total estimados.
 ///
 /// Tocar um produto abre o detalhe em bottom sheet com [createDetailViewModel].
 /// [onOpenRecommendation] abre "Me ajuda a escolher" sem trocar o cardápio.
@@ -100,6 +101,41 @@ class _MenuViewState extends State<MenuView> {
     }
   }
 
+  /// Quantidade e total da sessão já restaurada. Carrinho vazio ou ainda
+  /// indisponível não mostra a barra. O total só aparece quando cada item tem
+  /// preço no cardápio carregado.
+  _CartSummary? _cartSummary() {
+    final session = widget.cartSession;
+    if (session == null || !session.isReady) return null;
+    final items = session.read();
+    if (items.isEmpty) return null;
+
+    var count = 0;
+    int? totalCents = _viewModel.status == MenuStatus.ready ? 0 : null;
+    final prices = totalCents == null ? const <String, int>{} : _pricesById();
+    for (final item in items) {
+      count += item.quantity;
+      if (totalCents == null) continue;
+      final price = prices[item.productId];
+      if (price == null) {
+        totalCents = null;
+        continue;
+      }
+      totalCents += price * item.quantity;
+    }
+    return _CartSummary(itemCount: count, totalCents: totalCents);
+  }
+
+  Map<String, int> _pricesById() {
+    final prices = <String, int>{};
+    for (final products in _viewModel.groupedProducts().values) {
+      for (final product in products) {
+        prices[product.id] = product.priceCents;
+      }
+    }
+    return prices;
+  }
+
   @override
   Widget build(BuildContext context) {
     final table = widget.table;
@@ -108,84 +144,140 @@ class _MenuViewState extends State<MenuView> {
 
     // Header do Figma: faixa branca com linha embaixo, sem seta de voltar.
     // A altura acompanha o selo quando o texto da mesa cresce.
-    return Scaffold(
-      appBar: AppBar(
-        toolbarHeight: _toolbarHeight(context, table),
-        automaticallyImplyLeading: false,
-        titleSpacing: 16,
-        backgroundColor: colors.surfaceContainerLowest,
-        shape: Border(bottom: BorderSide(color: colors.outlineVariant)),
-        title: const DinnaLogo(size: 24),
-        actions: [
-          if (table != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: _TableBadge(table: table, maxWidth: _badgeMaxWidth(context)),
-            ),
-        ],
-      ),
-      body: SafeArea(
-        top: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (widget.cartSession?.restoreError != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: Row(
-                  children: [
-                    const Expanded(child: Text('Não foi possível recuperar o carrinho salvo.')),
-                    TextButton(
-                      onPressed: widget.cartSession!.isRestoring
-                          ? null
-                          : () => unawaited(_retryCartRestore(widget.cartSession!)),
-                      child: widget.cartSession!.isRestoring
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Tentar novamente'),
-                    ),
-                  ],
+    return ListenableBuilder(
+      listenable: _viewModel,
+      builder: (context, _) {
+        final summary = _cartSummary();
+        return Scaffold(
+          appBar: AppBar(
+            toolbarHeight: _toolbarHeight(context, table),
+            automaticallyImplyLeading: false,
+            titleSpacing: 16,
+            backgroundColor: colors.surfaceContainerLowest,
+            shape: Border(bottom: BorderSide(color: colors.outlineVariant)),
+            title: const DinnaLogo(size: 24),
+            actions: [
+              if (table != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 16),
+                  child: _TableBadge(table: table, maxWidth: _badgeMaxWidth(context)),
                 ),
-              ),
-            if (openRecommendation != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: OutlinedButton(
-                  onPressed: () => openRecommendation(context, table),
-                  child: const Text('Me ajuda a escolher'),
+            ],
+          ),
+          body: SafeArea(
+            top: false,
+            bottom: summary == null,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (widget.cartSession?.restoreError != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: Row(
+                      children: [
+                        const Expanded(child: Text('Não foi possível recuperar o carrinho salvo.')),
+                        TextButton(
+                          onPressed: widget.cartSession!.isRestoring
+                              ? null
+                              : () => unawaited(_retryCartRestore(widget.cartSession!)),
+                          child: widget.cartSession!.isRestoring
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text('Tentar novamente'),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (openRecommendation != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: OutlinedButton(
+                      onPressed: () => openRecommendation(context, table),
+                      child: const Text('Me ajuda a escolher'),
+                    ),
+                  ),
+                Expanded(
+                  child: switch (_viewModel.status) {
+                    MenuStatus.loading => const Center(child: CircularProgressIndicator()),
+                    MenuStatus.failed => _ScrollableStatus(
+                      child: DinnaEmptyState(
+                        icon: Icons.wifi_off,
+                        title: 'Não foi possível carregar o cardápio',
+                        message: _viewModel.errorMessage ?? MenuViewModel.fallbackErrorMessage,
+                        actionLabel: 'Tentar de novo',
+                        onAction: _viewModel.load,
+                      ),
+                    ),
+                    MenuStatus.ready when _viewModel.isEmpty => const _ScrollableStatus(
+                      child: DinnaEmptyState(
+                        icon: Icons.restaurant_menu,
+                        title: 'Cardápio vazio',
+                        message: 'O restaurante ainda não cadastrou pratos.',
+                      ),
+                    ),
+                    MenuStatus.ready => _MenuContent(
+                      viewModel: _viewModel,
+                      onOpenProduct: _openProduct,
+                    ),
+                  },
                 ),
-              ),
-            Expanded(
-              child: ListenableBuilder(
-                listenable: _viewModel,
-                builder: (context, _) => switch (_viewModel.status) {
-                  MenuStatus.loading => const Center(child: CircularProgressIndicator()),
-                  MenuStatus.failed => _ScrollableStatus(
-                    child: DinnaEmptyState(
-                      icon: Icons.wifi_off,
-                      title: 'Não foi possível carregar o cardápio',
-                      message: _viewModel.errorMessage ?? MenuViewModel.fallbackErrorMessage,
-                      actionLabel: 'Tentar de novo',
-                      onAction: _viewModel.load,
-                    ),
-                  ),
-                  MenuStatus.ready when _viewModel.isEmpty => const _ScrollableStatus(
-                    child: DinnaEmptyState(
-                      icon: Icons.restaurant_menu,
-                      title: 'Cardápio vazio',
-                      message: 'O restaurante ainda não cadastrou pratos.',
-                    ),
-                  ),
-                  MenuStatus.ready => _MenuContent(
-                    viewModel: _viewModel,
-                    onOpenProduct: _openProduct,
-                  ),
-                },
-              ),
+              ],
             ),
-          ],
+          ),
+          bottomNavigationBar: summary == null
+              ? null
+              : _CartAccessBar(
+                  summary: summary,
+                  onPressed: () => widget.onOpenCart(context, table),
+                ),
+        );
+      },
+    );
+  }
+}
+
+class _CartSummary {
+  const _CartSummary({required this.itemCount, required this.totalCents});
+
+  final int itemCount;
+  final int? totalCents;
+
+  String get countLabel => itemCount == 1 ? '1 item' : '$itemCount itens';
+
+  String get label {
+    final total = totalCents;
+    if (total == null) return 'Ver carrinho · $countLabel';
+    return 'Ver carrinho · $countLabel · ${formatOrderTotal(total)}';
+  }
+}
+
+/// Ação fixa do cardápio. A rolagem fica no corpo; a safe area fica nesta faixa.
+class _CartAccessBar extends StatelessWidget {
+  const _CartAccessBar({required this.summary, required this.onPressed});
+
+  final _CartSummary summary;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surfaceContainerLowest,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: colors.outlineVariant)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: FilledButton(
+              onPressed: onPressed,
+              child: Text(summary.label, textAlign: TextAlign.center),
+            ),
+          ),
         ),
       ),
     );

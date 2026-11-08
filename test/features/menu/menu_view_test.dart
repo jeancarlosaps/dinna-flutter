@@ -37,6 +37,115 @@ Future<void> _pumpMenu(WidgetTester tester, List<Product> products, {String? tab
 }
 
 void main() {
+  testWidgets('a barra mostra quantidade e total e abre o carrinho da mesa', (tester) async {
+    final repository = _MutableMenuCart([
+      CartItem(lineId: 'line-1', productId: '1', quantity: 2, note: null),
+    ]);
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+
+    String? openedTable;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: MenuView(
+          table: '12',
+          createViewModel: () => MenuViewModel(
+            FakeProductRepository(
+              () async => ProductList.ready([
+                _product('1', 'Margherita', 'pizzas'),
+                _product('2', 'Suco', 'bebidas'),
+              ]),
+            ),
+          ),
+          cartSession: session,
+          onOpenCart: (_, table) => openedTable = table,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ver carrinho · 2 itens · R\$ 20,00'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Ver carrinho · 2 itens · R\$ 20,00'));
+    await tester.pump();
+    expect(openedTable, '12');
+
+    await session.addLine(productId: '2', quantity: 1);
+    await tester.pump();
+    expect(find.text('Ver carrinho · 3 itens · R\$ 30,00'), findsOneWidget);
+
+    await session.removeLine('line-1');
+    await tester.pump();
+    expect(find.text('Ver carrinho · 1 item · R\$ 10,00'), findsOneWidget);
+
+    await session.removeLine('line-2');
+    await tester.pump();
+    expect(find.textContaining('Ver carrinho'), findsNothing);
+  });
+
+  testWidgets('carrinho vazio não mostra a barra do cardápio', (tester) async {
+    final session = CartSession(_MutableMenuCart(const []));
+    addTearDown(session.dispose);
+    await session.restore();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MenuView(
+          table: '7',
+          createViewModel: () => MenuViewModel(
+            FakeProductRepository(
+              () async => ProductList.ready([_product('1', 'Margherita', 'pizzas')]),
+            ),
+          ),
+          cartSession: session,
+          onOpenCart: (_, _) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Margherita'), findsOneWidget);
+    expect(find.textContaining('Ver carrinho'), findsNothing);
+  });
+
+  testWidgets('a barra do carrinho cabe com texto ampliado', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final session = CartSession(
+      _MutableMenuCart([CartItem(lineId: 'line-1', productId: '1', quantity: 2, note: null)]),
+    );
+    addTearDown(session.dispose);
+    await session.restore();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(2)),
+          child: child!,
+        ),
+        home: MenuView(
+          table: '12',
+          createViewModel: () => MenuViewModel(
+            FakeProductRepository(
+              () async => ProductList.ready([_product('1', 'Margherita', 'pizzas')]),
+            ),
+          ),
+          cartSession: session,
+          onOpenCart: (_, _) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ver carrinho · 2 itens · R\$ 20,00'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('mostra a mesa, as categorias e os produtos', (tester) async {
     await _pumpMenu(tester, [
       _product('1', 'Margherita', 'pizzas'),
@@ -393,6 +502,43 @@ void main() {
     expect(mesaLeft, greaterThanOrEqualTo(barLeft - 0.5));
     expect(mesaLeft + mesa.size.width, lessThanOrEqualTo(barLeft + appBar.size.width + 0.5));
   });
+}
+
+class _MutableMenuCart implements CartRepository {
+  _MutableMenuCart(List<CartItem> seed) : items = List<CartItem>.of(seed), _next = seed.length + 1;
+
+  List<CartItem> items;
+  int _next;
+
+  @override
+  Future<List<CartItem>> load() async => List<CartItem>.unmodifiable(items);
+
+  @override
+  Future<CartItem> add({required String productId, required int quantity, String? note}) async {
+    final item = CartItem(
+      lineId: 'line-${_next++}',
+      productId: productId,
+      quantity: quantity,
+      note: note,
+    );
+    items = [...items, item];
+    return item;
+  }
+
+  @override
+  Future<bool> update(CartItem item) async => false;
+
+  @override
+  Future<bool> remove(String lineId) async {
+    final next = items.where((item) => item.lineId != lineId).toList();
+    final removed = next.length != items.length;
+    items = next;
+    return removed;
+  }
+
+  @override
+  Future<List<CartItem>> removeConfirmed(List<CartItem> confirmedItems) async =>
+      List<CartItem>.unmodifiable(items);
 }
 
 class _MenuCartRepository implements CartRepository {
