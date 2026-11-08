@@ -379,6 +379,7 @@ void main() {
   });
 
   const recoveredId = '00000000-0000-4000-8000-0000000000aa';
+  final fixedNow = DateTime.utc(2026, 11, 8, 12, 30);
 
   OrderIntent pendingIntent() {
     return OrderIntent.pending(
@@ -407,6 +408,7 @@ void main() {
       orders,
       intentStore: store,
       newIntentId: () => '00000000-0000-4000-8000-0000000000bb',
+      now: () => fixedNow,
     );
     addTearDown(viewModel.dispose);
 
@@ -423,6 +425,35 @@ void main() {
     expect(stored?.id, recoveredId);
     expect(stored?.phase, OrderIntentPhase.uncertain);
     expect(stored?.rejection, isNull);
+  });
+
+  test('intenção expirada não reenvia o 401', () async {
+    final store = MemoryOrderIntentStore();
+    await store.save(pendingIntent());
+    final orders = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async {
+        return const OrderSubmission.failed(
+          OrderSubmission.unauthorizedRejectionMessage,
+          retainsIntent: true,
+        );
+      },
+    );
+    final viewModel = OrderSubmissionViewModel(
+      orders,
+      intentStore: store,
+      newIntentId: () => '00000000-0000-4000-8000-0000000000bb',
+      now: () => fixedNow.add(const Duration(hours: 23)),
+    );
+    addTearDown(viewModel.dispose);
+
+    await viewModel.restore();
+    await viewModel.resume(recoveredId);
+
+    expect(orders.createCalls, 0);
+    expect(viewModel.outcomeUncertain, isFalse);
+    expect(viewModel.authRejected, isFalse);
+    expect((await store.load())!.phase, OrderIntentPhase.blocked);
   });
 
   test('201 não gravado e timeout sem marca de incerto não viram recusa no 401', () async {
