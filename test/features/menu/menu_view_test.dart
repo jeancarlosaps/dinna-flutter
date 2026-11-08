@@ -252,6 +252,107 @@ void main() {
     expect(find.text('Esgotado'), findsOneWidget);
   });
 
+  testWidgets('a busca filtra os cards pelo nome e o X limpa', (tester) async {
+    await _pumpMenu(tester, [
+      _product('1', 'Margherita', 'pizzas'),
+      _product('2', 'Calabresa', 'pizzas'),
+      _product('3', 'Suco', 'bebidas'),
+    ]);
+
+    await tester.enterText(find.byType(TextField), 'marg');
+    await tester.pump();
+
+    expect(find.text('Margherita'), findsOneWidget);
+    expect(find.text('Calabresa'), findsNothing);
+    expect(find.text('Suco'), findsNothing);
+
+    await tester.tap(find.byTooltip('Limpar busca'));
+    await tester.pump();
+
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, isEmpty);
+    expect(find.byTooltip('Limpar busca'), findsNothing);
+    expect(find.text('Calabresa'), findsOneWidget);
+    expect(find.text('Suco'), findsOneWidget);
+  });
+
+  testWidgets('busca sem resultado orienta e limpa a busca', (tester) async {
+    await _pumpMenu(tester, [
+      _product('1', 'Margherita', 'pizzas'),
+      _product('2', 'Suco', 'bebidas'),
+    ]);
+
+    await tester.enterText(find.byType(TextField), 'lasanha');
+    await tester.pump();
+
+    expect(find.text('Nenhum produto encontrado'), findsOneWidget);
+    expect(find.textContaining('“lasanha”'), findsOneWidget);
+    expect(find.text('Margherita'), findsNothing);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Limpar busca'));
+    await tester.pump();
+
+    expect(find.text('Nenhum produto encontrado'), findsNothing);
+    expect(find.text('Margherita'), findsOneWidget);
+    expect(find.text('Suco'), findsOneWidget);
+  });
+
+  testWidgets('a busca vale dentro da categoria escolhida', (tester) async {
+    await _pumpMenu(tester, [
+      _product('1', 'Margherita', 'pizzas'),
+      _product('2', 'Suco', 'bebidas'),
+    ]);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Bebidas'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'marg');
+    await tester.pump();
+
+    expect(find.textContaining('“marg” em Bebidas'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Todos'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Margherita'), findsOneWidget);
+    expect(find.text('Nenhum produto encontrado'), findsNothing);
+  });
+
+  testWidgets('busca sem resultado cabe com texto a 200% numa tela pequena', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(2)),
+          child: child!,
+        ),
+        home: MenuView(
+          table: '12',
+          createViewModel: () => MenuViewModel(
+            FakeProductRepository(
+              () async => ProductList.ready([_product('1', 'Margherita', 'pizzas')]),
+            ),
+          ),
+          onOpenCart: (_, _) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'lasanha de berinjela');
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    final clear = find.widgetWithText(FilledButton, 'Limpar busca');
+    await tester.ensureVisible(clear);
+    await tester.pumpAndSettle();
+    await tester.tap(clear);
+    await tester.pumpAndSettle();
+    expect(find.text('Margherita'), findsOneWidget);
+  });
+
   testWidgets('o chip da categoria filtra os produtos', (tester) async {
     await _pumpMenu(tester, [
       _product('1', 'Margherita', 'pizzas'),
