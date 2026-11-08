@@ -105,7 +105,10 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   /// O [_terminal] foi lido ou gravado no arquivo. Sem isso, outro ciclo é inseguro.
   bool _terminalStored = false;
 
-  /// O reenvio partiu de uma intenção que já era incerta antes deste POST.
+  /// O 401 deste reenvio não pode afirmar que o pedido não existe.
+  ///
+  /// Falso só quando a intenção gravada já é a rejeição 401, prova de que
+  /// nenhum POST anterior chegou a ser aplicado.
   var _knownUncertainResume = false;
 
   OrderSubmissionStatus get status => _status;
@@ -223,7 +226,9 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   /// apagar a intenção deixa este sinal ligado. Um 201 que não coube no
   /// arquivo fica de fora: esse sucesso só existe nesta execução.
   bool get canViewPersistedConfirmation {
-    if (_disposed || !_restored || !_terminalStored || isSubmitting) return false;
+    if (_disposed || !_restored || !_terminalStored || isSubmitting) {
+      return false;
+    }
     if (_status != OrderSubmissionStatus.succeeded) return false;
     final terminal = _terminal;
     final intent = _intent;
@@ -254,7 +259,9 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   /// não cria chave. Ignora a chamada durante um envio, depois do sucesso,
   /// com o reenvio bloqueado ou após o [dispose].
   Future<void> submit({required String table, required List<CartItem> items}) async {
-    if (_disposed || _gate || _status == OrderSubmissionStatus.submitting) return;
+    if (_disposed || _gate || _status == OrderSubmissionStatus.submitting) {
+      return;
+    }
     if (_terminal != null) return;
     if (_restored &&
         (_storeBlocked || _resendBlocked || _status == OrderSubmissionStatus.succeeded)) {
@@ -324,16 +331,21 @@ class OrderSubmissionViewModel extends ChangeNotifier {
         return;
       }
       if (_postDenied(intentId)) return;
-      final priorUncertain = persisted.phase == OrderIntentPhase.uncertain;
+      // Pending sem rejeição pode ser um POST que saiu e não foi gravado:
+      // 201 sem arquivo, timeout sem a marca de incerto, ou crash no meio.
+      // Só a rejeição 401 já gravada prova que nenhum envio anterior entrou.
+      final provenUnauthorized =
+          persisted.phase == OrderIntentPhase.pending &&
+          persisted.rejection == OrderIntentRejection.unauthorized;
       var toSend = persisted;
-      if (!priorUncertain) {
+      if (persisted.phase != OrderIntentPhase.uncertain) {
         final marker = persisted.uncertain();
         try {
           await _store.save(marker);
         } on OrderIntentStoreException {
           if (_disposed) return;
           _intent = persisted;
-          if (persisted.rejection == OrderIntentRejection.unauthorized) {
+          if (provenUnauthorized) {
             _publishRejected(OrderSubmission.unauthorizedRejectionMessage);
           } else {
             _publishUncertain(OrderSubmission.uncertainOutcomeMessage);
@@ -344,7 +356,7 @@ class OrderSubmissionViewModel extends ChangeNotifier {
         toSend = marker;
       }
       _intent = toSend;
-      _knownUncertainResume = priorUncertain;
+      _knownUncertainResume = !provenUnauthorized;
       _enterSubmitting();
       if (_postDenied(intentId)) return;
       await _dispatch(toSend);
