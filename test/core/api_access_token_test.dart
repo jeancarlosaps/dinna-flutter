@@ -280,11 +280,17 @@ void main() {
 
   test('HTTP 401 só gera outro POST quando a mesma intenção é reenviada', () async {
     final posts = <http.Request>[];
+    final phasesDuringPost = <OrderIntentPhase>[];
+    MemoryOrderIntentStore? storeBox;
     var allow = false;
     final api = client(
       apiToken: token,
       handler: (request) async {
-        if (request.method == 'POST') posts.add(request);
+        if (request.method == 'POST') {
+          posts.add(request);
+          final phase = (await storeBox?.load())?.phase;
+          if (phase != null) phasesDuringPost.add(phase);
+        }
         if (!allow) {
           return http.Response(
             unauthorizedBody,
@@ -315,6 +321,7 @@ void main() {
     await session.restore();
     final before = session.read();
     final store = MemoryOrderIntentStore();
+    storeBox = store;
     final submission = OrderSubmissionViewModel(
       HttpOrderRepository(api),
       intentStore: store,
@@ -338,6 +345,7 @@ void main() {
     await submission.resume(intentId);
 
     expect(posts, hasLength(2));
+    expect(phasesDuringPost, [OrderIntentPhase.pending, OrderIntentPhase.uncertain]);
     expect(header(posts[0], 'Idempotency-Key'), intentId);
     expect(header(posts[1], 'Idempotency-Key'), intentId);
     expect(jsonDecode(posts[0].body), jsonDecode(posts[1].body));
@@ -345,6 +353,127 @@ void main() {
     expect(submission.authRejected, isFalse);
     expect(session.read(), before);
     expect(cart.confirmedRemovals, 0);
+  });
+
+  test('reenvio recusado de novo volta à rejeição e falha de gravação não envia', () async {
+    final posts = <http.Request>[];
+    MemoryOrderIntentStore? storeBox;
+    final api = client(
+      apiToken: token,
+      handler: (request) async {
+        if (request.method == 'POST') posts.add(request);
+        return http.Response(
+          unauthorizedBody,
+          401,
+          headers: const {'content-type': 'application/json; charset=utf-8'},
+        );
+      },
+    );
+    final store = MemoryOrderIntentStore();
+    storeBox = store;
+    final submission = OrderSubmissionViewModel(
+      HttpOrderRepository(api),
+      intentStore: store,
+      newIntentId: () => intentId,
+    );
+    addTearDown(submission.dispose);
+    final items = [CartItem(productId: 'p1', quantity: 2, note: 'sem cebola')];
+
+    await submission.submit(table: '12', items: items);
+    expect((await store.load())?.rejection, OrderIntentRejection.unauthorized);
+
+    store.failNextSave();
+    await submission.resume(intentId);
+
+    expect(posts, hasLength(1));
+    expect(submission.authRejected, isTrue);
+    expect(submission.outcomeUncertain, isFalse);
+    expect((await store.load())?.phase, OrderIntentPhase.pending);
+    expect((await store.load())?.rejection, OrderIntentRejection.unauthorized);
+
+    final phaseDuringRetry = <OrderIntentPhase>[];
+    final retryApi = client(
+      apiToken: token,
+      handler: (request) async {
+        if (request.method == 'POST') {
+          posts.add(request);
+          final phase = (await storeBox?.load())?.phase;
+          if (phase != null) phaseDuringRetry.add(phase);
+        }
+        return http.Response(
+          unauthorizedBody,
+          401,
+          headers: const {'content-type': 'application/json; charset=utf-8'},
+        );
+      },
+    );
+    final retry = OrderSubmissionViewModel(
+      HttpOrderRepository(retryApi),
+      intentStore: store,
+      newIntentId: () => '00000000-0000-4000-8000-0000000000bb',
+    );
+    addTearDown(retry.dispose);
+    await retry.restore();
+    await retry.resume(intentId);
+
+    expect(posts, hasLength(2));
+    expect(phaseDuringRetry, [OrderIntentPhase.uncertain]);
+    expect(header(posts[1], 'Idempotency-Key'), intentId);
+    expect(jsonDecode(posts[0].body), jsonDecode(posts[1].body));
+    expect(retry.authRejected, isTrue);
+    expect(retry.outcomeUncertain, isFalse);
+    expect(retry.errorMessage, OrderSubmission.unauthorizedRejectionMessage);
+    expect(retry.canRequestSubmit, isFalse);
+    final stored = await store.load();
+    expect(stored?.phase, OrderIntentPhase.pending);
+    expect(stored?.rejection, OrderIntentRejection.unauthorized);
+    expect(stored?.id, intentId);
+  });
+
+  test('HTTP 401 depois de envio incerto não afirma que o pedido foi recusado', () async {
+    var attempt = 0;
+    final keys = <String?>[];
+    final api = client(
+      apiToken: token,
+      handler: (request) async {
+        attempt++;
+        keys.add(header(request, 'Idempotency-Key'));
+        if (attempt == 1) {
+          return http.Response('indisponível', 503, headers: const {'content-type': 'text/plain'});
+        }
+        return http.Response(
+          unauthorizedBody,
+          401,
+          headers: const {'content-type': 'application/json; charset=utf-8'},
+        );
+      },
+    );
+    final store = MemoryOrderIntentStore();
+    final submission = OrderSubmissionViewModel(
+      HttpOrderRepository(api),
+      intentStore: store,
+      newIntentId: () => intentId,
+    );
+    addTearDown(submission.dispose);
+    final items = [CartItem(productId: 'p1', quantity: 2, note: 'sem cebola')];
+
+    await submission.submit(table: '12', items: items);
+    expect(submission.outcomeUncertain, isTrue);
+    expect((await store.load())?.phase, OrderIntentPhase.uncertain);
+
+    await submission.resume(intentId);
+
+    expect(attempt, 2);
+    expect(keys, [intentId, intentId]);
+    expect(submission.outcomeUncertain, isTrue);
+    expect(submission.authRejected, isFalse);
+    expect(submission.errorMessage, contains('pode ter sido registrado'));
+    expect(submission.errorMessage, isNot(OrderSubmission.unauthorizedRejectionMessage));
+    expect(submission.canRequestSubmit, isFalse);
+    final stored = await store.load();
+    expect(stored?.phase, OrderIntentPhase.uncertain);
+    expect(stored?.rejection, isNull);
+    expect(stored?.id, intentId);
   });
 }
 

@@ -105,6 +105,9 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   /// O [_terminal] foi lido ou gravado no arquivo. Sem isso, outro ciclo é inseguro.
   bool _terminalStored = false;
 
+  /// O reenvio partiu de uma intenção que já era incerta antes deste POST.
+  var _knownUncertainResume = false;
+
   OrderSubmissionStatus get status => _status;
 
   /// Pedido devolvido pela API. Preenchido só em [OrderSubmissionStatus.succeeded].
@@ -323,11 +326,32 @@ class OrderSubmissionViewModel extends ChangeNotifier {
         return;
       }
       if (_postDenied(intentId)) return;
-      _intent = persisted;
+      final priorUncertain = persisted.phase == OrderIntentPhase.uncertain;
+      var toSend = persisted;
+      if (!priorUncertain) {
+        final marker = persisted.uncertain();
+        try {
+          await _store.save(marker);
+        } on OrderIntentStoreException {
+          if (_disposed) return;
+          _intent = persisted;
+          if (persisted.rejection == OrderIntentRejection.unauthorized) {
+            _publishRejected(OrderSubmission.unauthorizedRejectionMessage);
+          } else {
+            _publishUncertain(OrderSubmission.uncertainOutcomeMessage);
+          }
+          return;
+        }
+        if (_disposed || _postDenied(intentId)) return;
+        toSend = marker;
+      }
+      _intent = toSend;
+      _knownUncertainResume = priorUncertain;
       _enterSubmitting();
       if (_postDenied(intentId)) return;
-      await _dispatch(persisted);
+      await _dispatch(toSend);
     } finally {
+      _knownUncertainResume = false;
       _gate = false;
     }
   }
@@ -541,6 +565,12 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     }
 
     if (result.retainsIntent) {
+      if (_knownUncertainResume) {
+        await _markUncertain(intent);
+        if (_disposed) return;
+        _publishUncertain(OrderSubmission.uncertainOutcomeMessage);
+        return;
+      }
       final refused = intent.refused(OrderIntentRejection.unauthorized);
       _intent = refused;
       try {
