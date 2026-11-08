@@ -148,19 +148,40 @@ class _MenuViewState extends State<MenuView> {
       listenable: _viewModel,
       builder: (context, _) {
         final summary = _cartSummary();
+        final header = _headerLayout(context, table);
+        final displacedTable = table != null && !header.badgeInToolbar
+            ? Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _TableBadge(table: table, maxWidth: header.badgeMaxWidth),
+                ),
+              )
+            : null;
+        final recommendation = _recommendationButton(context, table, openRecommendation);
         return Scaffold(
           appBar: AppBar(
-            toolbarHeight: _toolbarHeight(context, table),
+            toolbarHeight: header.toolbarHeight,
             automaticallyImplyLeading: false,
             titleSpacing: 16,
             backgroundColor: colors.surfaceContainerLowest,
             shape: Border(bottom: BorderSide(color: colors.outlineVariant)),
-            title: const DinnaLogo(size: 24),
+            title: header.stackBadge
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const DinnaLogo(size: 24),
+                      const SizedBox(height: 8),
+                      _TableBadge(table: table!, maxWidth: header.badgeMaxWidth),
+                    ],
+                  )
+                : const DinnaLogo(size: 24),
             actions: [
-              if (table != null)
+              if (header.badgeInToolbar && !header.stackBadge)
                 Padding(
                   padding: const EdgeInsets.only(right: 16),
-                  child: _TableBadge(table: table, maxWidth: _badgeMaxWidth(context)),
+                  child: _TableBadge(table: table!, maxWidth: header.badgeMaxWidth),
                 ),
             ],
           ),
@@ -194,27 +215,30 @@ class _MenuViewState extends State<MenuView> {
                   child: switch (_viewModel.status) {
                     MenuStatus.loading => const Center(child: CircularProgressIndicator()),
                     MenuStatus.failed => _ScrollableStatus(
-                      header: _recommendationButton(context, table, openRecommendation),
+                      header: _statusHeader(displacedTable, recommendation),
                       child: DinnaEmptyState(
                         icon: Icons.wifi_off,
                         title: 'Não foi possível carregar o cardápio',
                         message: _viewModel.errorMessage ?? MenuViewModel.fallbackErrorMessage,
                         actionLabel: 'Tentar de novo',
                         onAction: _viewModel.load,
+                        centered: false,
                       ),
                     ),
                     MenuStatus.ready when _viewModel.isEmpty => _ScrollableStatus(
-                      header: _recommendationButton(context, table, openRecommendation),
+                      header: _statusHeader(displacedTable, recommendation),
                       child: const DinnaEmptyState(
                         icon: Icons.restaurant_menu,
                         title: 'Cardápio vazio',
                         message: 'O restaurante ainda não cadastrou pratos.',
+                        centered: false,
                       ),
                     ),
                     MenuStatus.ready => _MenuContent(
                       viewModel: _viewModel,
                       onOpenProduct: _openProduct,
-                      recommendation: _recommendationButton(context, table, openRecommendation),
+                      banner: displacedTable,
+                      recommendation: recommendation,
                     ),
                   },
                 ),
@@ -225,6 +249,7 @@ class _MenuViewState extends State<MenuView> {
               ? null
               : _CartAccessBar(
                   summary: summary,
+                  table: table,
                   onPressed: () => widget.onOpenCart(context, table),
                 ),
         );
@@ -250,9 +275,10 @@ class _CartSummary {
 
 /// Ação fixa do cardápio. A rolagem fica no corpo; a safe area fica nesta faixa.
 class _CartAccessBar extends StatelessWidget {
-  const _CartAccessBar({required this.summary, required this.onPressed});
+  const _CartAccessBar({required this.summary, required this.table, required this.onPressed});
 
   final _CartSummary summary;
+  final String? table;
   final VoidCallback onPressed;
 
   @override
@@ -268,15 +294,26 @@ class _CartAccessBar extends StatelessWidget {
           top: false,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: FilledButton(
-              onPressed: onPressed,
-              child: SizedBox(
-                width: double.infinity,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(summary.label, maxLines: 1, textAlign: TextAlign.center),
-                ),
-              ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final shown = _cartLabelThatFits(
+                  context,
+                  summary.label,
+                  constraints.maxWidth,
+                  table,
+                );
+                final shortened = shown != summary.label;
+                return FilledButton(
+                  onPressed: onPressed,
+                  child: Text(
+                    shown,
+                    textAlign: TextAlign.center,
+                    maxLines: shortened ? 1 : null,
+                    overflow: shortened ? TextOverflow.fade : null,
+                    semanticsLabel: shortened ? summary.label : null,
+                  ),
+                );
+              },
             ),
           ),
         ),
@@ -286,10 +323,16 @@ class _CartAccessBar extends StatelessWidget {
 }
 
 class _MenuContent extends StatelessWidget {
-  const _MenuContent({required this.viewModel, required this.onOpenProduct, this.recommendation});
+  const _MenuContent({
+    required this.viewModel,
+    required this.onOpenProduct,
+    this.banner,
+    this.recommendation,
+  });
 
   final MenuViewModel viewModel;
   final ValueChanged<Product>? onOpenProduct;
+  final Widget? banner;
   final Widget? recommendation;
 
   @override
@@ -305,6 +348,7 @@ class _MenuContent extends StatelessWidget {
         return CustomScrollView(
           slivers: [
             if (recommendation != null) SliverToBoxAdapter(child: recommendation),
+            if (banner != null) SliverToBoxAdapter(child: banner),
             SliverToBoxAdapter(child: _CategoryStrip(viewModel: viewModel)),
             for (final category in sections) ...[
               SliverPadding(
@@ -337,6 +381,9 @@ class _MenuContent extends StatelessWidget {
 }
 
 /// Erro e cardápio vazio rolam em tela baixa e ficam centralizados quando cabem.
+///
+/// A altura mínima é a viewport, então o bloco fica no centro quando sobra
+/// espaço. Se o conteúdo é mais alto, a rolagem alcança a ação.
 class _ScrollableStatus extends StatelessWidget {
   const _ScrollableStatus({required this.child, this.header});
 
@@ -347,15 +394,21 @@ class _ScrollableStatus extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
+        final minHeight = constraints.maxHeight.isFinite ? constraints.maxHeight : 0.0;
         return SingleChildScrollView(
           child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: constraints.maxHeight),
-            child: Column(children: [?header, child]),
+            constraints: BoxConstraints(minHeight: minHeight),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [?header, child]),
           ),
         );
       },
     );
   }
+}
+
+Widget? _statusHeader(Widget? banner, Widget? recommendation) {
+  if (banner == null && recommendation == null) return null;
+  return Column(mainAxisSize: MainAxisSize.min, children: [?banner, ?recommendation]);
 }
 
 /// A faixa cresce com o chip. A rolagem continua horizontal.
@@ -398,18 +451,89 @@ class _CategoryStrip extends StatelessWidget {
   }
 }
 
-/// Altura do header: 56 px na escala normal. Com texto ampliado, cabe a marca e o selo.
-double _toolbarHeight(BuildContext context, String? table) {
+/// Onde o número da mesa cabe sem cortar o texto e sem tomar o cardápio.
+class _HeaderLayout {
+  const _HeaderLayout({
+    required this.toolbarHeight,
+    required this.badgeInToolbar,
+    required this.badgeMaxWidth,
+    required this.stackBadge,
+  });
+
+  final double toolbarHeight;
+  final bool badgeInToolbar;
+  final double badgeMaxWidth;
+  final bool stackBadge;
+}
+
+/// Cabe ao lado da marca quando a altura medida cabe no limite. Se não cabe,
+/// o selo desce para a largura da tela. Se ainda assim não sobra cardápio, o
+/// número vai para a rolagem, inteiro.
+_HeaderLayout _headerLayout(BuildContext context, String? table) {
   final scaler = MediaQuery.textScalerOf(context);
   final logoHeight = scaler.scale(24);
-  var needed = logoHeight + 8;
-  if (table != null) {
-    final badge = _badgeTextHeight(context, table) + 14;
-    needed = math.max(needed, badge + 8);
+  final viewport = MediaQuery.sizeOf(context).height;
+  final cap = math.max(kToolbarHeight, viewport * 0.4);
+  final logoToolbar = math.max(kToolbarHeight, logoHeight + 8);
+
+  if (table == null) {
+    return _HeaderLayout(
+      toolbarHeight: math.min(logoToolbar, cap),
+      badgeInToolbar: false,
+      badgeMaxWidth: 0,
+      stackBadge: false,
+    );
   }
-  final height = math.max(kToolbarHeight, needed);
-  final cap = math.max(kToolbarHeight, MediaQuery.sizeOf(context).height * 0.4);
-  return math.min(height, cap);
+
+  final besideWidth = _badgeMaxWidth(context);
+  final besideToolbar = math.max(logoToolbar, _badgeOuterHeight(context, table, besideWidth) + 8);
+  if (besideToolbar <= cap + 0.5) {
+    return _HeaderLayout(
+      toolbarHeight: besideToolbar,
+      badgeInToolbar: true,
+      badgeMaxWidth: besideWidth,
+      stackBadge: false,
+    );
+  }
+
+  final stackedWidth = math.max(48.0, MediaQuery.sizeOf(context).width - 32);
+  final stackedToolbar = math.max(
+    logoToolbar,
+    logoHeight + 8 + _badgeOuterHeight(context, table, stackedWidth),
+  );
+  if (stackedToolbar <= cap + 0.5) {
+    return _HeaderLayout(
+      toolbarHeight: stackedToolbar,
+      badgeInToolbar: true,
+      badgeMaxWidth: stackedWidth,
+      stackBadge: true,
+    );
+  }
+
+  return _HeaderLayout(
+    toolbarHeight: math.min(logoToolbar, cap),
+    badgeInToolbar: false,
+    badgeMaxWidth: stackedWidth,
+    stackBadge: false,
+  );
+}
+
+/// Rótulo na escala pedida. A forma curta só entra quando o texto inteiro
+/// tomaria a faixa e esconderia o cardápio.
+String _cartLabelThatFits(BuildContext context, String label, double maxWidth, String? table) {
+  final scaler = MediaQuery.textScalerOf(context);
+  final style = Theme.of(context).textTheme.labelLarge;
+  final available = maxWidth.isFinite ? maxWidth : MediaQuery.sizeOf(context).width - 32;
+  final width = math.max(1.0, available - 32);
+  final painter = TextPainter(
+    text: TextSpan(text: label, style: style),
+    textDirection: Directionality.of(context),
+    textScaler: scaler,
+  )..layout(maxWidth: width);
+  final header = _headerLayout(context, table);
+  final budget = MediaQuery.sizeOf(context).height - header.toolbarHeight - 72;
+  if (painter.height + 16 <= budget) return label;
+  return 'Ver carrinho';
 }
 
 Widget? _recommendationButton(
@@ -449,15 +573,16 @@ double _badgeMaxWidth(BuildContext context) {
   return math.max(48, width - logo.width - 48);
 }
 
-double _badgeTextHeight(BuildContext context, String table) {
+/// Altura do selo na mesma largura em que ele é desenhado, com o texto inteiro.
+double _badgeOuterHeight(BuildContext context, String table, double maxWidth) {
   final style = Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600);
-  final inner = math.max(1.0, _badgeMaxWidth(context) - 40);
+  final inner = math.max(1.0, maxWidth - 40);
   final painter = TextPainter(
     text: TextSpan(text: 'Mesa $table', style: style),
     textDirection: Directionality.of(context),
     textScaler: MediaQuery.textScalerOf(context),
   )..layout(maxWidth: inner);
-  return painter.height;
+  return painter.height + 14;
 }
 
 /// Colunas e altura do card. Na escala 1 a proporção segue o limite de 220 px.
@@ -556,8 +681,6 @@ class _TableBadge extends StatelessWidget {
             Flexible(
               child: Text(
                 'Mesa $table',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: colors.onSurface,
                   fontWeight: FontWeight.w600,

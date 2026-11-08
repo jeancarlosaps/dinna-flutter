@@ -595,6 +595,151 @@ void main() {
     expect(mesaLeft, greaterThanOrEqualTo(barLeft - 0.5));
     expect(mesaLeft + mesa.size.width, lessThanOrEqualTo(barLeft + appBar.size.width + 0.5));
   });
+
+  testWidgets('texto ampliado não encolhe o rótulo do carrinho', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final session = CartSession(
+      _MutableMenuCart([CartItem(lineId: 'line-1', productId: '1', quantity: 2, note: null)]),
+    );
+    addTearDown(session.dispose);
+    await session.restore();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(2)),
+          child: child!,
+        ),
+        home: MenuView(
+          table: '12',
+          createViewModel: () => MenuViewModel(
+            FakeProductRepository(
+              () async => ProductList.ready([_product('1', 'Margherita', 'pizzas')]),
+            ),
+          ),
+          cartSession: session,
+          onOpenCart: (_, _) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    const label = 'Ver carrinho · 2 itens · R\$ 20,00';
+    final text = tester.widget<Text>(find.text(label));
+    final rect = tester.getRect(find.text(label));
+    final painter = TextPainter(
+      text: TextSpan(text: label, style: text.style),
+      textDirection: TextDirection.ltr,
+      textScaler: const TextScaler.linear(2),
+      maxLines: 1,
+    )..layout();
+
+    expect(find.byType(FittedBox), findsNothing);
+    expect(rect.height, greaterThanOrEqualTo(painter.height - 1));
+    expect(tester.getRect(find.widgetWithText(FilledButton, label)).bottom, lessThanOrEqualTo(640));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('vazio fica no centro quando há espaço', (tester) async {
+    addTearDown(tester.view.reset);
+    Future<void> pumpEmpty({required Size size}) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: DinnaTheme.light(),
+          home: MenuView(
+            createViewModel: () =>
+                MenuViewModel(FakeProductRepository(() async => ProductList.ready(const []))),
+            onOpenCart: (_, _) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pumpEmpty(size: const Size(400, 800));
+    expect(tester.takeException(), isNull);
+    final title = tester.getCenter(find.text('Cardápio vazio'));
+    final scroll = tester.getRect(
+      find.byWidgetPredicate(
+        (widget) => widget is Scrollable && widget.axisDirection == AxisDirection.down,
+      ),
+    );
+    expect((title.dy - scroll.center.dy).abs(), lessThan(80));
+  });
+
+  testWidgets('erro em tela baixa rola até a ação', (tester) async {
+    tester.view.physicalSize = const Size(360, 220);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: MenuView(
+          createViewModel: () => MenuViewModel(
+            FakeProductRepository(() async => const ProductList.unavailable('Sem conexão')),
+          ),
+          onOpenCart: (_, _) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    final menuScroll = find.byWidgetPredicate(
+      (widget) => widget is Scrollable && widget.axisDirection == AxisDirection.down,
+    );
+    await tester.scrollUntilVisible(find.text('Tentar de novo'), 40, scrollable: menuScroll);
+    expect(find.text('Não foi possível carregar o cardápio'), findsOneWidget);
+    expect(tester.getRect(find.text('Tentar de novo')).bottom, lessThanOrEqualTo(220));
+  });
+
+  testWidgets('o número completo da mesa continua legível com texto ampliado', (tester) async {
+    tester.view.physicalSize = const Size(360, 220);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(3)),
+          child: child!,
+        ),
+        home: MenuView(
+          table: '999999999',
+          createViewModel: () => MenuViewModel(
+            FakeProductRepository(
+              () async => ProductList.ready([_product('1', 'Moqueca', 'pratos')]),
+            ),
+          ),
+          onOpenCart: (_, _) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final mesa = find.byWidgetPredicate(
+      (widget) => widget is Text && widget.data == 'Mesa 999999999',
+    );
+    expect(mesa, findsOneWidget);
+    final text = tester.widget<Text>(mesa);
+    expect(text.overflow, isNot(TextOverflow.ellipsis));
+    expect(text.maxLines, isNull);
+    final rect = tester.getRect(mesa);
+    final painter = TextPainter(
+      text: TextSpan(text: 'Mesa 999999999', style: text.style),
+      textDirection: TextDirection.ltr,
+      textScaler: const TextScaler.linear(3),
+    )..layout(maxWidth: rect.width);
+    expect(rect.height, greaterThanOrEqualTo(painter.height - 1));
+    expect(tester.takeException(), isNull);
+  });
 }
 
 class _MutableMenuCart implements CartRepository {
