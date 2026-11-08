@@ -19,7 +19,9 @@ enum OrderSubmissionStatus { idle, submitting, succeeded, failed }
 /// só classifica como falha sem efeito o 400 `VALIDATION_ERROR` e o 404
 /// `PRODUCT_NOT_FOUND`. Esses casos encerram a intenção; a tentativa
 /// seguinte, pedida pela tela, recebe outra chave e o carrinho daquele
-/// momento. 404 `NOT_FOUND` e os demais status desconhecidos preservam a
+/// momento. HTTP 401 `UNAUTHORIZED` também não criou o pedido, mas conserva
+/// a chave e o payload: a nova tentativa é manual e não nasce outra chave.
+/// 404 `NOT_FOUND` e os demais status desconhecidos preservam a
 /// chave para reenvio manual. Conflito de payload, 409 ou 500 sem código,
 /// chave órfã, expiração e arquivo ilegível não liberam outra chave. Um 201
 /// ou bloqueio que não couber no arquivo
@@ -79,6 +81,9 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   DataFailure? _failure;
   bool _outcomeUncertain = false;
 
+  /// HTTP 401 `UNAUTHORIZED`. Não é incerteza e não libera outra chave.
+  bool _authRejected = false;
+
   /// Reenvio inseguro. [_enterSubmitting] zera este sinal e não o usa como trava de arquivo.
   bool _resendBlocked = false;
 
@@ -100,6 +105,12 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   /// O [_terminal] foi lido ou gravado no arquivo. Sem isso, outro ciclo é inseguro.
   bool _terminalStored = false;
 
+  /// O 401 deste reenvio não pode afirmar que o pedido não existe.
+  ///
+  /// Falso só quando a intenção gravada já é a rejeição 401, prova de que
+  /// nenhum POST anterior chegou a ser aplicado.
+  var _knownUncertainResume = false;
+
   OrderSubmissionStatus get status => _status;
 
   /// Pedido devolvido pela API. Preenchido só em [OrderSubmissionStatus.succeeded].
@@ -114,12 +125,21 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   /// Verdadeiro quando o POST pode ter sido aplicado sem confirmação.
   bool get outcomeUncertain => _outcomeUncertain;
 
+  /// A API recusou o acesso. O pedido não foi registrado e a chave permanece.
+  bool get authRejected => _authRejected;
+
   /// Conflito, chave órfã, expiração ou arquivo ilegível. Não há reenvio seguro.
   bool get resendBlocked => _resendBlocked;
 
   /// Erro com resposta que prova que o pedido não foi criado.
+  ///
+  /// A rejeição de acesso fica de fora: ela conserva a chave em vez de abrir
+  /// outra intenção.
   bool get isDefiniteFailure =>
-      _status == OrderSubmissionStatus.failed && !_outcomeUncertain && !_resendBlocked;
+      _status == OrderSubmissionStatus.failed &&
+      !_outcomeUncertain &&
+      !_resendBlocked &&
+      !_authRejected;
 
   bool get isSubmitting => _status == OrderSubmissionStatus.submitting;
 
@@ -146,6 +166,31 @@ class OrderSubmissionViewModel extends ChangeNotifier {
       !_resendBlocked &&
       !_outcomeUncertain &&
       (_status == OrderSubmissionStatus.idle || isDefiniteFailure);
+
+  /// Itens congelados na intenção ainda aberta. Nulo sem essa intenção.
+  List<CartItem>? get intentItems {
+    final intent = _intent;
+    if (intent == null) return null;
+    if (intent.phase == OrderIntentPhase.succeeded || intent.phase == OrderIntentPhase.blocked) {
+      return null;
+    }
+    return intent.cartItems;
+  }
+
+  /// Nova tentativa manual do mesmo payload depois do HTTP 401 `UNAUTHORIZED`.
+  bool get canRetryRejectedAuthorization {
+    final intent = _intent;
+    return !_disposed &&
+        _restored &&
+        !_storeBlocked &&
+        !_resendBlocked &&
+        !_outcomeUncertain &&
+        _authRejected &&
+        intent != null &&
+        intent.rejection == OrderIntentRejection.unauthorized &&
+        _status != OrderSubmissionStatus.submitting &&
+        intent.allowsResume(_now());
+  }
 
   /// Reenvio manual da mesma chave, dentro da folga de segurança.
   bool get canResumeSameIntent {
@@ -181,7 +226,9 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   /// apagar a intenção deixa este sinal ligado. Um 201 que não coube no
   /// arquivo fica de fora: esse sucesso só existe nesta execução.
   bool get canViewPersistedConfirmation {
-    if (_disposed || !_restored || !_terminalStored || isSubmitting) return false;
+    if (_disposed || !_restored || !_terminalStored || isSubmitting) {
+      return false;
+    }
     if (_status != OrderSubmissionStatus.succeeded) return false;
     final terminal = _terminal;
     final intent = _intent;
@@ -212,7 +259,9 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   /// não cria chave. Ignora a chamada durante um envio, depois do sucesso,
   /// com o reenvio bloqueado ou após o [dispose].
   Future<void> submit({required String table, required List<CartItem> items}) async {
-    if (_disposed || _gate || _status == OrderSubmissionStatus.submitting) return;
+    if (_disposed || _gate || _status == OrderSubmissionStatus.submitting) {
+      return;
+    }
     if (_terminal != null) return;
     if (_restored &&
         (_storeBlocked || _resendBlocked || _status == OrderSubmissionStatus.succeeded)) {
@@ -282,11 +331,37 @@ class OrderSubmissionViewModel extends ChangeNotifier {
         return;
       }
       if (_postDenied(intentId)) return;
-      _intent = persisted;
+      // Pending sem rejeição pode ser um POST que saiu e não foi gravado:
+      // 201 sem arquivo, timeout sem a marca de incerto, ou crash no meio.
+      // Só a rejeição 401 já gravada prova que nenhum envio anterior entrou.
+      final provenUnauthorized =
+          persisted.phase == OrderIntentPhase.pending &&
+          persisted.rejection == OrderIntentRejection.unauthorized;
+      var toSend = persisted;
+      if (persisted.phase != OrderIntentPhase.uncertain) {
+        final marker = persisted.uncertain();
+        try {
+          await _store.save(marker);
+        } on OrderIntentStoreException {
+          if (_disposed) return;
+          _intent = persisted;
+          if (provenUnauthorized) {
+            _publishRejected(OrderSubmission.unauthorizedRejectionMessage);
+          } else {
+            _publishUncertain(OrderSubmission.uncertainOutcomeMessage);
+          }
+          return;
+        }
+        if (_disposed || _postDenied(intentId)) return;
+        toSend = marker;
+      }
+      _intent = toSend;
+      _knownUncertainResume = !provenUnauthorized;
       _enterSubmitting();
       if (_postDenied(intentId)) return;
-      await _dispatch(persisted);
+      await _dispatch(toSend);
     } finally {
+      _knownUncertainResume = false;
       _gate = false;
     }
   }
@@ -410,6 +485,10 @@ class OrderSubmissionViewModel extends ChangeNotifier {
       return;
     }
     if (_terminal != null) return;
+    if (intent.rejection == OrderIntentRejection.unauthorized) {
+      _publishRejected(OrderSubmission.unauthorizedRejectionMessage);
+      return;
+    }
     _publishUncertain(OrderSubmission.uncertainOutcomeMessage);
   }
 
@@ -495,6 +574,26 @@ class OrderSubmissionViewModel extends ChangeNotifier {
       return;
     }
 
+    if (result.retainsIntent) {
+      if (_knownUncertainResume) {
+        await _markUncertain(intent);
+        if (_disposed) return;
+        _publishUncertain(OrderSubmission.uncertainOutcomeMessage);
+        return;
+      }
+      final refused = intent.refused(OrderIntentRejection.unauthorized);
+      _intent = refused;
+      try {
+        await _store.save(refused);
+      } on OrderIntentStoreException {
+        // A intenção pendente anterior permanece. Esta execução não a trata
+        // como incerteza nem cria outra chave.
+      }
+      if (_disposed) return;
+      _publishRejected(result.message);
+      return;
+    }
+
     if (result.outcomeUncertain || result.failure == DataFailure.uncertain) {
       await _markUncertain(intent);
       if (_disposed) return;
@@ -573,6 +672,7 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     _errorMessage = null;
     _failure = null;
     _outcomeUncertain = false;
+    _authRejected = false;
     _resendBlocked = false;
     _confirmedItems = null;
     _confirmedTable = null;
@@ -586,6 +686,16 @@ class OrderSubmissionViewModel extends ChangeNotifier {
       order: order,
       confirmedItems: order == null ? null : intent.cartItems,
       confirmedTable: order == null ? null : intent.table,
+    );
+  }
+
+  void _publishRejected(String? message) {
+    final text = message?.trim();
+    _publish(
+      status: OrderSubmissionStatus.failed,
+      message: text == null || text.isEmpty ? OrderSubmission.unauthorizedRejectionMessage : text,
+      failure: DataFailure.unavailable,
+      authRejected: true,
     );
   }
 
@@ -640,6 +750,7 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     String? message,
     DataFailure? failure,
     bool outcomeUncertain = false,
+    bool authRejected = false,
     bool resendBlocked = false,
     List<CartItem>? confirmedItems,
     String? confirmedTable,
@@ -657,6 +768,7 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     _errorMessage = message;
     _failure = failure;
     _outcomeUncertain = outcomeUncertain;
+    _authRejected = authRejected;
     _resendBlocked = resendBlocked;
     _confirmedItems = confirmedItems;
     _confirmedTable = confirmedTable;

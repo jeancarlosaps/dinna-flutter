@@ -48,11 +48,13 @@ class OrderSubmission {
     DataFailure failure = DataFailure.unavailable,
     String? detail,
     bool outcomeUncertain = false,
+    bool retainsIntent = false,
   }) : this._(
          message: message,
          failure: failure,
          detail: detail,
          outcomeUncertain: outcomeUncertain,
+         retainsIntent: retainsIntent,
        );
 
   /// A chave não pode ser reenviada nem trocada por outra.
@@ -71,6 +73,7 @@ class OrderSubmission {
     this.detail,
     this.outcomeUncertain = false,
     this.resendBlocked = false,
+    this.retainsIntent = false,
   });
 
   /// Texto quando o POST pode ter sido aplicado e a confirmação não chegou.
@@ -96,6 +99,13 @@ class OrderSubmission {
   static const unreadableServerErrorMessage =
       'A resposta do servidor não trouxe o código do erro. Esta tentativa não será reenviada. Confira com o restaurante.';
 
+  /// HTTP 401 `UNAUTHORIZED` do hook atual da API.
+  ///
+  /// O acesso foi recusado antes do registro do pedido. Não é resultado
+  /// incerto e não autoriza outra chave.
+  static const unauthorizedRejectionMessage =
+      'O envio foi recusado. A API não aceitou o acesso e o pedido não foi registrado.';
+
   /// `null` quando a criação falhou.
   final Order? order;
 
@@ -114,11 +124,19 @@ class OrderSubmission {
   /// corpo ilegível que não seja 409 ou 500 com chave enviada, 404
   /// `NOT_FOUND`, 4xx não reconhecido depois da chave, resposta 2xx que não
   /// pôde ser lida como [Order] e HTTP 5xx que não prova a ausência do pedido.
-  /// Não é falha definitiva e não autoriza outra chave.
+  /// Não é falha definitiva e não autoriza outra chave. HTTP 401
+  /// `UNAUTHORIZED` não entra aqui: a API atual recusa o acesso antes de
+  /// processar o pedido.
   final bool outcomeUncertain;
 
   /// Verdadeiro quando outro POST, com esta chave ou com uma chave nova, é inseguro.
   final bool resendBlocked;
+
+  /// A falha não criou o pedido, mas a chave e o payload continuam válidos.
+  ///
+  /// Usado no HTTP 401 `UNAUTHORIZED`. Não libera outra chave e não pede
+  /// limpeza do carrinho.
+  final bool retainsIntent;
 
   /// A futura tela do carrinho limpa os itens somente neste caso.
   bool get shouldClearCart => order != null;

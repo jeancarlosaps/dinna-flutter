@@ -9,6 +9,9 @@ enum OrderIntentPhase { pending, uncertain, succeeded, blocked }
 /// Motivo pelo qual a intenção não pode ser reenviada nem substituída.
 enum OrderIntentBlock { conflict, invalidState, expired }
 
+/// Rejeição definitiva que conserva a mesma chave e o mesmo payload.
+enum OrderIntentRejection { unauthorized }
+
 /// Uma tentativa de `POST /orders`: chave, body e o instante em que nasceu.
 ///
 /// O body é imutável. Quantidade, observação e ordem dos itens ficam como
@@ -26,6 +29,7 @@ final class OrderIntent {
     required List<Map<String, Object?>> items,
     this.block,
     this.order,
+    this.rejection,
   }) : items = List<Map<String, Object?>>.unmodifiable([
          // Map.unmodifiable é uma vista. A cópia impede que o mapa do
          // chamador altere o body ligado a esta chave.
@@ -52,6 +56,9 @@ final class OrderIntent {
     if (phase == OrderIntentPhase.succeeded && order == null) {
       throw FormatException('intenção concluída sem pedido');
     }
+    if (rejection != null && phase != OrderIntentPhase.pending) {
+      throw FormatException('rejeição fora de uma intenção pendente');
+    }
     for (final item in this.items) {
       // Valida o domínio e preserva o mapa original, inclusive note omitida.
       CartItem.fromJson(item);
@@ -71,6 +78,9 @@ final class OrderIntent {
   final List<Map<String, Object?>> items;
   final OrderIntentBlock? block;
   final Order? order;
+
+  /// Preenchida quando a API recusou o acesso e a mesma tentativa continua válida.
+  final OrderIntentRejection? rejection;
 
   factory OrderIntent.pending({
     required String id,
@@ -101,6 +111,7 @@ final class OrderIntent {
       items: _items(map['items']),
       block: block,
       order: orderValue == null ? null : Order.fromJson(orderValue),
+      rejection: _rejection(map['rejection']),
     );
   }
 
@@ -151,6 +162,17 @@ final class OrderIntent {
     );
   }
 
+  OrderIntent refused(OrderIntentRejection reason) {
+    return OrderIntent(
+      id: id,
+      createdAt: createdAt,
+      phase: OrderIntentPhase.pending,
+      table: table,
+      items: items,
+      rejection: reason,
+    );
+  }
+
   OrderIntent blocked(OrderIntentBlock reason) {
     return OrderIntent(
       id: id,
@@ -171,6 +193,7 @@ final class OrderIntent {
     'items': <Object?>[for (final item in items) Map<String, Object?>.of(item)],
     if (block != null) 'block': block!.name,
     if (order != null) 'order': order!.toJson(),
+    if (rejection != null) 'rejection': rejection!.name,
   };
 }
 
@@ -181,6 +204,15 @@ OrderIntentPhase _phase(String name) {
     if (phase.name == name) return phase;
   }
   throw FormatException('fase de intenção desconhecida');
+}
+
+OrderIntentRejection? _rejection(Object? value) {
+  if (value == null) return null;
+  if (value is! String) throw FormatException('rejeição da intenção inválida');
+  for (final rejection in OrderIntentRejection.values) {
+    if (rejection.name == value) return rejection;
+  }
+  throw FormatException('rejeição da intenção desconhecida');
 }
 
 OrderIntentBlock? _block(Object? value) {

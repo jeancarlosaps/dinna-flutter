@@ -122,6 +122,73 @@ void main() {
     expect(lines.read().single.quantity, 2);
   });
 
+  testWidgets('HTTP 401 recusa o envio e a nova tentativa usa o payload original', (tester) async {
+    final lines = ProcessCartLines([line(1)]);
+    var attempts = 0;
+    final repository = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async {
+        attempts++;
+        if (attempts == 1) {
+          return const OrderSubmission.failed(
+            OrderSubmission.unauthorizedRejectionMessage,
+            retainsIntent: true,
+          );
+        }
+        return OrderSubmission.created(sampleOrder(id: 'o401'));
+      },
+    );
+    final submission = OrderSubmissionViewModel(repository);
+    addTearDown(submission.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: CartView(
+          createViewModel: () =>
+              CartViewModel(FakeProductRepository(() async => catalog), lines: lines),
+          submission: submission,
+          table: '12',
+          onOpenMenu: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tapSend(tester, 'Enviar pedido');
+    await tester.pumpAndSettle();
+
+    expect(repository.createCalls, 1);
+    expect(find.text('Envio recusado'), findsOneWidget);
+    expect(find.text(OrderSubmission.unauthorizedRejectionMessage), findsOneWidget);
+    expect(find.text('Envio sem confirmação'), findsNothing);
+    expect(find.textContaining('pode ter sido registrado'), findsNothing);
+    expect(find.text('Tentar novamente'), findsNothing);
+    expect(lines.read().single.quantity, 1);
+
+    await tester.tap(find.byTooltip('Aumentar quantidade'));
+    await tester.pump();
+    expect(lines.read().single.quantity, 2);
+
+    final retry = find.text('Tentar o mesmo envio');
+    await tester.ensureVisible(retry);
+    await tester.tap(retry);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('1× p1'), findsOneWidget);
+    expect(find.textContaining('pode ter sido registrado'), findsNothing);
+    await tester.tap(find.text('Enviar de novo'));
+    await tester.pumpAndSettle();
+
+    expect(repository.createCalls, 2);
+    expect(repository.lastIdempotencyKey, isNotNull);
+    expect(repository.lastBody?['items'], [
+      {'productId': 'p1', 'quantity': 1, 'note': 'sem cebola'},
+    ]);
+    expect(lines.read().single.quantity, 2);
+    expect(find.text('Pedido enviado'), findsOneWidget);
+    expect(find.text('Envio recusado'), findsNothing);
+  });
+
   testWidgets('falha incerta não reenvia e pede para conferir', (tester) async {
     final lines = ProcessCartLines([line(2)]);
     var calls = 0;
