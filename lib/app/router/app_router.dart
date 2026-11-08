@@ -174,7 +174,8 @@ class AppRouter {
             : CartViewModel.persisted(productRepository, session: cartSession!),
         cartSession: cartSession,
         submission: orderSubmission,
-        table: _tableArgument(settings.arguments),
+        table: _cartTable(settings.arguments),
+        reviewOnly: _cartReviewOnly(settings.arguments),
         onOpenMenu: (context) =>
             Navigator.of(context)
                 .pushNamed(AppRoutes.menu, arguments: _tableArgument(settings.arguments)),
@@ -199,6 +200,15 @@ class AppRouter {
       _ when name != null && _isFlowRoute(name) => RoutePlaceholder(routeName: name),
       _ => UnknownRouteView(routeName: name),
     };
+  }
+
+  String? _cartTable(Object? arguments) {
+    if (arguments is CartRouteArgs) return _tableArgument(arguments.table);
+    return _tableArgument(arguments);
+  }
+
+  bool _cartReviewOnly(Object? arguments) {
+    return arguments is CartRouteArgs && arguments.reviewOnly;
   }
 
   /// A navegação entrega a mesa como [String]. Outro argumento não é mesa.
@@ -227,8 +237,10 @@ class AppRouter {
       final cart = cartSession;
       if (cart != null && cart.isReady && cart.read().isNotEmpty) {
         if (!context.mounted) return;
-        await Navigator.of(context)
-            .pushNamed(AppRoutes.cart, arguments: orderSubmission.order?.table);
+        await Navigator.of(context).pushNamed(
+          AppRoutes.cart,
+          arguments: CartRouteArgs(table: orderSubmission.order?.table, reviewOnly: true),
+        );
         return;
       }
     }

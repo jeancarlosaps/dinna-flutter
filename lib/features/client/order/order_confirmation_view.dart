@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../app/router/app_route_args.dart';
 import '../../../core/domain/order.dart';
 import '../../../core/domain/order_item.dart';
+import '../../../shared/widgets/dinna_banner.dart';
 import '../../../shared/widgets/dinna_empty_state.dart';
 import '../../restaurant/order_format.dart';
 import 'order_submission_view_model.dart';
@@ -178,6 +179,7 @@ class _ConfirmationBody extends StatelessWidget {
             child: const Text('Voltar ao início', textAlign: TextAlign.center),
           ),
         ],
+        if (currentSubmission != null) _StoredIntentFailure(submission: currentSubmission),
         if (currentSubmission != null) _LegacyCartNotice(submission: currentSubmission),
         if (startAnother != null && currentSubmission != null)
           _AnotherOrderButton(submission: currentSubmission, onStartAnother: startAnother),
@@ -206,6 +208,31 @@ class _AnotherOrderButton extends StatelessWidget {
               submission.legacyCartRemaining ? 'Rever carrinho' : 'Fazer outro pedido',
               textAlign: TextAlign.center,
             ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _StoredIntentFailure extends StatelessWidget {
+  const _StoredIntentFailure({required this.submission});
+
+  final OrderSubmissionViewModel submission;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: submission,
+      builder: (context, _) {
+        final message = submission.errorMessage;
+        if (message == null || message.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: DinnaBanner(
+            tone: DinnaBannerTone.warning,
+            title: 'Não foi possível começar outro pedido',
+            message: message,
           ),
         );
       },

@@ -263,4 +263,49 @@ void main() {
     expect(find.byType(OrderConfirmationView), findsOneWidget);
     expect(find.text('Enviar pedido'), findsNothing);
   });
+
+  testWidgets('falha ao iniciar outro pedido aparece na confirmação', (tester) async {
+    final order = confirmed();
+    final store = MemoryOrderIntentStore();
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async => OrderSubmission.created(order),
+      ),
+      intentStore: store,
+      newIntentId: () => '00000000-0000-4000-8000-0000000000aa',
+    );
+    addTearDown(submission.dispose);
+    await submission.submit(
+      table: '12',
+      items: [CartItem(productId: 'p1', quantity: 2, note: 'sem cebola')],
+    );
+
+    await tester.pumpWidget(MaterialApp(theme: DinnaTheme.light(), home: const SizedBox.shrink()));
+    Navigator.of(tester.element(find.byType(SizedBox))).push(
+      MaterialPageRoute<void>(
+        settings: RouteSettings(
+          name: AppRoutes.order,
+          arguments: OrderConfirmationArgs(order: order),
+        ),
+        builder: (_) => OrderConfirmationView(
+          onTrack: (_, _) async {},
+          onGoHome: (_) {},
+          onStartAnother: (_) => submission.beginAnotherOrder(),
+          submission: submission,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    store.failNextSave();
+    await tester.scrollUntilVisible(find.text('Fazer outro pedido'), 80);
+    await tester.tap(find.text('Fazer outro pedido'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pedido recebido'), findsWidgets);
+    expect(find.text(OrderSubmissionViewModel.unreadableIntentMessage), findsOneWidget);
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(submission.canRequestSubmit, isFalse);
+    expect(submission.canViewPersistedConfirmation, isTrue);
+  });
 }

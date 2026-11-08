@@ -10,6 +10,7 @@ import 'package:dinna/features/client/cart/cart_repository.dart';
 import 'package:dinna/features/client/cart/cart_session.dart';
 import 'package:dinna/features/client/cart/cart_view.dart';
 import 'package:dinna/features/client/cart/cart_view_model.dart';
+import 'package:dinna/features/client/order/order_intent_store.dart';
 import 'package:dinna/features/client/order/order_submission_view_model.dart';
 import 'package:dinna/features/home/api_status_repository.dart';
 import 'package:dinna/features/menu/product_repository.dart';
@@ -21,6 +22,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../home/fake_api_status_repository.dart';
 import '../../menu/fake_product_repository.dart';
 import '../../restaurant/fake_order_repository.dart';
+import '../../restaurant/sample_order.dart';
 
 void main() {
   Product priced(String id, String name, int priceCents) {
@@ -485,6 +487,61 @@ void main() {
     expect(find.text('2'), findsOneWidget);
     expect(find.text(formatOrderTotal(9780)), findsWidgets);
     expect(lines.read().single.quantity, 2);
+  });
+
+  testWidgets('revisão de intenção antiga não reabre a confirmação nem envia de novo', (
+    tester,
+  ) async {
+    final lines = ProcessCartLines([CartItem(productId: 'p1', quantity: 1, note: null)]);
+    final orders = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async =>
+          OrderSubmission.created(sampleOrder(id: 'order-1')),
+    );
+    final submission = OrderSubmissionViewModel(
+      orders,
+      intentStore: MemoryOrderIntentStore(),
+      newIntentId: () => '00000000-0000-4000-8000-0000000000aa',
+    );
+    addTearDown(submission.dispose);
+    await submission.submit(table: '12', items: lines.read());
+    submission.noteLegacyCartRemaining(true);
+    var opened = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: CartView(
+          reviewOnly: true,
+          createViewModel: () =>
+              CartViewModel(FakeProductRepository(() async => catalog), lines: lines),
+          submission: submission,
+          onOpenMenu: (_) {},
+          onOrderConfirmed: (context, order) async {
+            opened++;
+            await Navigator.of(
+              context,
+            ).push(MaterialPageRoute<void>(builder: (_) => const Text('confirmação automática')));
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(opened, 0);
+    expect(find.text('confirmação automática'), findsNothing);
+    expect(find.text('Moqueca de Peixe'), findsOneWidget);
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(orders.createCalls, 1);
+    expect(submission.canRequestSubmit, isFalse);
+
+    await tester.tap(find.text('Remover'));
+    await tester.pumpAndSettle();
+
+    expect(lines.read(), isEmpty);
+    expect(orders.createCalls, 1);
+    expect(opened, 0);
+    expect(submission.canViewPersistedConfirmation, isTrue);
   });
 }
 

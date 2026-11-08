@@ -33,6 +33,7 @@ class CartView extends StatefulWidget {
     this.onOrderConfirmed,
     this.reconcileCart,
     this.table,
+    this.reviewOnly = false,
   });
 
   final CartViewModel Function() createViewModel;
@@ -48,6 +49,12 @@ class CartView extends StatefulWidget {
 
   /// Mesa recebida na navegação. Ausente até a tela da mesa entregar o valor.
   final String? table;
+
+  /// Revisão dos produtos que a conciliação não pôde separar.
+  ///
+  /// Não abre a confirmação sozinho, não envia outro POST e não apaga a
+  /// intenção já confirmada.
+  final bool reviewOnly;
 
   @override
   State<CartView> createState() => _CartViewState();
@@ -143,6 +150,7 @@ class _CartViewState extends State<CartView> {
   /// arquivo. Resultado incerto, bloqueio e 201 sem arquivo não entram.
   /// Reconstrução e repetição da mesma intenção também não.
   void _scheduleAutomaticConfirmation() {
+    if (widget.reviewOnly) return;
     if (!mounted || widget.onOrderConfirmed == null || _confirmationFrame || _confirmationOpen) {
       return;
     }
