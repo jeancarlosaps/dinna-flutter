@@ -226,6 +226,38 @@ void main() {
     expect(errorBody.shouldClearCart, isFalse);
   });
 
+  test('HTTP 401 UNAUTHORIZED recusa o envio e conserva a intenção', () async {
+    final result = await repositoryReturning(
+      http.Response(
+        jsonEncode({
+          'error': {'code': 'UNAUTHORIZED', 'message': 'Token de acesso ausente ou inválido'},
+        }),
+        401,
+        headers: const {'content-type': 'application/json; charset=utf-8'},
+      ),
+    ).create(table: '12', items: _items, idempotencyKey: '00000000-0000-4000-8000-0000000000aa');
+
+    expect(result.order, isNull);
+    expect(result.outcomeUncertain, isFalse);
+    expect(result.retainsIntent, isTrue);
+    expect(result.resendBlocked, isFalse);
+    expect(result.shouldClearCart, isFalse);
+    expect(result.failure, DataFailure.unavailable);
+    expect(result.message, OrderSubmission.unauthorizedRejectionMessage);
+    expect(result.message, isNot(contains('pode ter sido registrado')));
+  });
+
+  test('HTTP 401 sem código UNAUTHORIZED continua incerto depois da chave', () async {
+    final result = await repositoryReturning(
+      http.Response('{}', 401, headers: const {'content-type': 'application/json'}),
+    ).create(table: '12', items: _items, idempotencyKey: '00000000-0000-4000-8000-0000000000aa');
+
+    expect(result.outcomeUncertain, isTrue);
+    expect(result.retainsIntent, isFalse);
+    expect(result.shouldClearCart, isFalse);
+    expect(result.message, OrderSubmission.uncertainOutcomeMessage);
+  });
+
   test('falha de transporte em send é incerta: o body pode ter saído', () async {
     final repository = HttpOrderRepository(
       ApiClient(

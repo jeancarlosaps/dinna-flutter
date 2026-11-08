@@ -17,6 +17,7 @@ import 'package:dinna/features/recommendation/recommendation_preferences_store.d
 import 'package:dinna/features/recommendation/recommendation_repository.dart';
 import 'package:dinna/features/recommendation/recommendation_view_model.dart';
 import 'package:dinna/features/restaurant/http_order_repository.dart';
+import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -222,11 +223,17 @@ void main() {
     final persisted = await store.load();
     expect(persisted, isNotNull);
     expect(persisted!.id, intentId);
-    expect(persisted.phase, OrderIntentPhase.uncertain);
+    expect(persisted.phase, OrderIntentPhase.pending);
+    expect(persisted.rejection, OrderIntentRejection.unauthorized);
     expect(persisted.table, '12');
     expect(persisted.items, isNotEmpty);
     expect(submission.shouldClearCart, isFalse);
-    expect(submission.outcomeUncertain, isTrue);
+    expect(submission.outcomeUncertain, isFalse);
+    expect(submission.authRejected, isTrue);
+    expect(submission.canRequestSubmit, isFalse);
+    expect(submission.canRetryRejectedAuthorization, isTrue);
+    expect(submission.errorMessage, OrderSubmission.unauthorizedRejectionMessage);
+    expect(submission.errorMessage, isNot(contains('pode ter sido registrado')));
     expect(submission.intentId, intentId);
     expect(session.read(), before);
     expect(cart.removals, 0);
@@ -266,7 +273,78 @@ void main() {
     expect(session.read(), before);
     final stillThere = await store.load();
     expect(stillThere?.id, persisted.id);
-    expect(stillThere?.phase, OrderIntentPhase.uncertain);
+    expect(stillThere?.phase, OrderIntentPhase.pending);
+    expect(stillThere?.rejection, OrderIntentRejection.unauthorized);
+    expect(orderCalls.where((request) => request.method == 'POST'), hasLength(1));
+  });
+
+  test('HTTP 401 só gera outro POST quando a mesma intenção é reenviada', () async {
+    final posts = <http.Request>[];
+    var allow = false;
+    final api = client(
+      apiToken: token,
+      handler: (request) async {
+        if (request.method == 'POST') posts.add(request);
+        if (!allow) {
+          return http.Response(
+            unauthorizedBody,
+            401,
+            headers: const {'content-type': 'application/json; charset=utf-8'},
+          );
+        }
+        return http.Response(
+          jsonEncode({
+            'id': 'o_550e8400-e29b-41d4-a716-446655440000',
+            'table': '12',
+            'status': 'received',
+            'items': [
+              {'productId': 'p1', 'quantity': 2, 'note': 'sem cebola'},
+            ],
+            'totalCents': 2000,
+            'createdAt': '2026-11-08T12:00:00.000Z',
+          }),
+          201,
+          headers: const {'content-type': 'application/json; charset=utf-8'},
+        );
+      },
+    );
+    final cart = _RecordingCartRepository([
+      CartItem(lineId: 'line-1', productId: 'p1', quantity: 2, note: 'sem cebola'),
+    ]);
+    final session = CartSession(cart);
+    await session.restore();
+    final before = session.read();
+    final store = MemoryOrderIntentStore();
+    final submission = OrderSubmissionViewModel(
+      HttpOrderRepository(api),
+      intentStore: store,
+      newIntentId: () => intentId,
+    );
+    addTearDown(submission.dispose);
+
+    await submission.submit(table: '12', items: before);
+    await submission.submit(
+      table: '12',
+      items: [CartItem(lineId: 'line-1', productId: 'p1', quantity: 1, note: null)],
+    );
+
+    expect(posts, hasLength(1));
+    expect(submission.outcomeUncertain, isFalse);
+    expect(submission.authRejected, isTrue);
+    expect(session.read(), before);
+    expect((await store.load())?.id, intentId);
+
+    allow = true;
+    await submission.resume(intentId);
+
+    expect(posts, hasLength(2));
+    expect(header(posts[0], 'Idempotency-Key'), intentId);
+    expect(header(posts[1], 'Idempotency-Key'), intentId);
+    expect(jsonDecode(posts[0].body), jsonDecode(posts[1].body));
+    expect(submission.shouldClearCart, isTrue);
+    expect(submission.authRejected, isFalse);
+    expect(session.read(), before);
+    expect(cart.confirmedRemovals, 0);
   });
 }
 

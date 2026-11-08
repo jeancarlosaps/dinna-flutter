@@ -423,6 +423,8 @@ class _SubmissionSection extends StatelessWidget {
         if (submission.isSubmitting) const _SendingNotice(),
         if (failed && message != null)
           DinnaBanner(tone: DinnaBannerTone.error, title: 'Pedido não enviado', message: message),
+        if (submission.authRejected && message != null)
+          DinnaBanner(tone: DinnaBannerTone.error, title: 'Envio recusado', message: message),
         if (submission.outcomeUncertain && message != null)
           DinnaBanner(
             tone: DinnaBannerTone.warning,
@@ -458,6 +460,17 @@ class _SubmissionSection extends StatelessWidget {
             child: Text(failed ? 'Tentar novamente' : 'Enviar pedido', textAlign: TextAlign.center),
           ),
         ],
+        if (submission.canRetryRejectedAuthorization) ...[
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: () {
+              final intentId = submission.intentId;
+              if (intentId == null) return;
+              _confirmRejectedRetry(context, intentId);
+            },
+            child: const Text('Tentar o mesmo envio', textAlign: TextAlign.center),
+          ),
+        ],
         if (submission.canResumeSameIntent) ...[
           const SizedBox(height: 12),
           FilledButton(
@@ -471,6 +484,40 @@ class _SubmissionSection extends StatelessWidget {
         ],
       ],
     );
+  }
+
+  Future<void> _confirmRejectedRetry(BuildContext context, String intentId) async {
+    final lines = StringBuffer();
+    final items = submission.intentItems;
+    if (items != null) {
+      for (final item in items) {
+        if (lines.isNotEmpty) lines.writeln();
+        final note = item.note;
+        final suffix = note == null || note.isEmpty ? '' : ' ($note)';
+        lines.write('${item.quantity}× ${item.productId}$suffix');
+      }
+    }
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Tentar o mesmo envio?'),
+        content: Text(
+          'O acesso foi recusado e o pedido não foi registrado. '
+          'A tentativa seguinte repete a mesma chave e estes itens:\n\n$lines',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Voltar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Enviar de novo'),
+          ),
+        ],
+      ),
+    );
+    if (accepted == true) onResume(intentId);
   }
 
   Future<void> _confirmResume(BuildContext context, String intentId) async {
