@@ -30,6 +30,7 @@ class CartView extends StatefulWidget {
     required this.onOpenMenu,
     this.cartSession,
     this.onOrderConfirmed,
+    this.reconcileCart,
     this.table,
   });
 
@@ -40,6 +41,9 @@ class CartView extends StatefulWidget {
 
   /// Abre `/order` com o pedido persistido. A rota fica no router.
   final Future<void> Function(BuildContext context, Order order)? onOrderConfirmed;
+
+  /// Concilia o carrinho uma vez antes de outro pedido. Nulo usa a sessão local.
+  final Future<bool> Function()? reconcileCart;
 
   /// Mesa recebida na navegação. Ausente até a tela da mesa entregar o valor.
   final String? table;
@@ -97,7 +101,7 @@ class _CartViewState extends State<CartView> {
 
   void _initializeViewModel() {
     _viewModel = widget.createViewModel();
-    unawaited(_viewModel!.resolveProducts());
+    unawaited(_viewModel!.resolveProducts(also: _submission.intentItems ?? const []));
   }
 
   Future<void> _retryRestore(CartSession session) async {
@@ -109,6 +113,11 @@ class _CartViewState extends State<CartView> {
   }
 
   void _onSubmission() {
+    final viewModel = _viewModel;
+    final intentItems = _submission.intentItems;
+    if (viewModel != null && intentItems != null && intentItems.isNotEmpty) {
+      unawaited(viewModel.resolveProducts(also: intentItems));
+    }
     _scheduleAutomaticConfirmation();
   }
 
@@ -190,14 +199,22 @@ class _CartViewState extends State<CartView> {
   }
 
   Future<void> _beginAnother() async {
-    final session = widget.cartSession;
-    final confirmed = _submission.confirmedItems;
-    if (session != null && confirmed != null && _submission.shouldClearCart) {
-      try {
-        if (!session.isReady) await session.restore();
-        await session.removeConfirmed(confirmed);
-      } catch (_) {
-        return;
+    final reconcile = widget.reconcileCart;
+    if (reconcile != null) {
+      if (!await reconcile()) return;
+    } else {
+      final session = widget.cartSession;
+      final confirmed = _submission.confirmedItems;
+      if (session != null &&
+          confirmed != null &&
+          _submission.shouldClearCart &&
+          !_submission.cartReconciled) {
+        try {
+          if (!session.isReady) await session.restore();
+          await session.removeConfirmed(confirmed);
+        } catch (_) {
+          return;
+        }
       }
     }
     await _submission.beginAnotherOrder();
@@ -520,9 +537,11 @@ class _SubmissionSection extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Tentar o mesmo envio?'),
-        content: Text(
-          'O acesso foi recusado e o pedido não foi registrado. '
-          'A tentativa seguinte repete a mesma chave e estes itens:\n\n$lines',
+        content: SingleChildScrollView(
+          child: Text(
+            'O acesso foi recusado e o pedido não foi registrado. '
+            'A tentativa seguinte repete a mesma chave e estes itens:\n\n$lines',
+          ),
         ),
         actions: [
           TextButton(
@@ -547,11 +566,13 @@ class _SubmissionSection extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Reenviar o mesmo pedido?'),
-        content: Text(
-          'O restaurante pode já ter recebido este pedido. O reenvio repete a mesma chave e estes itens, sem alterar o payload:\n\n'
-          '${_itemLines(intentItems)}'
-          '${total == null ? '' : '\n\nTotal estimado: ${formatOrderTotal(total)}'}'
-          '${differs ? '\n\nO carrinho atual é diferente e não será enviado.' : ''}',
+        content: SingleChildScrollView(
+          child: Text(
+            'O restaurante pode já ter recebido este pedido. O reenvio repete a mesma chave e estes itens, sem alterar o payload:\n\n'
+            '${_itemLines(intentItems)}'
+            '${total == null ? '' : '\n\nTotal estimado: ${formatOrderTotal(total)}'}'
+            '${differs ? '\n\nO carrinho atual é diferente e não será enviado.' : ''}',
+          ),
         ),
         actions: [
           TextButton(

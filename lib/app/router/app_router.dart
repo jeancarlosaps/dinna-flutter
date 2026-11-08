@@ -107,6 +107,7 @@ class AppRouter {
     this.recommendationRepository,
     this.recommendationPreferencesStore,
     this.pollDelay,
+    this.reconcileCart,
   }) : assert(cartSession == null || cartLines == null);
 
   final ApiStatusRepository apiStatusRepository;
@@ -127,6 +128,9 @@ class AppRouter {
   /// Nulo deixa o formulário só na memória deste ViewModel.
   final RecommendationPreferencesStore? recommendationPreferencesStore;
   final Future<void> Function(Duration duration)? pollDelay;
+
+  /// Concilia o carrinho confirmado uma vez. Nulo mantém a limpeza local da rota.
+  final Future<bool> Function()? reconcileCart;
 
   /// Sempre devolve uma rota. Nome fora do mapa cai em [UnknownRouteView].
   Route<dynamic> onGenerateRoute(RouteSettings settings) {
@@ -174,6 +178,7 @@ class AppRouter {
             Navigator.of(context)
                 .pushNamed(AppRoutes.menu, arguments: _tableArgument(settings.arguments)),
         onOrderConfirmed: _openConfirmation,
+        reconcileCart: reconcileCart,
       ),
       AppRoutes.order => OrderConfirmationView(
         onTrack: _openTracking,
@@ -217,20 +222,25 @@ class AppRouter {
 
   Future<void> _startAnotherOrder(BuildContext context) async {
     if (!orderSubmission.canBeginAnotherOrder) return;
-    final confirmed = orderSubmission.confirmedItems;
-    final cart = cartSession;
-    if (cart != null && confirmed != null) {
-      try {
-        if (!cart.isReady) await cart.restore();
-        await cart.removeConfirmed(confirmed);
-      } catch (_) {
-        return;
+    final reconcile = reconcileCart;
+    if (reconcile != null) {
+      if (!await reconcile()) return;
+    } else {
+      final confirmed = orderSubmission.confirmedItems;
+      final cart = cartSession;
+      if (cart != null && confirmed != null && !orderSubmission.cartReconciled) {
+        try {
+          if (!cart.isReady) await cart.restore();
+          await cart.removeConfirmed(confirmed);
+        } catch (_) {
+          return;
+        }
       }
-    }
-    final memory = cartLines;
-    if (cart == null && memory != null && confirmed != null) {
-      final current = memory.read();
-      if (!memory.replace(current, withoutConfirmedItems(current, confirmed))) return;
+      final memory = cartLines;
+      if (cart == null && memory != null && confirmed != null && !orderSubmission.cartReconciled) {
+        final current = memory.read();
+        if (!memory.replace(current, withoutConfirmedItems(current, confirmed))) return;
+      }
     }
     await orderSubmission.beginAnotherOrder();
     if (!context.mounted || orderSubmission.status != OrderSubmissionStatus.idle) return;

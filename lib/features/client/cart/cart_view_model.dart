@@ -127,14 +127,15 @@ class CartViewModel extends ChangeNotifier {
   /// Linhas atuais. O envio fotografa esta lista no momento do toque.
   List<CartItem> get items => List<CartItem>.unmodifiable(_items);
 
-  /// Uma consulta por instância. Carrinho vazio não chama o cardápio.
-  Future<void> resolveProducts() async {
+  /// Uma consulta por instância. Carrinho vazio não chama o cardápio,
+  /// salvo quando [also] traz os itens de uma intenção que precisa de preço.
+  Future<void> resolveProducts({List<CartItem> also = const []}) async {
     if (_disposed || _requested) return;
-    _requested = true;
-    if (_items.isEmpty) {
+    if (_items.isEmpty && also.isEmpty) {
       _settled = true;
       return;
     }
+    _requested = true;
     _resolving = true;
     _notify();
 

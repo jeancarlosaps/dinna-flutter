@@ -17,7 +17,9 @@ final class ConfirmedCartCleanup {
   final CartSession? session;
   final CartLines? lines;
   String? _clearedFor;
+  String? _subtractedFor;
   var _running = false;
+  Future<bool>? _active;
 
   void attach() {
     submission.addListener(_onChanged);
@@ -29,41 +31,77 @@ final class ConfirmedCartCleanup {
     session?.removeListener(_onChanged);
   }
 
+  /// Tira a fotografia confirmada uma única vez e grava essa conclusão.
+  ///
+  /// Uma segunda chamada, inclusive depois de recriar o app, não subtrai de
+  /// novo. `false` significa que o carrinho ainda não foi conciliado.
+  Future<bool> reconcile() {
+    final current = _active;
+    if (current != null) return current;
+    final intentId = submission.intentId;
+    final items = submission.confirmedItems;
+    if (!submission.shouldClearCart || intentId == null || items == null) {
+      return Future.value(false);
+    }
+    if (submission.cartReconciled || _clearedFor == intentId) {
+      _clearedFor = intentId;
+      return Future.value(true);
+    }
+    final run = _clear(intentId, items);
+    _active = run;
+    return run.whenComplete(() {
+      if (identical(_active, run)) _active = null;
+    });
+  }
+
   void _onChanged() {
     if (_running) return;
     final intentId = submission.intentId;
     final items = submission.confirmedItems;
     if (!submission.shouldClearCart || intentId == null || items == null) return;
-    if (_clearedFor == intentId) return;
-    _running = true;
-    unawaited(_clear(intentId, items));
+    if (submission.cartReconciled || _clearedFor == intentId) {
+      _clearedFor = intentId;
+      return;
+    }
+    unawaited(reconcile());
   }
 
-  Future<void> _clear(String intentId, List<CartItem> items) async {
+  Future<bool> _clear(String intentId, List<CartItem> items) async {
+    _running = true;
     try {
-      if (!submission.shouldClearCart || submission.intentId != intentId) return;
-      final cart = session;
-      if (cart != null) {
-        if (!cart.isReady) {
-          try {
-            await cart.restore();
-          } catch (_) {
-            return;
+      if (!submission.shouldClearCart || submission.intentId != intentId) return false;
+      if (submission.cartReconciled) {
+        _clearedFor = intentId;
+        return true;
+      }
+      if (_subtractedFor != intentId) {
+        final cart = session;
+        if (cart != null) {
+          if (!cart.isReady) {
+            try {
+              await cart.restore();
+            } catch (_) {
+              return false;
+            }
+          }
+          if (!submission.shouldClearCart || submission.intentId != intentId) return false;
+          await cart.removeConfirmed(items);
+        } else {
+          final memory = lines;
+          if (memory != null) {
+            final current = memory.read();
+            final next = withoutConfirmedItems(current, items);
+            if (!memory.replace(current, next)) return false;
           }
         }
-        if (!submission.shouldClearCart || submission.intentId != intentId) return;
-        await cart.removeConfirmed(items);
-      } else {
-        final memory = lines;
-        if (memory != null) {
-          final current = memory.read();
-          final next = withoutConfirmedItems(current, items);
-          if (!memory.replace(current, next)) return;
-        }
+        _subtractedFor = intentId;
       }
+      if (!await submission.markCartReconciled()) return false;
       _clearedFor = intentId;
+      return true;
     } catch (_) {
       // A confirmação gravada permanece. Outro POST continua bloqueado.
+      return false;
     } finally {
       _running = false;
     }

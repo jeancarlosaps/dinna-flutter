@@ -356,6 +356,32 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     }
   }
 
+  /// A fotografia confirmada já foi retirada do carrinho e isso ficou gravado.
+  bool get cartReconciled => _terminal?.cartReconciled ?? false;
+
+  /// Marca a intenção concluída para a limpeza não subtrair de novo.
+  ///
+  /// Não notifica. Falha de gravação conserva o carrinho já alterado e impede
+  /// que outro clique repita a subtração neste processo.
+  Future<bool> markCartReconciled() async {
+    final terminal = _terminal;
+    if (terminal == null || terminal.phase != OrderIntentPhase.succeeded || !_terminalStored) {
+      return false;
+    }
+    if (terminal.cartReconciled) return true;
+    final marked = terminal.withCartReconciled();
+    try {
+      await _store.save(marked);
+    } on OrderIntentStoreException {
+      return false;
+    }
+    if (_disposed) return false;
+    _terminal = marked;
+    _intent = marked;
+    _terminalStored = true;
+    return true;
+  }
+
   /// Encerra a intenção confirmada para um pedido seguinte poder nascer.
   ///
   /// Não envia nada e não usa o carrinho. Se a limpeza do arquivo falha, a
@@ -494,7 +520,7 @@ class OrderSubmissionViewModel extends ChangeNotifier {
       id: _newIntentId(),
       createdAt: _now().toUtc(),
       table: table,
-      items: OrderRequest.itemMaps(items),
+      items: _storedItems(items),
     );
     _intent = intent;
     try {
@@ -716,6 +742,11 @@ class OrderSubmissionViewModel extends ChangeNotifier {
       resendBlocked: true,
     );
   }
+
+  List<Map<String, Object?>> _storedItems(List<CartItem> items) => [
+    for (final item in items)
+      {...item.toOrderItem().toJson(), if (item.lineId != null) 'lineId': item.lineId},
+  ];
 
   String _blockedMessage(OrderIntentBlock? reason) => switch (reason) {
     OrderIntentBlock.conflict => OrderSubmission.idempotencyConflictMessage,

@@ -123,6 +123,7 @@ class _DinnaAppState extends State<DinnaApp> {
         recommendationRepository: widget.recommendationRepository,
         recommendationPreferencesStore: widget.recommendationPreferencesStore,
         pollDelay: widget.pollDelay,
+        reconcileCart: () => _cartCleanup?.reconcile() ?? Future<bool>.value(false),
       ).onGenerateRoute,
     );
   }

@@ -139,6 +139,62 @@ void main() {
     expect(timeout.intentId, '00000000-0000-4000-8000-0000000000bb');
     expect(timeoutOrders.createCalls, 1);
   });
+
+  test('a limpeza usa o lineId, omite essa chave no POST e não subtrai de novo', () async {
+    final repository = _MemoryCart([line(quantity: 3)]);
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final store = MemoryOrderIntentStore();
+    final orders = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async =>
+          OrderSubmission.created(sampleOrder(id: 'order-1')),
+    );
+    final submission = OrderSubmissionViewModel(
+      orders,
+      intentStore: store,
+      newIntentId: () => intentId,
+    );
+    addTearDown(submission.dispose);
+    final cleanup = ConfirmedCartCleanup(submission: submission, session: session)..attach();
+    addTearDown(cleanup.detach);
+
+    await submission.submit(table: '12', items: [line(quantity: 2)]);
+    expect(await cleanup.reconcile(), isTrue);
+    await settle(session);
+
+    expect(session.read().single.quantity, 1);
+    expect(repository.confirmedCalls, 1);
+    expect(submission.cartReconciled, isTrue);
+    final stored = await store.load();
+    expect(stored!.cartReconciled, isTrue);
+    expect(stored.cartItems.single.lineId, 'line-1');
+    expect(stored.body['items'], [
+      {'productId': 'p1', 'quantity': 2, 'note': 'sem cebola'},
+    ]);
+
+    expect(await cleanup.reconcile(), isTrue);
+    await settle(session);
+    expect(repository.confirmedCalls, 1);
+    expect(session.read().single.quantity, 1);
+
+    final restartedSession = CartSession(repository);
+    addTearDown(restartedSession.dispose);
+    await restartedSession.restore();
+    final restarted = OrderSubmissionViewModel(orders, intentStore: store);
+    addTearDown(restarted.dispose);
+    final restartedCleanup = ConfirmedCartCleanup(submission: restarted, session: restartedSession)
+      ..attach();
+    addTearDown(restartedCleanup.detach);
+    await restarted.restore();
+    expect(await restartedCleanup.reconcile(), isTrue);
+    await restartedSession.restore();
+
+    expect(repository.confirmedCalls, 1);
+    expect(restartedSession.read().single.quantity, 1);
+    expect(restarted.cartReconciled, isTrue);
+  });
 }
 
 class _MemoryCart implements CartRepository {

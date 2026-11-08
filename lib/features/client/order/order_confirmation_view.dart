@@ -82,14 +82,14 @@ class _OrderConfirmationViewState extends State<OrderConfirmationView> {
   @override
   Widget build(BuildContext context) {
     final order = _order;
-    final blocksReturn = widget.onGoHome != null;
+    final blocksReturn = order != null && widget.onGoHome != null;
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: !blocksReturn,
         title: Text(order == null ? 'Pedido' : 'Pedido recebido'),
       ),
       body: order == null
-          ? const _MissingOrder()
+          ? _MissingOrder(onGoHome: widget.onGoHome == null ? null : _leave)
           : _ConfirmationBody(
               order: order,
               onTrack: () => unawaited(_track(order)),
@@ -102,14 +102,18 @@ class _OrderConfirmationViewState extends State<OrderConfirmationView> {
 }
 
 class _MissingOrder extends StatelessWidget {
-  const _MissingOrder();
+  const _MissingOrder({this.onGoHome});
+
+  final VoidCallback? onGoHome;
 
   @override
   Widget build(BuildContext context) {
-    return const DinnaEmptyState(
+    return DinnaEmptyState(
       icon: Icons.receipt_long_outlined,
       title: 'Pedido indisponível',
       message: 'Abra a confirmação depois que o restaurante receber o pedido.',
+      actionLabel: onGoHome == null ? null : 'Voltar ao início',
+      onAction: onGoHome,
     );
   }
 }
