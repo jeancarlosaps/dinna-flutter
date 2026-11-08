@@ -16,8 +16,9 @@ import 'product_image.dart';
 /// Cardápio do cliente, na rota `/menu`.
 ///
 /// O [MenuViewModel] nasce e morre com o State. A mesa chega pela navegação
-/// e segue para o carrinho por [onOpenCart]. O Figma não tem ícone de carrinho
-/// no header: o acesso volta com a barra do carrinho, ao adicionar itens (SCRUM-39).
+/// e segue para o carrinho por [onOpenCart]. O header não leva ícone de
+/// carrinho: com itens na [CartSession], a barra inferior abre o mesmo
+/// carrinho e mostra a quantidade e o total estimados.
 ///
 /// Tocar um produto abre o detalhe em bottom sheet com [createDetailViewModel].
 /// [onOpenRecommendation] abre "Me ajuda a escolher" sem trocar o cardápio.
@@ -100,6 +101,41 @@ class _MenuViewState extends State<MenuView> {
     }
   }
 
+  /// Quantidade e total da sessão já restaurada. Carrinho vazio ou ainda
+  /// indisponível não mostra a barra. O total só aparece quando cada item tem
+  /// preço no cardápio carregado.
+  _CartSummary? _cartSummary() {
+    final session = widget.cartSession;
+    if (session == null || !session.isReady) return null;
+    final items = session.read();
+    if (items.isEmpty) return null;
+
+    var count = 0;
+    int? totalCents = _viewModel.status == MenuStatus.ready ? 0 : null;
+    final prices = totalCents == null ? const <String, int>{} : _pricesById();
+    for (final item in items) {
+      count += item.quantity;
+      if (totalCents == null) continue;
+      final price = prices[item.productId];
+      if (price == null) {
+        totalCents = null;
+        continue;
+      }
+      totalCents += price * item.quantity;
+    }
+    return _CartSummary(itemCount: count, totalCents: totalCents);
+  }
+
+  Map<String, int> _pricesById() {
+    final prices = <String, int>{};
+    for (final products in _viewModel.groupedProducts().values) {
+      for (final product in products) {
+        prices[product.id] = product.priceCents;
+      }
+    }
+    return prices;
+  }
+
   @override
   Widget build(BuildContext context) {
     final table = widget.table;
@@ -108,84 +144,178 @@ class _MenuViewState extends State<MenuView> {
 
     // Header do Figma: faixa branca com linha embaixo, sem seta de voltar.
     // A altura acompanha o selo quando o texto da mesa cresce.
-    return Scaffold(
-      appBar: AppBar(
-        toolbarHeight: _toolbarHeight(context, table),
-        automaticallyImplyLeading: false,
-        titleSpacing: 16,
-        backgroundColor: colors.surfaceContainerLowest,
-        shape: Border(bottom: BorderSide(color: colors.outlineVariant)),
-        title: const DinnaLogo(size: 24),
-        actions: [
-          if (table != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: _TableBadge(table: table, maxWidth: _badgeMaxWidth(context)),
-            ),
-        ],
-      ),
-      body: SafeArea(
-        top: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (widget.cartSession?.restoreError != null)
-              Padding(
+    return ListenableBuilder(
+      listenable: _viewModel,
+      builder: (context, _) {
+        final summary = _cartSummary();
+        final header = _headerLayout(context, table);
+        final displacedTable = table != null && !header.badgeInToolbar
+            ? Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: Row(
-                  children: [
-                    const Expanded(child: Text('Não foi possível recuperar o carrinho salvo.')),
-                    TextButton(
-                      onPressed: widget.cartSession!.isRestoring
-                          ? null
-                          : () => unawaited(_retryCartRestore(widget.cartSession!)),
-                      child: widget.cartSession!.isRestoring
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Tentar novamente'),
-                    ),
-                  ],
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _TableBadge(table: table, maxWidth: header.badgeMaxWidth),
                 ),
-              ),
-            if (openRecommendation != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: OutlinedButton(
-                  onPressed: () => openRecommendation(context, table),
-                  child: const Text('Me ajuda a escolher'),
+              )
+            : null;
+        final recommendation = _recommendationButton(context, table, openRecommendation);
+        return Scaffold(
+          appBar: AppBar(
+            toolbarHeight: header.toolbarHeight,
+            automaticallyImplyLeading: false,
+            titleSpacing: 16,
+            backgroundColor: colors.surfaceContainerLowest,
+            shape: Border(bottom: BorderSide(color: colors.outlineVariant)),
+            title: header.stackBadge
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const DinnaLogo(size: 24),
+                      const SizedBox(height: 8),
+                      _TableBadge(table: table!, maxWidth: header.badgeMaxWidth),
+                    ],
+                  )
+                : const DinnaLogo(size: 24),
+            actions: [
+              if (header.badgeInToolbar && !header.stackBadge)
+                Padding(
+                  padding: const EdgeInsets.only(right: 16),
+                  child: _TableBadge(table: table!, maxWidth: header.badgeMaxWidth),
                 ),
-              ),
-            Expanded(
-              child: ListenableBuilder(
-                listenable: _viewModel,
-                builder: (context, _) => switch (_viewModel.status) {
-                  MenuStatus.loading => const Center(child: CircularProgressIndicator()),
-                  MenuStatus.failed => _ScrollableStatus(
-                    child: DinnaEmptyState(
-                      icon: Icons.wifi_off,
-                      title: 'Não foi possível carregar o cardápio',
-                      message: _viewModel.errorMessage ?? MenuViewModel.fallbackErrorMessage,
-                      actionLabel: 'Tentar de novo',
-                      onAction: _viewModel.load,
+            ],
+          ),
+          body: SafeArea(
+            top: false,
+            bottom: summary == null,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (widget.cartSession?.restoreError != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: Row(
+                      children: [
+                        const Expanded(child: Text('Não foi possível recuperar o carrinho salvo.')),
+                        TextButton(
+                          onPressed: widget.cartSession!.isRestoring
+                              ? null
+                              : () => unawaited(_retryCartRestore(widget.cartSession!)),
+                          child: widget.cartSession!.isRestoring
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text('Tentar novamente'),
+                        ),
+                      ],
                     ),
                   ),
-                  MenuStatus.ready when _viewModel.isEmpty => const _ScrollableStatus(
-                    child: DinnaEmptyState(
-                      icon: Icons.restaurant_menu,
-                      title: 'Cardápio vazio',
-                      message: 'O restaurante ainda não cadastrou pratos.',
+                Expanded(
+                  child: switch (_viewModel.status) {
+                    MenuStatus.loading => const Center(child: CircularProgressIndicator()),
+                    MenuStatus.failed => _ScrollableStatus(
+                      header: _statusHeader(displacedTable, recommendation),
+                      child: DinnaEmptyState(
+                        icon: Icons.wifi_off,
+                        title: 'Não foi possível carregar o cardápio',
+                        message: _viewModel.errorMessage ?? MenuViewModel.fallbackErrorMessage,
+                        actionLabel: 'Tentar de novo',
+                        onAction: _viewModel.load,
+                        centered: false,
+                      ),
                     ),
-                  ),
-                  MenuStatus.ready => _MenuContent(
-                    viewModel: _viewModel,
-                    onOpenProduct: _openProduct,
-                  ),
-                },
-              ),
+                    MenuStatus.ready when _viewModel.isEmpty => _ScrollableStatus(
+                      header: _statusHeader(displacedTable, recommendation),
+                      child: const DinnaEmptyState(
+                        icon: Icons.restaurant_menu,
+                        title: 'Cardápio vazio',
+                        message: 'O restaurante ainda não cadastrou pratos.',
+                        centered: false,
+                      ),
+                    ),
+                    MenuStatus.ready => _MenuContent(
+                      viewModel: _viewModel,
+                      onOpenProduct: _openProduct,
+                      banner: displacedTable,
+                      recommendation: recommendation,
+                    ),
+                  },
+                ),
+              ],
             ),
-          ],
+          ),
+          bottomNavigationBar: summary == null
+              ? null
+              : _CartAccessBar(
+                  summary: summary,
+                  table: table,
+                  onPressed: () => widget.onOpenCart(context, table),
+                ),
+        );
+      },
+    );
+  }
+}
+
+class _CartSummary {
+  const _CartSummary({required this.itemCount, required this.totalCents});
+
+  final int itemCount;
+  final int? totalCents;
+
+  String get countLabel => itemCount == 1 ? '1 item' : '$itemCount itens';
+
+  String get label {
+    final total = totalCents;
+    if (total == null) return 'Ver carrinho · $countLabel';
+    return 'Ver carrinho · $countLabel · ${formatOrderTotal(total)}';
+  }
+}
+
+/// Ação fixa do cardápio. A rolagem fica no corpo; a safe area fica nesta faixa.
+class _CartAccessBar extends StatelessWidget {
+  const _CartAccessBar({required this.summary, required this.table, required this.onPressed});
+
+  final _CartSummary summary;
+  final String? table;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surfaceContainerLowest,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: colors.outlineVariant)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final shown = _cartLabelThatFits(
+                  context,
+                  summary.label,
+                  constraints.maxWidth,
+                  table,
+                );
+                final shortened = shown != summary.label;
+                return FilledButton(
+                  onPressed: onPressed,
+                  child: Text(
+                    shown,
+                    textAlign: TextAlign.center,
+                    maxLines: shortened ? 1 : null,
+                    overflow: shortened ? TextOverflow.fade : null,
+                    semanticsLabel: shortened ? summary.label : null,
+                  ),
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
@@ -193,10 +323,17 @@ class _MenuViewState extends State<MenuView> {
 }
 
 class _MenuContent extends StatelessWidget {
-  const _MenuContent({required this.viewModel, required this.onOpenProduct});
+  const _MenuContent({
+    required this.viewModel,
+    required this.onOpenProduct,
+    this.banner,
+    this.recommendation,
+  });
 
   final MenuViewModel viewModel;
   final ValueChanged<Product>? onOpenProduct;
+  final Widget? banner;
+  final Widget? recommendation;
 
   @override
   Widget build(BuildContext context) {
@@ -208,39 +345,34 @@ class _MenuContent extends StatelessWidget {
       builder: (context, constraints) {
         final grouped = viewModel.groupedProducts();
         final grid = _gridMetrics(context, constraints.maxWidth - 32);
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _CategoryStrip(viewModel: viewModel),
-            Expanded(
-              child: CustomScrollView(
-                slivers: [
-                  for (final category in sections) ...[
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                      sliver: SliverToBoxAdapter(
-                        child: Text(_categoryLabel(category), style: headingStyle),
-                      ),
-                    ),
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      sliver: SliverGrid.builder(
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: grid.count,
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
-                          mainAxisExtent: grid.extent,
-                        ),
-                        itemCount: (grouped[category] ?? const []).length,
-                        itemBuilder: (context, index) =>
-                            _ProductCard(product: grouped[category]![index], onTap: onOpenProduct),
-                      ),
-                    ),
-                  ],
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                ],
+        return CustomScrollView(
+          slivers: [
+            if (recommendation != null) SliverToBoxAdapter(child: recommendation),
+            if (banner != null) SliverToBoxAdapter(child: banner),
+            SliverToBoxAdapter(child: _CategoryStrip(viewModel: viewModel)),
+            for (final category in sections) ...[
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                sliver: SliverToBoxAdapter(
+                  child: Text(_categoryLabel(category), style: headingStyle),
+                ),
               ),
-            ),
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: SliverGrid.builder(
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: grid.count,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    mainAxisExtent: grid.extent,
+                  ),
+                  itemCount: (grouped[category] ?? const []).length,
+                  itemBuilder: (context, index) =>
+                      _ProductCard(product: grouped[category]![index], onTap: onOpenProduct),
+                ),
+              ),
+            ],
+            const SliverToBoxAdapter(child: SizedBox(height: 24)),
           ],
         );
       },
@@ -249,24 +381,34 @@ class _MenuContent extends StatelessWidget {
 }
 
 /// Erro e cardápio vazio rolam em tela baixa e ficam centralizados quando cabem.
+///
+/// A altura mínima é a viewport, então o bloco fica no centro quando sobra
+/// espaço. Se o conteúdo é mais alto, a rolagem alcança a ação.
 class _ScrollableStatus extends StatelessWidget {
-  const _ScrollableStatus({required this.child});
+  const _ScrollableStatus({required this.child, this.header});
 
   final Widget child;
+  final Widget? header;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
+        final minHeight = constraints.maxHeight.isFinite ? constraints.maxHeight : 0.0;
         return SingleChildScrollView(
           child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: constraints.maxHeight),
-            child: child,
+            constraints: BoxConstraints(minHeight: minHeight),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [?header, child]),
           ),
         );
       },
     );
   }
+}
+
+Widget? _statusHeader(Widget? banner, Widget? recommendation) {
+  if (banner == null && recommendation == null) return null;
+  return Column(mainAxisSize: MainAxisSize.min, children: [?banner, ?recommendation]);
 }
 
 /// A faixa cresce com o chip. A rolagem continua horizontal.
@@ -309,16 +451,104 @@ class _CategoryStrip extends StatelessWidget {
   }
 }
 
-/// Altura do header: 56 px na escala normal. Com texto ampliado, cabe a marca e o selo.
-double _toolbarHeight(BuildContext context, String? table) {
+/// Onde o número da mesa cabe sem cortar o texto e sem tomar o cardápio.
+class _HeaderLayout {
+  const _HeaderLayout({
+    required this.toolbarHeight,
+    required this.badgeInToolbar,
+    required this.badgeMaxWidth,
+    required this.stackBadge,
+  });
+
+  final double toolbarHeight;
+  final bool badgeInToolbar;
+  final double badgeMaxWidth;
+  final bool stackBadge;
+}
+
+/// Cabe ao lado da marca quando a altura medida cabe no limite. Se não cabe,
+/// o selo desce para a largura da tela. Se ainda assim não sobra cardápio, o
+/// número vai para a rolagem, inteiro.
+_HeaderLayout _headerLayout(BuildContext context, String? table) {
   final scaler = MediaQuery.textScalerOf(context);
   final logoHeight = scaler.scale(24);
-  var needed = logoHeight + 8;
-  if (table != null) {
-    final badge = _badgeTextHeight(context, table) + 14;
-    needed = math.max(needed, badge + 8);
+  final viewport = MediaQuery.sizeOf(context).height;
+  final cap = math.max(kToolbarHeight, viewport * 0.4);
+  final logoToolbar = math.max(kToolbarHeight, logoHeight + 8);
+
+  if (table == null) {
+    return _HeaderLayout(
+      toolbarHeight: math.min(logoToolbar, cap),
+      badgeInToolbar: false,
+      badgeMaxWidth: 0,
+      stackBadge: false,
+    );
   }
-  return math.max(kToolbarHeight, needed);
+
+  final besideWidth = _badgeMaxWidth(context);
+  final besideToolbar = math.max(logoToolbar, _badgeOuterHeight(context, table, besideWidth) + 8);
+  if (besideToolbar <= cap + 0.5) {
+    return _HeaderLayout(
+      toolbarHeight: besideToolbar,
+      badgeInToolbar: true,
+      badgeMaxWidth: besideWidth,
+      stackBadge: false,
+    );
+  }
+
+  final stackedWidth = math.max(48.0, MediaQuery.sizeOf(context).width - 32);
+  final stackedToolbar = math.max(
+    logoToolbar,
+    logoHeight + 8 + _badgeOuterHeight(context, table, stackedWidth),
+  );
+  if (stackedToolbar <= cap + 0.5) {
+    return _HeaderLayout(
+      toolbarHeight: stackedToolbar,
+      badgeInToolbar: true,
+      badgeMaxWidth: stackedWidth,
+      stackBadge: true,
+    );
+  }
+
+  return _HeaderLayout(
+    toolbarHeight: math.min(logoToolbar, cap),
+    badgeInToolbar: false,
+    badgeMaxWidth: stackedWidth,
+    stackBadge: false,
+  );
+}
+
+/// Rótulo na escala pedida. A forma curta só entra quando o texto inteiro
+/// tomaria a faixa e esconderia o cardápio.
+String _cartLabelThatFits(BuildContext context, String label, double maxWidth, String? table) {
+  final scaler = MediaQuery.textScalerOf(context);
+  final style = Theme.of(context).textTheme.labelLarge;
+  final available = maxWidth.isFinite ? maxWidth : MediaQuery.sizeOf(context).width - 32;
+  final width = math.max(1.0, available - 32);
+  final painter = TextPainter(
+    text: TextSpan(text: label, style: style),
+    textDirection: Directionality.of(context),
+    textScaler: scaler,
+  )..layout(maxWidth: width);
+  final header = _headerLayout(context, table);
+  final budget = MediaQuery.sizeOf(context).height - header.toolbarHeight - 72;
+  if (painter.height + 16 <= budget) return label;
+  return 'Ver carrinho';
+}
+
+Widget? _recommendationButton(
+  BuildContext context,
+  String? table,
+  void Function(BuildContext context, String? table)? open,
+) {
+  if (open == null) return null;
+  return Padding(
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+    child: OutlinedButton(
+      onPressed: () => open(context, table),
+      child: const Text('Me ajuda a escolher', textAlign: TextAlign.center),
+    ),
+  );
 }
 
 /// Largura restante do header depois da marca, do espaçamento e do padding.
@@ -343,15 +573,16 @@ double _badgeMaxWidth(BuildContext context) {
   return math.max(48, width - logo.width - 48);
 }
 
-double _badgeTextHeight(BuildContext context, String table) {
+/// Altura do selo na mesma largura em que ele é desenhado, com o texto inteiro.
+double _badgeOuterHeight(BuildContext context, String table, double maxWidth) {
   final style = Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600);
-  final inner = math.max(1.0, _badgeMaxWidth(context) - 40);
+  final inner = math.max(1.0, maxWidth - 40);
   final painter = TextPainter(
     text: TextSpan(text: 'Mesa $table', style: style),
     textDirection: Directionality.of(context),
     textScaler: MediaQuery.textScalerOf(context),
   )..layout(maxWidth: inner);
-  return painter.height;
+  return painter.height + 14;
 }
 
 /// Colunas e altura do card. Na escala 1 a proporção segue o limite de 220 px.
@@ -450,7 +681,6 @@ class _TableBadge extends StatelessWidget {
             Flexible(
               child: Text(
                 'Mesa $table',
-                softWrap: true,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: colors.onSurface,
                   fontWeight: FontWeight.w600,
