@@ -4,6 +4,7 @@ import '../../../core/domain/cart_item.dart';
 import '../../../core/domain/data_failure.dart';
 import '../../../core/domain/order.dart';
 import '../../restaurant/order_repository.dart';
+import 'last_order_session.dart';
 import 'order_intent.dart';
 import 'order_intent_id.dart';
 import 'order_intent_store.dart';
@@ -33,6 +34,7 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   OrderSubmissionViewModel(
     this._repository, {
     OrderIntentStore? intentStore,
+    this.lastOrderSession,
     DateTime Function()? now,
     String Function()? newIntentId,
   }) : _store = intentStore ?? MemoryOrderIntentStore(),
@@ -41,6 +43,7 @@ class OrderSubmissionViewModel extends ChangeNotifier {
 
   final OrderRepository _repository;
   final OrderIntentStore _store;
+  final LastOrderSession? lastOrderSession;
   final DateTime Function() _now;
   final String Function() _newIntentId;
 
@@ -172,7 +175,8 @@ class OrderSubmissionViewModel extends ChangeNotifier {
         canViewPersistedConfirmation &&
         terminal != null &&
         terminal.phase == OrderIntentPhase.succeeded &&
-        terminal.order != null;
+        terminal.order != null &&
+        (lastOrderSession?.isPersisted(terminal.order!) ?? true);
   }
 
   /// O comprovante gravado pode ser mostrado de novo.
@@ -376,7 +380,27 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     );
   }
 
+  Future<void> _persistLastOrder(Order order) async {
+    final session = lastOrderSession;
+    if (session == null) return;
+    try {
+      await session.record(order);
+    } catch (error, stackTrace) {
+      if (!kDebugMode) return;
+      FlutterError.presentError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'order submission view model',
+          context: ErrorDescription('ao gravar o último pedido confirmado'),
+        ),
+      );
+    }
+  }
+
   Future<void> _readStore() async {
+    await lastOrderSession?.restore();
+    if (_disposed) return;
     try {
       final intent = await _store.load();
       if (_disposed) return;
@@ -397,6 +421,9 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     _intent = intent;
     if (intent.phase == OrderIntentPhase.succeeded) {
       _rememberTerminal(intent, persisted: true);
+      final order = intent.order;
+      if (order != null) await _persistLastOrder(order);
+      if (_disposed) return;
       _publishSuccess(intent);
       return;
     }
@@ -489,6 +516,7 @@ class OrderSubmissionViewModel extends ChangeNotifier {
         _storeBlocked = true;
         _reportTerminalWrite(error, stackTrace);
       }
+      await _persistLastOrder(order);
       if (_disposed) return;
       _publishSuccess(done);
       if (!_terminalStored) _keepUnrecordedTerminal();

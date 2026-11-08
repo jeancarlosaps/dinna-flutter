@@ -17,7 +17,7 @@ O app monta um único `HttpOrderRepository` em `lib/main.dart` e o entrega ao `A
 | `OrderSubmissionViewModel` | `lib/features/client/order/order_submission_view_model.dart` | Estado do envio. Não guarda o carrinho. |
 | `Order` | `lib/core/domain/order.dart` | Resposta da API, com `totalCents` calculado no servidor. |
 | `CartLines` | `lib/features/client/cart/cart_lines.dart` | Entrada `read` e gravação condicional `replace`. |
-| `ProcessCartLines` | o mesmo arquivo | Lista só do processo. João substitui esta classe. |
+| `ProcessCartLines` | o mesmo arquivo | Compatibilidade em memória. Em produção, `DinnaApp` recebe uma `CartSession` com SQLite. |
 | `CartViewModel` | `lib/features/client/cart/cart_view_model.dart` | Quantidade, remoção e total estimado. Não envia o pedido. |
 
 `AppRoutes.order` (`/order`) mostra o `Order` gravado. O argumento é `OrderConfirmationArgs`. `/order/tracking` só identifica o pedido e não atualiza o status.
@@ -68,15 +68,15 @@ O construtor com `lineId` existe. O trecho acima é a forma da linha persistida.
 
 Exemplo: o envio levou a linha `a` (produto `p1`, observação `sem cebola`, 2 unidades). Durante o POST essa linha sai e entra a linha `b`, com o mesmo produto, a mesma observação e 1 unidade. `confirmedItems` só tem `a`. `b` permanece com 1 unidade.
 
-`SqfliteCartRepository.removeConfirmed` aplica essa regra numa transação. A tela ainda não chama o repositório: a ligação com o fluxo fica na SCRUM-69/71. A limpeza não casa por produto e observação.
+`SqfliteCartRepository.removeConfirmed` aplica essa regra numa transação, mas o envio ainda não chama esse método depois do sucesso. Inclusão, quantidade e remoção passam pela `CartSession` e pelo SQLite; a limpeza pós-envio continua fora desse fluxo. A regra não casa por produto e observação.
 
 ## Gabriel — SCRUM-29/36/37/39
 
-A mesa e os itens ainda não saem da UI.
+A mesa segue pela navegação. O acesso direto ao carrinho pelo cardápio continua pendente.
 
-**Mesa.** `TableViewModel` valida o campo e a `TableView` abre `AppRoutes.menu` com a mesa como `String` em `arguments`, o mesmo formato de `Order.table` (`"12"`). O cardápio (SCRUM-30) recebe a mesa e o router liga `MenuView.onOpenCart` a `AppRoutes.cart` com ela. **Pendente:** o botão do carrinho no cardápio, que entra com a SCRUM-39. Quem fica com o valor é a navegação até o carrinho, não o `OrderSubmissionViewModel`.
+**Mesa.** `TableViewModel` valida o campo e a `TableView` abre `AppRoutes.menu` com a mesa como `String` em `arguments`, o mesmo formato de `Order.table` (`"12"`). O cardápio (SCRUM-30) recebe a mesa e o router fornece o callback `MenuView.onOpenCart`; falta expor o botão que chama esse callback (SCRUM-39). Quem fica com o valor é a navegação até o carrinho, não o `OrderSubmissionViewModel`.
 
-**Detalhe.** O bottom sheet `ProductDetailView` (SCRUM-36) mostra o produto que `ProductDetailViewModel.load` preenche e a quantidade escolhida (SCRUM-37), entregue por `onAdd(product, quantity)`. **Pendente:** o router ainda não passa `onAdd`, então o botão “Adicionar” fica desabilitado até a SCRUM-39. A UI monta o `CartItem` e entrega a lista a quem persistir (João). Não copie nome, preço nem imagem para o item.
+**Detalhe.** O bottom sheet `ProductDetailView` (SCRUM-36) mostra o produto que `ProductDetailViewModel.load` preenche e a quantidade escolhida (SCRUM-37). O router passa `onAdd(product, quantity)`; a `MenuView` grava via `CartSession.addLine` e aguarda a confirmação do SQLite. Não copie nome, preço nem imagem para o item.
 
 ```dart
 final product = detailViewModel.product;
@@ -85,15 +85,15 @@ if (product == null || !product.available) return;
 final item = CartItem(productId: product.id, quantity: quantity, note: note);
 ```
 
-`quantity` e `note` são estado da tela. **Pendente:** esses campos ainda não existem no detalhe.
+`quantity` é estado da tela. A observação permanece opcional no model do carrinho, sem campo neste detalhe.
 
-A UI continua responsável por ler a mesa, escolher quantidade e observação, navegar (`AppRoutes.menu`, `AppRoutes.product`, `AppRoutes.cart`) e não chamar HTTP. Reutilize `CartItem`, `Product`, `ProductRepository` e `ProductDetailViewModel`. Não crie outro model de item, não escolha `lineId` e não crie outro envio. João gera o id ao persistir a inclusão.
+A UI continua responsável por ler a mesa, escolher quantidade e navegar (`AppRoutes.menu`, `AppRoutes.product`, `AppRoutes.cart`) e não chamar HTTP. Reutilize `CartItem`, `Product`, `ProductRepository` e `ProductDetailViewModel`. Não crie outro model de item, não escolha `lineId` e não crie outro envio. O repositório gera o id ao persistir a inclusão.
 
-A inclusão usa o mesmo `CartLines`. Lê a lista, acrescenta o item e grava com `replace`. Se `replace` devolver `false`, lê de novo e tenta outra vez. Não crie outra lista e não grave por cima de uma revisão que aconteceu no meio.
+A inclusão chama `CartSession.addLine` com o id e a quantidade do produto. A sessão serializa a operação e só publica a linha com `lineId` depois que o repositório confirma a gravação.
 
 ## João — SCRUM-69/70/71
 
-`CartRepository` e `sqflite` já estão no projeto. A tela ainda grava com `CartLines.replace`: a lista inteira só entra se `expected` ainda for a lista armazenada. Trocar `ProcessCartLines` em `main` continua pendente na SCRUM-69/71. O `POST /orders` continua em `toOrderItem()`: `productId`, `quantity` e `note`. O JSON local do repositório guarda `lineId`.
+`CartRepository` e `sqflite` estão ligados à `CartSession` em produção. `main` injeta a sessão e `DinnaApp` inicia a restauração na abertura; o primeiro `CartViewModel` só é criado depois da leitura bem-sucedida. Ao abrir o carrinho, o ViewModel consulta o catálogo para atualizar nomes, preços e disponibilidade. `CartLines` permanece no fluxo compatível em memória. O `POST /orders` continua em `toOrderItem()`: `productId`, `quantity` e `note`. O JSON local do repositório guarda `lineId`.
 
 `_withQuantity` copia `lineId`, e `==` / `hashCode` incluem o campo. A tela não casa item por `productId` + `note`.
 
@@ -140,7 +140,7 @@ abstract interface class CartLines {
 }
 ```
 
-`read` é a lista externa quando a tela abre. Cada aumento, diminuição ou remoção chama `replace` com a lista que a tela leu e a lista inteira nova, na mesma ordem. Se outra gravação ocorreu no meio, `replace` devolve `false` e a tela adota a lista externa. A alteração local dessa tentativa não fica. `ProcessCartLines` guarda a lista só no processo e não é a SCRUM-69. A lista morre com o app.
+Este contrato descreve o caminho compatível em memória. `ProcessCartLines` só guarda a lista durante o processo. Em produção, quantidade e remoção usam `CartSession.updateLine` e `CartSession.removeLine`, que serializam e confirmam cada operação no SQLite.
 
 ### Obrigações e testes
 
@@ -237,6 +237,6 @@ O reenvio é manual. O diálogo mostra o ID da intenção daquele momento e `res
 
 A folga local continua nesta entrega. Ela é `24 horas` menos `1 hora`. O motivo é conservador: podem existir intenções criadas antes da retenção permanente, uma chave eliminada pelo servidor antigo não volta, uma resposta perdida não diz qual versão atendeu o POST, e o relógio do aparelho pode estar adiantado. Isso não é garantia absoluta contra relógio incorreto. Relógio atrasado ainda pode autorizar um reenvio quando o aparelho acredita estar dentro das 23 horas. Não há migração de intenção baseada só nesse relógio, e o header `Idempotency-Retention` não autoriza desligar a folga. Expirar a proteção não significa que o pedido deixou de existir.
 
-`cartStore` **não existe**. A limpeza depois do sucesso fica na implementação de `CartLines` do João, quando `lineId` existir. A revisão não grava nesse momento e a confirmação também não limpa o carrinho. Falha confirmada, conflito, bloqueio e resultado incerto não limpam o carrinho. O `submit` da tela usa as linhas atuais do `CartViewModel` só quando não há intenção aberta; a intenção incerta repete o body já gravado. Quando `lineId` existir, não monte outra lista só com `productId`, `quantity` e `note`: a fotografia perderia a identidade e a limpeza voltaria a apagar uma linha recriada. A mesa chega em `CartView.table`. A navegação passa um `String` em `RouteSettings.arguments`; outro tipo não é mesa. Sem esse argumento, a tela envia mesa vazia e a validação responde "Informe a mesa".
+`cartStore` **não existe**. O carrinho de produção é persistido pela `CartSession`; o envio ainda não chama `removeConfirmed` após um sucesso, então não limpa as linhas automaticamente. Falha confirmada, conflito, bloqueio e resultado incerto também não limpam o carrinho. O `submit` da tela usa as linhas atuais do `CartViewModel` só quando não há intenção aberta; a intenção incerta repete o body já gravado. `lineId` permanece local e não entra no body. A mesa chega em `CartView.table`. A navegação passa um `String` em `RouteSettings.arguments`; outro tipo não é mesa. Sem esse argumento, a tela envia mesa vazia e a validação responde "Informe a mesa".
 
-`/order` recebe `OrderConfirmationArgs`. O `Order` é o da intenção `succeeded`, o mesmo do ViewModel, sem novo `GET /orders`. "Acompanhar pedido" abre `/order/tracking` com `AppRouteId` desse pedido. Essa rota não faz polling, não chama endpoint e não acompanha status: a SCRUM-46 continua pendente. O repositório SQLite da SCRUM-70 existe e ainda não substitui o `CartLines` da tela. Essa ligação fica na SCRUM-69/71. Sem o argumento esperado, as duas rotas explicam a ausência e não chamam a API.
+`/order` recebe `OrderConfirmationArgs`. O `Order` é o da intenção `succeeded`, o mesmo do ViewModel, sem novo `GET /orders`. "Acompanhar pedido" abre `/order/tracking` com `AppRouteId` desse pedido. Essa rota não faz polling, não chama endpoint e não acompanha status: a SCRUM-46 continua pendente. A persistência da revisão já usa SQLite por meio da `CartSession`; a reconciliação pós-envio segue fora deste fluxo. Sem o argumento esperado, as duas rotas explicam a ausência e não chamam a API.

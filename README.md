@@ -92,14 +92,14 @@ Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas d
 | Tema Dinna (Material 3) | ✅ Paleta, tipografia (Inter e Source Serif 4) e botões e raios do Figma | `lib/app/theme/`, `assets/fonts/` |
 | URL e token da API | ✅ `API_BASE_URL` com padrão por plataforma; `API_TOKEN` opcional | `lib/core/config/` |
 | Cliente HTTP + erro uniforme | ✅ `ApiClient` + `ApiException` | `lib/core/network/` |
-| Testes, lint, format, CI | ✅ 490 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
+| Testes, lint, format, CI | ✅ 502 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
 | Models (`Product`, `CartItem`, `Order`, `OrderItem`, `OrderStatus`, `Preference`) | ✅ Implementados em `lib/core/domain/` (SCRUM-22, PR #5 na `dev`) | [`lib/core/domain/`](lib/core/domain/) |
 | Rotas do cliente e do restaurante | ✅ SCRUM-23 concluída e mergeada pelo PR #6. Mapa em `AppRoutes`. Rota inicial `/`. `/table` abre `TableView`, `/menu` abre `MenuView`, `/order` abre a confirmação, `/order/tracking` identifica o pedido, `/restaurant` abre a fila e `/restaurant/order` o detalhe. `/product` e `/restaurant/menu` são placeholder | [`lib/app/router/`](lib/app/router/), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Mesa (`/table`) | SCRUM-29. `TableViewModel` valida a mesa de 1 a 999; o campo aceita até 3 dígitos (vazia, zero, acima de 999 ou não numérica mostra erro abaixo do campo). “Ver cardápio” abre `AppRoutes.menu` com a mesa como `String` em `arguments`. “Acessar o painel” ainda usa `onPressed` vazio | [`lib/features/client/table/table_view.dart`](lib/features/client/table/table_view.dart) |
 | Cardápio (`/menu`) | SCRUM-30. `MenuViewModel` carrega `GET /products` e agrupa por categoria. Chips filtram a categoria; produto indisponível aparece em cinza com o selo “Esgotado”. O header mostra a mesa recebida da navegação. Estados de carregando, erro com “Tentar de novo” e cardápio vazio | [`lib/features/menu/menu_view.dart`](lib/features/menu/menu_view.dart) |
 | Detalhe do produto | SCRUM-36. Bottom sheet sobre o cardápio, como no Figma: foto ou degradê, nome, descrição e a caixa “Ingredientes” na ordem da API. Sem ingredientes, a caixa orienta a consultar o restaurante. Seletor de quantidade de 1 a 99 e botão “Adicionar · R$ total” (SCRUM-37); o botão fica desabilitado até a inclusão no carrinho (SCRUM-39). Produto esgotado mostra aviso e desabilita quantidade e botão. Erro de rede com “Tentar de novo”; produto inexistente com “Voltar ao cardápio”. A mesa continua no cardápio; `/product` segue placeholder | [`lib/features/menu/product_detail_view.dart`](lib/features/menu/product_detail_view.dart) |
-| Dependências base (SCRUM-18) | Em andamento. HTTP pronto (`http` 1.6.0 e `ApiClient`); `sqflite` persiste o carrinho e `path_provider` localiza o arquivo da intenção do pedido | `pubspec.yaml`, [`lib/core/network/`](lib/core/network/) |
-| Persistência local | SCRUM-70 implementa o repositório SQLite do carrinho; SCRUM-90 persiste a intenção do pedido em arquivo. Preferências e último pedido confirmado seguem fora desses escopos | [`lib/features/client/cart/`](lib/features/client/cart/), [`lib/features/client/order/`](lib/features/client/order/) |
+| Dependências base (SCRUM-18) | Em andamento. HTTP pronto (`http` 1.6.0 e `ApiClient`); `sqflite` persiste carrinho e último pedido confirmado no banco local versionado; `path_provider` localiza o arquivo da intenção | `pubspec.yaml`, [`lib/core/network/`](lib/core/network/) |
+| Persistência local | SCRUM-70 implementa o repositório SQLite do carrinho; SCRUM-90 persiste a intenção do pedido em arquivo; SCRUM-72 guarda o último pedido confirmado em SQLite, no mesmo banco local versionado | [`lib/features/client/cart/`](lib/features/client/cart/), [`lib/features/client/order/`](lib/features/client/order/) |
 | Componentes visuais reutilizáveis | ✅ `DinnaLogo`, `DinnaBanner` e `DinnaEmptyState` (SCRUM-28) | `lib/shared/widgets/` |
 | Telas de R1, R2 e R3 | ⬜ Jornada planejada. Na `dev`, mesa, cardápio, carrinho, confirmação, fila e detalhe do pedido têm View. `/product` e `/restaurant/menu` seguem placeholder | — |
 
@@ -147,7 +147,7 @@ A jornada abaixo é a **R1 planejada**. Na `dev`, a etapa Mesa (`/table`, SCRUM-
 | Navegação | `onGenerateRoute` nativo | A SCRUM-23, concluída no PR #6, manteve o `Navigator` do Flutter. O mapa está em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Lint | `flutter_lints` 6.0.0 + regras em `analysis_options.yaml` | Análise estrita (`strict-casts`, `strict-raw-types`) |
 
-Dependências diretas: `http` 1.6.0, `sqflite` 2.4.5, `path` 1.9.1, `path_provider` 2.1.6 e `cupertino_icons`, que veio no template do Flutter. `sqflite` persiste as linhas do carrinho e `path_provider` localiza o arquivo da intenção de pedido. Nenhuma biblioteca de estado ou injeção de dependência foi adicionada. A SCRUM-18 segue em andamento enquanto as demais necessidades de armazenamento local são integradas.
+Dependências diretas: `http` 1.6.0, `sqflite` 2.4.5, `path` 1.9.1, `path_provider` 2.1.6 e `cupertino_icons`, que veio no template do Flutter. `sqflite` persiste as linhas do carrinho e o último pedido confirmado; `path_provider` localiza o arquivo da intenção de pedido. Nenhuma biblioteca de estado ou injeção de dependência foi adicionada. A SCRUM-18 segue em andamento enquanto as demais necessidades de armazenamento local são integradas.
 
 <a id="arquitetura"></a>
 
@@ -435,10 +435,10 @@ Os focos vêm da distribuição de issues no backlog (Atividade 2) e não são c
 
 ## 13 · Próximos passos
 
-1. **SCRUM-18:** o HTTP e o `sqflite` do carrinho já estão no `pubspec`. Preferências e último pedido confirmado continuam fora deste escopo.
-2. **SCRUM-69/71:** ligar o `CartRepository` da SCRUM-70 ao fluxo. A tela ainda usa `CartLines`.
+1. **SCRUM-18:** o HTTP e o `sqflite` do carrinho já estão no `pubspec`. Preferências locais continuam fora deste escopo.
+2. **SCRUM-39:** concluir o acesso ao carrinho a partir do cardápio. A inclusão pelo detalhe já usa a `CartSession` persistida.
 3. **SCRUM-28:** componentes Dinna reutilizáveis, em análise na branch `feature/SCRUM-28-tipografia-componentes`. O tema já está na `dev`.
-4. **Cliente:** adicionar ao carrinho pela `CartSession` (SCRUM-39), ligando o `onAdd` do detalhe. O acesso ao carrinho a partir do cardápio entra com a SCRUM-39. “Acessar o painel” da `TableView` ainda não navega. Se a rota inicial passar a ser `/table`, os testes que esperam a home em `/` precisam ser adaptados.
+4. **Cliente:** “Acessar o painel” da `TableView` ainda não navega. Se a rota inicial passar a ser `/table`, os testes que esperam a home em `/` precisam ser adaptados.
 5. **PDFs em `lib/`:** o PR #3 versionou `Dinna · App Cliente Marina.pdf` (5,5 MB) e `Dinna · App Restaurante Ricardo.pdf` (8,6 MB) ao lado do código. Não são asset do app. A organização fica para outro PR.
 6. **Ambiente:** instalar `cmdline-tools` para o `flutter doctor` ficar verde. O debug Android já executa sem esse componente.
 

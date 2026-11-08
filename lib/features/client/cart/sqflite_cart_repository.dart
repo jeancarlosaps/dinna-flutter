@@ -1,58 +1,27 @@
 import 'dart:math';
 
-import 'package:path/path.dart' as path;
 import 'package:sqflite/sqflite.dart';
 
 import '../../../core/domain/cart_item.dart';
+import '../../../core/storage/dinna_database.dart';
 import 'cart_repository.dart';
 
 /// Repositório SQLite para o carrinho local do cliente.
 class SqfliteCartRepository implements CartRepository {
-  SqfliteCartRepository({DatabaseFactory? factory, String Function()? lineIdGenerator})
-    : _factory = factory ?? databaseFactory,
-      _lineIdGenerator = lineIdGenerator ?? _newLineId;
+  SqfliteCartRepository({
+    DatabaseFactory? factory,
+    DinnaDatabase? database,
+    String Function()? lineIdGenerator,
+  }) : assert(factory == null || database == null),
+       _database = database ?? DinnaDatabase(factory: factory),
+       _lineIdGenerator = lineIdGenerator ?? _newLineId;
 
-  static const _databaseName = 'dinna.db';
   static const _table = 'cart_items';
 
-  final DatabaseFactory _factory;
+  final DinnaDatabase _database;
   final String Function() _lineIdGenerator;
-  Future<Database>? _database;
 
-  Future<Database> get _db async {
-    final existing = _database;
-    if (existing != null) return existing;
-
-    final opening = _openDatabase();
-    _database = opening;
-    try {
-      return await opening;
-    } catch (_) {
-      if (identical(_database, opening)) _database = null;
-      rethrow;
-    }
-  }
-
-  Future<Database> _openDatabase() async {
-    final directory = await _factory.getDatabasesPath();
-    return _factory.openDatabase(
-      path.join(directory, _databaseName),
-      options: OpenDatabaseOptions(
-        version: 1,
-        onCreate: (database, version) async {
-          await database.execute('''
-            CREATE TABLE $_table (
-              position INTEGER PRIMARY KEY AUTOINCREMENT,
-              line_id TEXT NOT NULL UNIQUE,
-              product_id TEXT NOT NULL,
-              quantity INTEGER NOT NULL CHECK (quantity >= 1),
-              note TEXT
-            )
-          ''');
-        },
-      ),
-    );
-  }
+  Future<Database> get _db => _database.database;
 
   @override
   Future<List<CartItem>> load() async {

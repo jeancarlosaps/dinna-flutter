@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../features/client/cart/cart_lines.dart';
 import '../features/client/cart/cart_session.dart';
+import '../features/client/order/last_order_session.dart';
+import '../features/client/order/last_order_store.dart';
 import '../features/client/order/order_intent_store.dart';
 import '../features/client/order/order_submission_view_model.dart';
 import '../features/home/api_status_repository.dart';
@@ -23,6 +25,7 @@ class DinnaApp extends StatefulWidget {
     this.cartLines,
     this.cartSession,
     this.orderIntentStore,
+    this.lastOrderStore,
     this.recommendationRepository,
     this.recommendationPreferencesStore,
     this.routeObserver,
@@ -42,6 +45,9 @@ class DinnaApp extends StatefulWidget {
 
   /// Nula guarda a intenção de pedido só na memória desta sessão.
   final OrderIntentStore? orderIntentStore;
+
+  /// Nulo mantém o último pedido em memória, como nos testes e previews.
+  final LastOrderStore? lastOrderStore;
 
   /// Nula deixa a rota de recomendação sem HTTP. O `main` injeta a implementação.
   final RecommendationRepository? recommendationRepository;
@@ -64,6 +70,7 @@ class _DinnaAppState extends State<DinnaApp> {
   late final RouteObserver<PageRoute<dynamic>> _routeObserver;
   CartLines? _cartLines;
   CartSession? _cartSession;
+  late final LastOrderSession _lastOrderSession;
   late final OrderSubmissionViewModel _submission;
 
   @override
@@ -74,9 +81,12 @@ class _DinnaAppState extends State<DinnaApp> {
     _cartLines = _cartSession == null ? widget.cartLines ?? ProcessCartLines() : null;
     final cartSession = _cartSession;
     if (cartSession != null) unawaited(_restoreCart(cartSession));
+    _lastOrderSession = LastOrderSession(widget.lastOrderStore ?? MemoryLastOrderStore());
+    unawaited(_lastOrderSession.restore());
     _submission = OrderSubmissionViewModel(
       widget.orderRepository,
       intentStore: widget.orderIntentStore,
+      lastOrderSession: _lastOrderSession,
     );
     unawaited(_submission.restore());
   }
@@ -93,6 +103,7 @@ class _DinnaAppState extends State<DinnaApp> {
   void dispose() {
     _cartSession?.dispose();
     _submission.dispose();
+    _lastOrderSession.dispose();
     super.dispose();
   }
 
@@ -111,6 +122,7 @@ class _DinnaAppState extends State<DinnaApp> {
         cartLines: _cartLines,
         cartSession: _cartSession,
         orderSubmission: _submission,
+        lastOrderSession: _lastOrderSession,
         routeObserver: _routeObserver,
         recommendationRepository: widget.recommendationRepository,
         recommendationPreferencesStore: widget.recommendationPreferencesStore,

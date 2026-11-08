@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/domain/order.dart';
+import '../client/order/last_order_session.dart';
 import 'home_view_model.dart';
 import 'temporary_flow_access.dart';
 
@@ -9,10 +11,17 @@ import 'temporary_flow_access.dart';
 /// [TemporaryFlowAccess] é o atalho de desenvolvimento. Apague o widget e o
 /// arquivo antes da entrega; a marca e o cartão da API ficam.
 class HomeView extends StatefulWidget {
-  const HomeView({super.key, required this.createViewModel});
+  const HomeView({
+    super.key,
+    required this.createViewModel,
+    this.lastOrderSession,
+    this.onOpenLastOrder,
+  });
 
   /// O ViewModel nasce e morre com o State da tela.
   final HomeViewModel Function() createViewModel;
+  final LastOrderSession? lastOrderSession;
+  final Future<void> Function(BuildContext context, Order order)? onOpenLastOrder;
 
   @override
   State<HomeView> createState() => _HomeViewState();
@@ -64,6 +73,15 @@ class _HomeViewState extends State<HomeView> {
                                 color: theme.colorScheme.onSurfaceVariant,
                               ),
                             ),
+                            if (widget.lastOrderSession case final session?) ...[
+                              const SizedBox(height: 24),
+                              _LastOrderCard(
+                                session: session,
+                                onOpen: widget.onOpenLastOrder == null
+                                    ? null
+                                    : (order) => widget.onOpenLastOrder!(context, order),
+                              ),
+                            ],
                             const SizedBox(height: 32),
                             const TemporaryFlowAccess(),
                           ],
@@ -83,6 +101,66 @@ class _HomeViewState extends State<HomeView> {
         ),
       ),
     );
+  }
+}
+
+class _LastOrderCard extends StatelessWidget {
+  const _LastOrderCard({required this.session, required this.onOpen});
+
+  final LastOrderSession session;
+  final ValueChanged<Order>? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: session,
+      builder: (context, _) {
+        final order = session.order;
+        final error = session.errorMessage;
+        if (!session.isRestored && order == null) return const SizedBox.shrink();
+        if (order == null && error == null) return const SizedBox.shrink();
+
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Último pedido', style: Theme.of(context).textTheme.titleMedium),
+                if (order != null) ...[
+                  const SizedBox(height: 4),
+                  Text('Mesa ${order.table} · ${order.id}'),
+                  if (onOpen != null) ...[
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      onPressed: () => onOpen!(order),
+                      child: const Text('Ver último pedido'),
+                    ),
+                  ],
+                ],
+                if (error case final message?) ...[
+                  const SizedBox(height: 8),
+                  Text(message),
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: session.isSaving || session.isLoading ? null : () => _retry(),
+                    child: const Text('Tentar novamente'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _retry() async {
+    try {
+      await session.retry();
+    } on Object {
+      // A sessão mantém o estado e a mensagem para a próxima tentativa.
+    }
   }
 }
 
