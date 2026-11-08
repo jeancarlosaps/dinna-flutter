@@ -192,6 +192,54 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('texto a 300% em tela baixa mantém o carrinho e a rolagem', (tester) async {
+    tester.view.physicalSize = const Size(360, 220);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final session = CartSession(
+      _MutableMenuCart([CartItem(lineId: 'line-1', productId: '1', quantity: 1, note: null)]),
+    );
+    addTearDown(session.dispose);
+    await session.restore();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(3)),
+          child: child!,
+        ),
+        home: MenuView(
+          table: '12',
+          createViewModel: () => MenuViewModel(
+            FakeProductRepository(
+              () async => ProductList.ready([
+                _product('1', 'Margherita', 'pizzas'),
+                _product('2', 'Suco', 'bebidas'),
+              ]),
+            ),
+          ),
+          cartSession: session,
+          onOpenCart: (context, table) {},
+          onOpenRecommendation: (_, _) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining('Ver carrinho'), findsOneWidget);
+    expect(find.text('Me ajuda a escolher'), findsOneWidget);
+    final menuScroll = find.byWidgetPredicate(
+      (widget) => widget is Scrollable && widget.axisDirection == AxisDirection.down,
+    );
+    expect(menuScroll, findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Suco'), 40, scrollable: menuScroll);
+    expect(find.text('Suco'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('mostra a mesa, as categorias e os produtos', (tester) async {
     await _pumpMenu(tester, [
       _product('1', 'Margherita', 'pizzas'),

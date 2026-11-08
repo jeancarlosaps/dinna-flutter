@@ -190,18 +190,11 @@ class _MenuViewState extends State<MenuView> {
                       ],
                     ),
                   ),
-                if (openRecommendation != null)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                    child: OutlinedButton(
-                      onPressed: () => openRecommendation(context, table),
-                      child: const Text('Me ajuda a escolher'),
-                    ),
-                  ),
                 Expanded(
                   child: switch (_viewModel.status) {
                     MenuStatus.loading => const Center(child: CircularProgressIndicator()),
                     MenuStatus.failed => _ScrollableStatus(
+                      header: _recommendationButton(context, table, openRecommendation),
                       child: DinnaEmptyState(
                         icon: Icons.wifi_off,
                         title: 'Não foi possível carregar o cardápio',
@@ -210,8 +203,9 @@ class _MenuViewState extends State<MenuView> {
                         onAction: _viewModel.load,
                       ),
                     ),
-                    MenuStatus.ready when _viewModel.isEmpty => const _ScrollableStatus(
-                      child: DinnaEmptyState(
+                    MenuStatus.ready when _viewModel.isEmpty => _ScrollableStatus(
+                      header: _recommendationButton(context, table, openRecommendation),
+                      child: const DinnaEmptyState(
                         icon: Icons.restaurant_menu,
                         title: 'Cardápio vazio',
                         message: 'O restaurante ainda não cadastrou pratos.',
@@ -220,6 +214,7 @@ class _MenuViewState extends State<MenuView> {
                     MenuStatus.ready => _MenuContent(
                       viewModel: _viewModel,
                       onOpenProduct: _openProduct,
+                      recommendation: _recommendationButton(context, table, openRecommendation),
                     ),
                   },
                 ),
@@ -275,7 +270,13 @@ class _CartAccessBar extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: FilledButton(
               onPressed: onPressed,
-              child: Text(summary.label, textAlign: TextAlign.center),
+              child: SizedBox(
+                width: double.infinity,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(summary.label, maxLines: 1, textAlign: TextAlign.center),
+                ),
+              ),
             ),
           ),
         ),
@@ -285,10 +286,11 @@ class _CartAccessBar extends StatelessWidget {
 }
 
 class _MenuContent extends StatelessWidget {
-  const _MenuContent({required this.viewModel, required this.onOpenProduct});
+  const _MenuContent({required this.viewModel, required this.onOpenProduct, this.recommendation});
 
   final MenuViewModel viewModel;
   final ValueChanged<Product>? onOpenProduct;
+  final Widget? recommendation;
 
   @override
   Widget build(BuildContext context) {
@@ -302,6 +304,7 @@ class _MenuContent extends StatelessWidget {
         final grid = _gridMetrics(context, constraints.maxWidth - 32);
         return CustomScrollView(
           slivers: [
+            if (recommendation != null) SliverToBoxAdapter(child: recommendation),
             SliverToBoxAdapter(child: _CategoryStrip(viewModel: viewModel)),
             for (final category in sections) ...[
               SliverPadding(
@@ -335,9 +338,10 @@ class _MenuContent extends StatelessWidget {
 
 /// Erro e cardápio vazio rolam em tela baixa e ficam centralizados quando cabem.
 class _ScrollableStatus extends StatelessWidget {
-  const _ScrollableStatus({required this.child});
+  const _ScrollableStatus({required this.child, this.header});
 
   final Widget child;
+  final Widget? header;
 
   @override
   Widget build(BuildContext context) {
@@ -346,7 +350,7 @@ class _ScrollableStatus extends StatelessWidget {
         return SingleChildScrollView(
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: constraints.maxHeight),
-            child: child,
+            child: Column(children: [?header, child]),
           ),
         );
       },
@@ -403,7 +407,24 @@ double _toolbarHeight(BuildContext context, String? table) {
     final badge = _badgeTextHeight(context, table) + 14;
     needed = math.max(needed, badge + 8);
   }
-  return math.max(kToolbarHeight, needed);
+  final height = math.max(kToolbarHeight, needed);
+  final cap = math.max(kToolbarHeight, MediaQuery.sizeOf(context).height * 0.4);
+  return math.min(height, cap);
+}
+
+Widget? _recommendationButton(
+  BuildContext context,
+  String? table,
+  void Function(BuildContext context, String? table)? open,
+) {
+  if (open == null) return null;
+  return Padding(
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+    child: OutlinedButton(
+      onPressed: () => open(context, table),
+      child: const Text('Me ajuda a escolher', textAlign: TextAlign.center),
+    ),
+  );
 }
 
 /// Largura restante do header depois da marca, do espaçamento e do padding.
@@ -535,7 +556,8 @@ class _TableBadge extends StatelessWidget {
             Flexible(
               child: Text(
                 'Mesa $table',
-                softWrap: true,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: colors.onSurface,
                   fontWeight: FontWeight.w600,
