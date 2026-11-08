@@ -395,7 +395,7 @@ void main() {
   });
 }
 
-class _MenuCartRepository implements CartRepository {
+class _MenuCartRepository extends CartRepository {
   bool failLoad = false;
 
   @override

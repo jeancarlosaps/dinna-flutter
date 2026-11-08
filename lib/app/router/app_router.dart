@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/domain/order.dart';
 import '../../features/client/cart/cart_lines.dart';
+import '../../features/client/cart/cart_repository.dart';
 import '../../features/client/cart/cart_session.dart';
 import '../../features/client/cart/cart_view.dart';
 import '../../features/client/cart/cart_view_model.dart';
@@ -222,6 +223,15 @@ class AppRouter {
 
   Future<void> _startAnotherOrder(BuildContext context) async {
     if (!orderSubmission.canBeginAnotherOrder) return;
+    if (orderSubmission.legacyCartRemaining) {
+      final cart = cartSession;
+      if (cart != null && cart.isReady && cart.read().isNotEmpty) {
+        if (!context.mounted) return;
+        await Navigator.of(context)
+            .pushNamed(AppRoutes.cart, arguments: orderSubmission.order?.table);
+        return;
+      }
+    }
     final reconcile = reconcileCart;
     if (reconcile != null) {
       if (!await reconcile()) return;
@@ -229,9 +239,18 @@ class AppRouter {
       final confirmed = orderSubmission.confirmedItems;
       final cart = cartSession;
       if (cart != null && confirmed != null && !orderSubmission.cartReconciled) {
+        final intentId = orderSubmission.intentId;
+        if (intentId == null) return;
         try {
           if (!cart.isReady) await cart.restore();
-          await cart.removeConfirmed(confirmed);
+          final result = await cart.reconcileConfirmed(
+            intentId: intentId,
+            confirmedItems: confirmed,
+          );
+          if (result.outcome == CartReconciliation.unresolved && result.items.isNotEmpty) {
+            orderSubmission.noteLegacyCartRemaining(true);
+            return;
+          }
         } catch (_) {
           return;
         }

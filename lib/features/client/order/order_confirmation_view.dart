@@ -178,6 +178,7 @@ class _ConfirmationBody extends StatelessWidget {
             child: const Text('Voltar ao início', textAlign: TextAlign.center),
           ),
         ],
+        if (currentSubmission != null) _LegacyCartNotice(submission: currentSubmission),
         if (startAnother != null && currentSubmission != null)
           _AnotherOrderButton(submission: currentSubmission, onStartAnother: startAnother),
       ],
@@ -201,8 +202,31 @@ class _AnotherOrderButton extends StatelessWidget {
           padding: const EdgeInsets.only(top: 12),
           child: OutlinedButton(
             onPressed: () => unawaited(onStartAnother(context)),
-            child: const Text('Fazer outro pedido', textAlign: TextAlign.center),
+            child: Text(
+              submission.legacyCartRemaining ? 'Rever carrinho' : 'Fazer outro pedido',
+              textAlign: TextAlign.center,
+            ),
           ),
+        );
+      },
+    );
+  }
+}
+
+class _LegacyCartNotice extends StatelessWidget {
+  const _LegacyCartNotice({required this.submission});
+
+  final OrderSubmissionViewModel submission;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: submission,
+      builder: (context, _) {
+        if (!submission.legacyCartRemaining) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text(OrderSubmissionViewModel.legacyCartMessage),
         );
       },
     );

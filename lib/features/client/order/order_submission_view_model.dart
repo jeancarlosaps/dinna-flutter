@@ -371,6 +371,23 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   /// A fotografia confirmada já foi retirada do carrinho e isso ficou gravado.
   bool get cartReconciled => _terminal?.cartReconciled ?? false;
 
+  /// O pedido confirmado não tem identidade de linha e o carrinho ainda tem produtos.
+  ///
+  /// A conciliação não apaga esses produtos nem se declara concluída.
+  bool get legacyCartRemaining => _legacyCartRemaining;
+  var _legacyCartRemaining = false;
+
+  static const legacyCartMessage =
+      'Este pedido foi confirmado, mas o carrinho foi montado antes da identificação de cada item. '
+      'Não dá para separar com segurança o que já foi enviado. '
+      'Os produtos continuam no carrinho. Retire o que já foi pedido antes de começar outro.';
+
+  void noteLegacyCartRemaining(bool value) {
+    if (_disposed || _legacyCartRemaining == value) return;
+    _legacyCartRemaining = value;
+    _notify();
+  }
+
   /// Marca a intenção concluída para a limpeza não subtrair de novo.
   ///
   /// Não notifica. Falha de gravação conserva o carrinho já alterado e impede
@@ -407,6 +424,7 @@ class OrderSubmissionViewModel extends ChangeNotifier {
       _terminal = null;
       _terminalStored = false;
       _intent = null;
+      _legacyCartRemaining = false;
       _publish(status: OrderSubmissionStatus.idle);
     } catch (error, stackTrace) {
       if (_disposed) return;

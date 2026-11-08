@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../../../core/domain/cart_item.dart';
 import '../cart/cart_lines.dart';
+import '../cart/cart_repository.dart';
 import '../cart/cart_session.dart';
 import 'order_submission_view_model.dart';
 
@@ -85,7 +86,14 @@ final class ConfirmedCartCleanup {
             }
           }
           if (!submission.shouldClearCart || submission.intentId != intentId) return false;
-          await cart.removeConfirmed(items);
+          final result = await cart.reconcileConfirmed(intentId: intentId, confirmedItems: items);
+          if (result.outcome == CartReconciliation.unresolved) {
+            if (result.items.isNotEmpty) {
+              submission.noteLegacyCartRemaining(true);
+              return false;
+            }
+          }
+          submission.noteLegacyCartRemaining(false);
         } else {
           final memory = lines;
           if (memory != null) {

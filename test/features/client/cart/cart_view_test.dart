@@ -488,7 +488,7 @@ void main() {
   });
 }
 
-class _CartSessionRepository implements CartRepository {
+class _CartSessionRepository extends CartRepository {
   _CartSessionRepository(this.items);
 
   final List<CartItem> items;

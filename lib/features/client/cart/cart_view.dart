@@ -8,6 +8,7 @@ import '../../../shared/widgets/dinna_banner.dart';
 import '../../../shared/widgets/dinna_empty_state.dart';
 import '../../restaurant/order_format.dart';
 import '../order/order_submission_view_model.dart';
+import 'cart_repository.dart';
 import 'cart_session.dart';
 import 'cart_view_model.dart';
 
@@ -209,9 +210,18 @@ class _CartViewState extends State<CartView> {
           confirmed != null &&
           _submission.shouldClearCart &&
           !_submission.cartReconciled) {
+        final intentId = _submission.intentId;
+        if (intentId == null) return;
         try {
           if (!session.isReady) await session.restore();
-          await session.removeConfirmed(confirmed);
+          final result = await session.reconcileConfirmed(
+            intentId: intentId,
+            confirmedItems: confirmed,
+          );
+          if (result.outcome == CartReconciliation.unresolved && result.items.isNotEmpty) {
+            _submission.noteLegacyCartRemaining(true);
+            return;
+          }
         } catch (_) {
           return;
         }
@@ -474,6 +484,12 @@ class _SubmissionSection extends StatelessWidget {
             tone: DinnaBannerTone.info,
             title: 'Pedido enviado',
             message: 'O restaurante recebeu o pedido.',
+          ),
+        if (submission.legacyCartRemaining)
+          const DinnaBanner(
+            tone: DinnaBannerTone.warning,
+            title: 'Carrinho anterior',
+            message: OrderSubmissionViewModel.legacyCartMessage,
           ),
         if (received && onViewConfirmation != null) ...[
           const SizedBox(height: 12),

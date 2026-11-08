@@ -138,6 +138,23 @@ final class CartSession extends ChangeNotifier {
     });
   }
 
+  /// Aplica a conciliação durável e publica o carrinho que o banco devolveu.
+  Future<CartReconciliationResult> reconcileConfirmed({
+    required String intentId,
+    required List<CartItem> confirmedItems,
+  }) {
+    return _enqueue(() async {
+      _ensureReady();
+      final result = await _repository.reconcileConfirmed(
+        intentId: intentId,
+        confirmedItems: confirmedItems,
+      );
+      _items = List<CartItem>.unmodifiable(result.items);
+      _notify();
+      return result;
+    });
+  }
+
   /// Remove a linha apenas depois da confirmação do repositório.
   Future<void> removeLine(String lineId) => _enqueue(() async {
     _ensureReady();

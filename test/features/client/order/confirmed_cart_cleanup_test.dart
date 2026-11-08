@@ -195,9 +195,46 @@ void main() {
     expect(restartedSession.read().single.quantity, 1);
     expect(restarted.cartReconciled, isTrue);
   });
+
+  test('intenção sem lineId não conclui a conciliação nem apaga o carrinho', () async {
+    final repository = _UnresolvedCart([
+      CartItem(productId: 'p1', quantity: 2, note: 'sem cebola'),
+    ]);
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final store = MemoryOrderIntentStore();
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async =>
+            OrderSubmission.created(sampleOrder(id: 'order-1')),
+      ),
+      intentStore: store,
+      newIntentId: () => intentId,
+    );
+    addTearDown(submission.dispose);
+    final cleanup = ConfirmedCartCleanup(submission: submission, session: session)..attach();
+    addTearDown(cleanup.detach);
+
+    await submission.submit(table: '12', items: session.read());
+    expect(await cleanup.reconcile(), isFalse);
+    await settle(session);
+
+    expect(repository.removeCalls, 0);
+    expect(session.read().single.quantity, 2);
+    expect(submission.cartReconciled, isFalse);
+    expect(submission.legacyCartRemaining, isTrue);
+    expect((await store.load())!.cartReconciled, isFalse);
+
+    repository.items = const [];
+    expect(await cleanup.reconcile(), isTrue);
+    expect(submission.cartReconciled, isTrue);
+    expect(submission.legacyCartRemaining, isFalse);
+  });
 }
 
-class _MemoryCart implements CartRepository {
+class _MemoryCart extends CartRepository {
   _MemoryCart(List<CartItem> items) : items = List<CartItem>.of(items);
 
   List<CartItem> items;
@@ -222,5 +259,43 @@ class _MemoryCart implements CartRepository {
     confirmedCalls++;
     items = withoutConfirmedItems(items, confirmedItems).toList();
     return List<CartItem>.unmodifiable(items);
+  }
+}
+
+class _UnresolvedCart extends CartRepository {
+  _UnresolvedCart(this.items);
+
+  List<CartItem> items;
+  var removeCalls = 0;
+
+  @override
+  Future<List<CartItem>> load() async => List<CartItem>.unmodifiable(items);
+
+  @override
+  Future<CartItem> add({required String productId, required int quantity, String? note}) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<bool> update(CartItem item) => throw UnimplementedError();
+
+  @override
+  Future<bool> remove(String lineId) => throw UnimplementedError();
+
+  @override
+  Future<List<CartItem>> removeConfirmed(List<CartItem> confirmedItems) {
+    removeCalls++;
+    throw StateError('item sem lineId não pode ser apagado');
+  }
+
+  @override
+  Future<CartReconciliationResult> reconcileConfirmed({
+    required String intentId,
+    required List<CartItem> confirmedItems,
+  }) async {
+    return CartReconciliationResult(
+      items: List<CartItem>.unmodifiable(items),
+      outcome: CartReconciliation.unresolved,
+    );
   }
 }
