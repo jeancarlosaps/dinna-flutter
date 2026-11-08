@@ -146,6 +146,53 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('categorias rolam numa tela baixa com carrinho e recomendação', (tester) async {
+    tester.view.physicalSize = const Size(360, 220);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final session = CartSession(
+      _MutableMenuCart([CartItem(lineId: 'line-1', productId: '1', quantity: 1, note: null)]),
+    );
+    addTearDown(session.dispose);
+    await session.restore();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: MenuView(
+          table: '12',
+          createViewModel: () => MenuViewModel(
+            FakeProductRepository(
+              () async => ProductList.ready([
+                _product('1', 'Margherita', 'pizzas'),
+                _product('2', 'Suco', 'bebidas'),
+              ]),
+            ),
+          ),
+          cartSession: session,
+          onOpenCart: (_, _) {},
+          onOpenRecommendation: (_, _) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Me ajuda a escolher'), findsOneWidget);
+    final cartButton = find.widgetWithText(FilledButton, 'Ver carrinho · 1 item · R\$ 10,00');
+    expect(cartButton, findsOneWidget);
+    expect(tester.getRect(cartButton).bottom, lessThanOrEqualTo(220));
+
+    final menuScroll = find.descendant(
+      of: find.byType(CustomScrollView),
+      matching: find.byType(Scrollable),
+    );
+    await tester.scrollUntilVisible(find.text('Suco'), 40, scrollable: menuScroll);
+    expect(find.text('Suco'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('mostra a mesa, as categorias e os produtos', (tester) async {
     await _pumpMenu(tester, [
       _product('1', 'Margherita', 'pizzas'),

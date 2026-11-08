@@ -300,39 +300,32 @@ class _MenuContent extends StatelessWidget {
       builder: (context, constraints) {
         final grouped = viewModel.groupedProducts();
         final grid = _gridMetrics(context, constraints.maxWidth - 32);
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _CategoryStrip(viewModel: viewModel),
-            Expanded(
-              child: CustomScrollView(
-                slivers: [
-                  for (final category in sections) ...[
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                      sliver: SliverToBoxAdapter(
-                        child: Text(_categoryLabel(category), style: headingStyle),
-                      ),
-                    ),
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      sliver: SliverGrid.builder(
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: grid.count,
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
-                          mainAxisExtent: grid.extent,
-                        ),
-                        itemCount: (grouped[category] ?? const []).length,
-                        itemBuilder: (context, index) =>
-                            _ProductCard(product: grouped[category]![index], onTap: onOpenProduct),
-                      ),
-                    ),
-                  ],
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                ],
+        return CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(child: _CategoryStrip(viewModel: viewModel)),
+            for (final category in sections) ...[
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                sliver: SliverToBoxAdapter(
+                  child: Text(_categoryLabel(category), style: headingStyle),
+                ),
               ),
-            ),
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: SliverGrid.builder(
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: grid.count,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    mainAxisExtent: grid.extent,
+                  ),
+                  itemCount: (grouped[category] ?? const []).length,
+                  itemBuilder: (context, index) =>
+                      _ProductCard(product: grouped[category]![index], onTap: onOpenProduct),
+                ),
+              ),
+            ],
+            const SliverToBoxAdapter(child: SizedBox(height: 24)),
           ],
         );
       },
