@@ -222,6 +222,48 @@ void main() {
     expect(lines.read().single.note, 'sem cebola');
   });
 
+  testWidgets('reenvio mostra a intenção original quando o carrinho divergiu', (tester) async {
+    final lines = ProcessCartLines([line(2)]);
+    var calls = 0;
+    await pumpCart(
+      tester,
+      lines: lines,
+      onCreate: ({required table, required items}) async {
+        calls++;
+        return const OrderSubmission.failed(
+          OrderSubmission.uncertainOutcomeMessage,
+          failure: DataFailure.uncertain,
+          outcomeUncertain: true,
+        );
+      },
+    );
+
+    await tapSend(tester, 'Enviar pedido');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Aumentar quantidade'));
+    await tester.pump();
+    expect(lines.read().single.quantity, 3);
+
+    await tapSend(tester, 'Reenviar o mesmo pedido');
+    await tester.pumpAndSettle();
+
+    expect(calls, 1);
+    final dialog = find.byType(AlertDialog);
+    expect(find.descendant(of: dialog, matching: find.textContaining('2× p1')), findsOneWidget);
+    expect(
+      find.descendant(of: dialog, matching: find.textContaining('O carrinho atual é diferente')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.textContaining('pode ter sido registrado')),
+      findsNothing,
+    );
+    await tester.tap(find.text('Voltar'));
+    await tester.pumpAndSettle();
+    expect(calls, 1);
+    expect(lines.read().single.quantity, 3);
+  });
+
   testWidgets('o envio em andamento ignora outro toque', (tester) async {
     final lines = ProcessCartLines([line(1)]);
     final gate = Completer<OrderSubmission>();
@@ -313,8 +355,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(sentTable, '7');
-    expect(find.text('Pedido enviado', skipOffstage: false), findsOneWidget);
-    expect(lines.read().single.quantity, 1);
+    expect(find.text('Pedido recebido'), findsWidgets);
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(lines.read(), isEmpty);
   });
 
   testWidgets('sair e reabrir o carrinho não dispara outro POST', (tester) async {

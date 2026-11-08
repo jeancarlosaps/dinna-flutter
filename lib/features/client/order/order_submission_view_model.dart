@@ -146,9 +146,11 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   /// Chave da intenção ainda em aberto. Nula sem intenção guardada.
   String? get intentId => _intent?.id;
 
-  /// Só a confirmação da API liga este sinal. Esta classe não apaga item.
-  bool get shouldClearCart =>
-      _status == OrderSubmissionStatus.succeeded && _order != null && _confirmedItems != null;
+  /// Só a confirmação gravada liga este sinal. Esta classe não apaga item.
+  ///
+  /// Um 201 que não coube no arquivo fica de fora: limpar o carrinho nesse
+  /// caso apagaria a única cópia local da tentativa.
+  bool get shouldClearCart => canViewPersistedConfirmation && _confirmedItems != null;
 
   /// Primeiro envio, ou nova intenção depois de uma rejeição que não reteve a chave.
   ///

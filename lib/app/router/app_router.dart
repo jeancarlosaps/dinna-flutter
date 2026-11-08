@@ -5,6 +5,7 @@ import '../../features/client/cart/cart_lines.dart';
 import '../../features/client/cart/cart_session.dart';
 import '../../features/client/cart/cart_view.dart';
 import '../../features/client/cart/cart_view_model.dart';
+import '../../features/client/order/confirmed_cart_cleanup.dart';
 import '../../features/client/order/order_confirmation_view.dart';
 import '../../features/client/order/order_submission_view_model.dart';
 import '../../features/client/order/order_tracking_view.dart';
@@ -174,7 +175,12 @@ class AppRouter {
                 .pushNamed(AppRoutes.menu, arguments: _tableArgument(settings.arguments)),
         onOrderConfirmed: _openConfirmation,
       ),
-      AppRoutes.order => OrderConfirmationView(onTrack: _openTracking),
+      AppRoutes.order => OrderConfirmationView(
+        onTrack: _openTracking,
+        onGoHome: _goHome,
+        onStartAnother: _startAnotherOrder,
+        submission: orderSubmission,
+      ),
       AppRoutes.orderTracking => const OrderTrackingView(),
       AppRoutes.restaurant => OrdersQueueView(
         createViewModel: () => OrdersQueueViewModel(orderRepository, delay: pollDelay),
@@ -197,8 +203,39 @@ class AppRouter {
   }
 
   Future<void> _openConfirmation(BuildContext context, Order order) async {
+    await Navigator.of(context).pushNamedAndRemoveUntil(
+      AppRoutes.order,
+      (route) => route.settings.name == AppRoutes.home,
+      arguments: OrderConfirmationArgs(order: order),
+    );
+  }
+
+  void _goHome(BuildContext context) {
+    Navigator.of(context)
+        .popUntil((route) => route.settings.name == AppRoutes.home || route.isFirst);
+  }
+
+  Future<void> _startAnotherOrder(BuildContext context) async {
+    if (!orderSubmission.canBeginAnotherOrder) return;
+    final confirmed = orderSubmission.confirmedItems;
+    final cart = cartSession;
+    if (cart != null && confirmed != null) {
+      try {
+        if (!cart.isReady) await cart.restore();
+        await cart.removeConfirmed(confirmed);
+      } catch (_) {
+        return;
+      }
+    }
+    final memory = cartLines;
+    if (cart == null && memory != null && confirmed != null) {
+      final current = memory.read();
+      if (!memory.replace(current, withoutConfirmedItems(current, confirmed))) return;
+    }
+    await orderSubmission.beginAnotherOrder();
+    if (!context.mounted || orderSubmission.status != OrderSubmissionStatus.idle) return;
     await Navigator.of(context)
-        .pushNamed(AppRoutes.order, arguments: OrderConfirmationArgs(order: order));
+        .pushNamedAndRemoveUntil(AppRoutes.table, (route) => route.settings.name == AppRoutes.home);
   }
 
   Future<void> _openTracking(BuildContext context, Order order) async {

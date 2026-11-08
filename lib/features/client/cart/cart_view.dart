@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/domain/cart_item.dart';
 import '../../../core/domain/order.dart';
 import '../../../shared/widgets/dinna_banner.dart';
 import '../../../shared/widgets/dinna_empty_state.dart';
@@ -188,7 +189,19 @@ class _CartViewState extends State<CartView> {
     _scheduleAutomaticConfirmation();
   }
 
-  Future<void> _beginAnother() => _submission.beginAnotherOrder();
+  Future<void> _beginAnother() async {
+    final session = widget.cartSession;
+    final confirmed = _submission.confirmedItems;
+    if (session != null && confirmed != null && _submission.shouldClearCart) {
+      try {
+        if (!session.isReady) await session.restore();
+        await session.removeConfirmed(confirmed);
+      } catch (_) {
+        return;
+      }
+    }
+    await _submission.beginAnotherOrder();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -247,6 +260,8 @@ class _CartViewState extends State<CartView> {
           final hasRows = viewModel.rows.isNotEmpty;
           final submission = _SubmissionSection(
             submission: _submission,
+            currentItems: viewModel.items,
+            estimate: viewModel.estimateFor,
             onSubmit: _submit,
             onResume: _resume,
             onBeginAnother: _beginAnother,
@@ -397,6 +412,8 @@ class _CartBody extends StatelessWidget {
 class _SubmissionSection extends StatelessWidget {
   const _SubmissionSection({
     required this.submission,
+    required this.currentItems,
+    required this.estimate,
     required this.onSubmit,
     required this.onResume,
     required this.onBeginAnother,
@@ -405,6 +422,8 @@ class _SubmissionSection extends StatelessWidget {
   });
 
   final OrderSubmissionViewModel submission;
+  final List<CartItem> currentItems;
+  final int? Function(List<CartItem> items) estimate;
   final VoidCallback onSubmit;
   final void Function(String intentId) onResume;
   final VoidCallback onBeginAnother;
@@ -521,12 +540,18 @@ class _SubmissionSection extends StatelessWidget {
   }
 
   Future<void> _confirmResume(BuildContext context, String intentId) async {
+    final intentItems = submission.intentItems ?? <CartItem>[];
+    final total = estimate(intentItems);
+    final differs = _cartDiffers(intentItems, currentItems);
     final accepted = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Reenviar o mesmo pedido?'),
-        content: const Text(
-          'O restaurante pode já ter recebido este pedido. O reenvio repete a mesma tentativa e não cria outro pedido.',
+        content: Text(
+          'O restaurante pode já ter recebido este pedido. O reenvio repete a mesma chave e estes itens, sem alterar o payload:\n\n'
+          '${_itemLines(intentItems)}'
+          '${total == null ? '' : '\n\nTotal estimado: ${formatOrderTotal(total)}'}'
+          '${differs ? '\n\nO carrinho atual é diferente e não será enviado.' : ''}',
         ),
         actions: [
           TextButton(
@@ -714,3 +739,28 @@ class _EstimatedTotal extends StatelessWidget {
 }
 
 String _countLabel(int count) => count == 1 ? '1 item' : '$count itens';
+
+String _itemLines(List<CartItem> items) {
+  final lines = StringBuffer();
+  for (final item in items) {
+    if (lines.isNotEmpty) lines.writeln();
+    final note = item.note;
+    final suffix = note == null || note.isEmpty ? '' : ' ($note)';
+    lines.write('${item.quantity}× ${item.productId}$suffix');
+  }
+  return lines.toString();
+}
+
+bool _cartDiffers(List<CartItem> intentItems, List<CartItem> cartItems) {
+  if (intentItems.length != cartItems.length) return true;
+  for (var index = 0; index < intentItems.length; index++) {
+    final intentItem = intentItems[index];
+    final cartItem = cartItems[index];
+    if (intentItem.productId != cartItem.productId ||
+        intentItem.quantity != cartItem.quantity ||
+        intentItem.note != cartItem.note) {
+      return true;
+    }
+  }
+  return false;
+}
