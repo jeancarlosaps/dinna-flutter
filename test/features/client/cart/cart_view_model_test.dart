@@ -430,7 +430,7 @@ class _RecordingLines implements CartLines {
   }
 }
 
-class _MemoryCartRepository implements CartRepository {
+class _MemoryCartRepository extends CartRepository {
   _MemoryCartRepository(this.items);
 
   List<CartItem> items;

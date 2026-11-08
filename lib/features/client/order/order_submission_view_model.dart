@@ -152,9 +152,11 @@ class OrderSubmissionViewModel extends ChangeNotifier {
   /// Chave da intenção ainda em aberto. Nula sem intenção guardada.
   String? get intentId => _intent?.id;
 
-  /// Só a confirmação da API liga este sinal. Esta classe não apaga item.
-  bool get shouldClearCart =>
-      _status == OrderSubmissionStatus.succeeded && _order != null && _confirmedItems != null;
+  /// Só a confirmação gravada liga este sinal. Esta classe não apaga item.
+  ///
+  /// Um 201 que não coube no arquivo fica de fora: limpar o carrinho nesse
+  /// caso apagaria a única cópia local da tentativa.
+  bool get shouldClearCart => canViewPersistedConfirmation && _confirmedItems != null;
 
   /// Primeiro envio, ou nova intenção depois de uma rejeição que não reteve a chave.
   ///
@@ -366,6 +368,49 @@ class OrderSubmissionViewModel extends ChangeNotifier {
     }
   }
 
+  /// A fotografia confirmada já foi retirada do carrinho e isso ficou gravado.
+  bool get cartReconciled => _terminal?.cartReconciled ?? false;
+
+  /// O pedido confirmado não tem identidade de linha e o carrinho ainda tem produtos.
+  ///
+  /// A conciliação não apaga esses produtos nem se declara concluída.
+  bool get legacyCartRemaining => _legacyCartRemaining;
+  var _legacyCartRemaining = false;
+
+  static const legacyCartMessage =
+      'Este pedido foi confirmado, mas o carrinho foi montado antes da identificação de cada item. '
+      'Não dá para separar com segurança o que já foi enviado. '
+      'Os produtos continuam no carrinho. Retire o que já foi pedido antes de começar outro.';
+
+  void noteLegacyCartRemaining(bool value) {
+    if (_disposed || _legacyCartRemaining == value) return;
+    _legacyCartRemaining = value;
+    _notify();
+  }
+
+  /// Marca a intenção concluída para a limpeza não subtrair de novo.
+  ///
+  /// Não notifica. Falha de gravação conserva o carrinho já alterado e impede
+  /// que outro clique repita a subtração neste processo.
+  Future<bool> markCartReconciled() async {
+    final terminal = _terminal;
+    if (terminal == null || terminal.phase != OrderIntentPhase.succeeded || !_terminalStored) {
+      return false;
+    }
+    if (terminal.cartReconciled) return true;
+    final marked = terminal.withCartReconciled();
+    try {
+      await _store.save(marked);
+    } on OrderIntentStoreException {
+      return false;
+    }
+    if (_disposed) return false;
+    _terminal = marked;
+    _intent = marked;
+    _terminalStored = true;
+    return true;
+  }
+
   /// Encerra a intenção confirmada para um pedido seguinte poder nascer.
   ///
   /// Não envia nada e não usa o carrinho. Se a limpeza do arquivo falha, a
@@ -379,6 +424,7 @@ class OrderSubmissionViewModel extends ChangeNotifier {
       _terminal = null;
       _terminalStored = false;
       _intent = null;
+      _legacyCartRemaining = false;
       _publish(status: OrderSubmissionStatus.idle);
     } catch (error, stackTrace) {
       if (_disposed) return;
@@ -504,7 +550,7 @@ class OrderSubmissionViewModel extends ChangeNotifier {
       id: _newIntentId(),
       createdAt: _now().toUtc(),
       table: table,
-      items: OrderRequest.itemMaps(items),
+      items: _storedItems(items),
     );
     _intent = intent;
     try {
@@ -726,6 +772,11 @@ class OrderSubmissionViewModel extends ChangeNotifier {
       resendBlocked: true,
     );
   }
+
+  List<Map<String, Object?>> _storedItems(List<CartItem> items) => [
+    for (final item in items)
+      {...item.toOrderItem().toJson(), if (item.lineId != null) 'lineId': item.lineId},
+  ];
 
   String _blockedMessage(OrderIntentBlock? reason) => switch (reason) {
     OrderIntentBlock.conflict => OrderSubmission.idempotencyConflictMessage,

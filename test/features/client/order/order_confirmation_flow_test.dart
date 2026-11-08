@@ -127,8 +127,7 @@ void main() {
       find.descendant(of: find.byType(OrderConfirmationView), matching: find.text('2×')),
       findsNothing,
     );
-    expect(lines.read().single.quantity, 2);
-    expect(lines.read().single.note, 'sem cebola');
+    expect(lines.read(), isEmpty);
 
     final action = find.text('Acompanhar pedido');
     await tester.scrollUntilVisible(action, 200);
@@ -172,7 +171,7 @@ void main() {
 
     expect(calls, 1);
     expect(find.byType(OrderConfirmationView), findsOneWidget);
-    expect(lines.read(), hasLength(1));
+    expect(lines.read(), isEmpty);
   });
 
   testWidgets('o 201 repetido não abre outra confirmação nem outro POST', (tester) async {
@@ -301,18 +300,22 @@ void main() {
     expect(find.text('order-real'), findsOneWidget);
     expect(find.text('Mesa 4'), findsOneWidget);
     expect(find.text('1×'), findsOneWidget);
-    expect(lines.read().single.quantity, 2);
+    expect(lines.read(), isEmpty);
+    await tester.scrollUntilVisible(find.text('Voltar ao início'), 200);
+    expect(find.text('Voltar ao início'), findsOneWidget);
+    expect(find.text('Fazer outro pedido'), findsOneWidget);
+
+    final stored = await store.load();
+    expect(stored!.order!.id, 'order-real');
+    expect(stored.phase.name, 'succeeded');
 
     Navigator.of(tester.element(find.byType(OrderConfirmationView))).pop();
     await tester.pumpAndSettle();
-    expect(find.text('Fazer outro pedido'), findsOneWidget);
-    expect(find.text('Ver confirmação'), findsOneWidget);
+    expect(find.byType(OrderConfirmationView), findsNothing);
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(find.text('dinna'), findsWidgets);
     expect(calls, 0);
-
-    await tester.tap(find.text('Ver confirmação'));
-    await tester.pumpAndSettle();
-    expect(find.byType(OrderConfirmationView), findsOneWidget);
-    expect(calls, 0);
+    expect((await store.load())!.order!.id, 'order-real');
   });
 
   testWidgets('resultado incerto não abre confirmação', (tester) async {
@@ -422,7 +425,7 @@ void main() {
     expect(calls, 1);
     expect(find.byType(OrderConfirmationView), findsOneWidget);
     expect(find.text('order-real'), findsOneWidget);
-    expect(lines.read().single.quantity, 1);
+    expect(lines.read(), isEmpty);
   });
 
   testWidgets('falha ao apagar o sucesso mantém o comprovante e bloqueia outro envio', (

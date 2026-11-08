@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/domain/cart_item.dart';
 import '../../../core/domain/order.dart';
 import '../../../shared/widgets/dinna_banner.dart';
 import '../../../shared/widgets/dinna_empty_state.dart';
 import '../../restaurant/order_format.dart';
 import '../order/order_submission_view_model.dart';
+import 'cart_repository.dart';
 import 'cart_session.dart';
 import 'cart_view_model.dart';
 
@@ -29,7 +31,9 @@ class CartView extends StatefulWidget {
     required this.onOpenMenu,
     this.cartSession,
     this.onOrderConfirmed,
+    this.reconcileCart,
     this.table,
+    this.reviewOnly = false,
   });
 
   final CartViewModel Function() createViewModel;
@@ -40,8 +44,17 @@ class CartView extends StatefulWidget {
   /// Abre `/order` com o pedido persistido. A rota fica no router.
   final Future<void> Function(BuildContext context, Order order)? onOrderConfirmed;
 
+  /// Concilia o carrinho uma vez antes de outro pedido. Nulo usa a sessão local.
+  final Future<bool> Function()? reconcileCart;
+
   /// Mesa recebida na navegação. Ausente até a tela da mesa entregar o valor.
   final String? table;
+
+  /// Revisão dos produtos que a conciliação não pôde separar.
+  ///
+  /// Não abre a confirmação sozinho, não envia outro POST e não apaga a
+  /// intenção já confirmada.
+  final bool reviewOnly;
 
   @override
   State<CartView> createState() => _CartViewState();
@@ -96,7 +109,7 @@ class _CartViewState extends State<CartView> {
 
   void _initializeViewModel() {
     _viewModel = widget.createViewModel();
-    unawaited(_viewModel!.resolveProducts());
+    unawaited(_viewModel!.resolveProducts(also: _submission.intentItems ?? const []));
   }
 
   Future<void> _retryRestore(CartSession session) async {
@@ -108,6 +121,11 @@ class _CartViewState extends State<CartView> {
   }
 
   void _onSubmission() {
+    final viewModel = _viewModel;
+    final intentItems = _submission.intentItems;
+    if (viewModel != null && intentItems != null && intentItems.isNotEmpty) {
+      unawaited(viewModel.resolveProducts(also: intentItems));
+    }
     _scheduleAutomaticConfirmation();
   }
 
@@ -132,6 +150,7 @@ class _CartViewState extends State<CartView> {
   /// arquivo. Resultado incerto, bloqueio e 201 sem arquivo não entram.
   /// Reconstrução e repetição da mesma intenção também não.
   void _scheduleAutomaticConfirmation() {
+    if (widget.reviewOnly) return;
     if (!mounted || widget.onOrderConfirmed == null || _confirmationFrame || _confirmationOpen) {
       return;
     }
@@ -188,7 +207,36 @@ class _CartViewState extends State<CartView> {
     _scheduleAutomaticConfirmation();
   }
 
-  Future<void> _beginAnother() => _submission.beginAnotherOrder();
+  Future<void> _beginAnother() async {
+    final reconcile = widget.reconcileCart;
+    if (reconcile != null) {
+      if (!await reconcile()) return;
+    } else {
+      final session = widget.cartSession;
+      final confirmed = _submission.confirmedItems;
+      if (session != null &&
+          confirmed != null &&
+          _submission.shouldClearCart &&
+          !_submission.cartReconciled) {
+        final intentId = _submission.intentId;
+        if (intentId == null) return;
+        try {
+          if (!session.isReady) await session.restore();
+          final result = await session.reconcileConfirmed(
+            intentId: intentId,
+            confirmedItems: confirmed,
+          );
+          if (result.outcome == CartReconciliation.unresolved && result.items.isNotEmpty) {
+            _submission.noteLegacyCartRemaining(true);
+            return;
+          }
+        } catch (_) {
+          return;
+        }
+      }
+    }
+    await _submission.beginAnotherOrder();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -247,6 +295,8 @@ class _CartViewState extends State<CartView> {
           final hasRows = viewModel.rows.isNotEmpty;
           final submission = _SubmissionSection(
             submission: _submission,
+            currentItems: viewModel.items,
+            estimate: viewModel.estimateFor,
             onSubmit: _submit,
             onResume: _resume,
             onBeginAnother: _beginAnother,
@@ -397,6 +447,8 @@ class _CartBody extends StatelessWidget {
 class _SubmissionSection extends StatelessWidget {
   const _SubmissionSection({
     required this.submission,
+    required this.currentItems,
+    required this.estimate,
     required this.onSubmit,
     required this.onResume,
     required this.onBeginAnother,
@@ -405,6 +457,8 @@ class _SubmissionSection extends StatelessWidget {
   });
 
   final OrderSubmissionViewModel submission;
+  final List<CartItem> currentItems;
+  final int? Function(List<CartItem> items) estimate;
   final VoidCallback onSubmit;
   final void Function(String intentId) onResume;
   final VoidCallback onBeginAnother;
@@ -438,6 +492,12 @@ class _SubmissionSection extends StatelessWidget {
             tone: DinnaBannerTone.info,
             title: 'Pedido enviado',
             message: 'O restaurante recebeu o pedido.',
+          ),
+        if (submission.legacyCartRemaining)
+          const DinnaBanner(
+            tone: DinnaBannerTone.warning,
+            title: 'Carrinho anterior',
+            message: OrderSubmissionViewModel.legacyCartMessage,
           ),
         if (received && onViewConfirmation != null) ...[
           const SizedBox(height: 12),
@@ -501,9 +561,11 @@ class _SubmissionSection extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Tentar o mesmo envio?'),
-        content: Text(
-          'O acesso foi recusado e o pedido não foi registrado. '
-          'A tentativa seguinte repete a mesma chave e estes itens:\n\n$lines',
+        content: SingleChildScrollView(
+          child: Text(
+            'O acesso foi recusado e o pedido não foi registrado. '
+            'A tentativa seguinte repete a mesma chave e estes itens:\n\n$lines',
+          ),
         ),
         actions: [
           TextButton(
@@ -521,12 +583,20 @@ class _SubmissionSection extends StatelessWidget {
   }
 
   Future<void> _confirmResume(BuildContext context, String intentId) async {
+    final intentItems = submission.intentItems ?? <CartItem>[];
+    final total = estimate(intentItems);
+    final differs = _cartDiffers(intentItems, currentItems);
     final accepted = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Reenviar o mesmo pedido?'),
-        content: const Text(
-          'O restaurante pode já ter recebido este pedido. O reenvio repete a mesma tentativa e não cria outro pedido.',
+        content: SingleChildScrollView(
+          child: Text(
+            'O restaurante pode já ter recebido este pedido. O reenvio repete a mesma chave e estes itens, sem alterar o payload:\n\n'
+            '${_itemLines(intentItems)}'
+            '${total == null ? '' : '\n\nTotal estimado: ${formatOrderTotal(total)}'}'
+            '${differs ? '\n\nO carrinho atual é diferente e não será enviado.' : ''}',
+          ),
         ),
         actions: [
           TextButton(
@@ -714,3 +784,28 @@ class _EstimatedTotal extends StatelessWidget {
 }
 
 String _countLabel(int count) => count == 1 ? '1 item' : '$count itens';
+
+String _itemLines(List<CartItem> items) {
+  final lines = StringBuffer();
+  for (final item in items) {
+    if (lines.isNotEmpty) lines.writeln();
+    final note = item.note;
+    final suffix = note == null || note.isEmpty ? '' : ' ($note)';
+    lines.write('${item.quantity}× ${item.productId}$suffix');
+  }
+  return lines.toString();
+}
+
+bool _cartDiffers(List<CartItem> intentItems, List<CartItem> cartItems) {
+  if (intentItems.length != cartItems.length) return true;
+  for (var index = 0; index < intentItems.length; index++) {
+    final intentItem = intentItems[index];
+    final cartItem = cartItems[index];
+    if (intentItem.productId != cartItem.productId ||
+        intentItem.quantity != cartItem.quantity ||
+        intentItem.note != cartItem.note) {
+      return true;
+    }
+  }
+  return false;
+}

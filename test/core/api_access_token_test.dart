@@ -477,7 +477,7 @@ void main() {
   });
 }
 
-class _RecordingCartRepository implements CartRepository {
+class _RecordingCartRepository extends CartRepository {
   _RecordingCartRepository(this.items);
 
   List<CartItem> items;

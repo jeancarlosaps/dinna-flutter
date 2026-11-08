@@ -30,6 +30,7 @@ final class OrderIntent {
     this.block,
     this.order,
     this.rejection,
+    this.cartReconciled = false,
   }) : items = List<Map<String, Object?>>.unmodifiable([
          // Map.unmodifiable é uma vista. A cópia impede que o mapa do
          // chamador altere o body ligado a esta chave.
@@ -59,6 +60,9 @@ final class OrderIntent {
     if (rejection != null && phase != OrderIntentPhase.pending) {
       throw FormatException('rejeição fora de uma intenção pendente');
     }
+    if (cartReconciled && phase != OrderIntentPhase.succeeded) {
+      throw FormatException('conciliação do carrinho fora de uma intenção concluída');
+    }
     for (final item in this.items) {
       // Valida o domínio e preserva o mapa original, inclusive note omitida.
       CartItem.fromJson(item);
@@ -81,6 +85,9 @@ final class OrderIntent {
 
   /// Preenchida quando a API recusou o acesso e a mesma tentativa continua válida.
   final OrderIntentRejection? rejection;
+
+  /// A fotografia confirmada já saiu do carrinho uma vez.
+  final bool cartReconciled;
 
   factory OrderIntent.pending({
     required String id,
@@ -112,6 +119,7 @@ final class OrderIntent {
       block: block,
       order: orderValue == null ? null : Order.fromJson(orderValue),
       rejection: _rejection(map['rejection']),
+      cartReconciled: _cartReconciled(map['cartReconciled']),
     );
   }
 
@@ -129,17 +137,18 @@ final class OrderIntent {
 
   Map<String, Object?> get body => {
     'table': table,
-    'items': <Object?>[for (final item in items) Map<String, Object?>.of(item)],
+    'items': <Object?>[
+      for (final item in items)
+        {
+          'productId': item['productId'],
+          'quantity': item['quantity'],
+          if (item.containsKey('note')) 'note': item['note'],
+        },
+    ],
   };
 
-  List<CartItem> get cartItems => List<CartItem>.unmodifiable([
-    for (final item in items)
-      CartItem(
-        productId: item['productId']! as String,
-        quantity: item['quantity']! as int,
-        note: item.containsKey('note') ? item['note'] as String? : null,
-      ),
-  ]);
+  List<CartItem> get cartItems =>
+      List<CartItem>.unmodifiable([for (final item in items) CartItem.fromJson(item)]);
 
   OrderIntent uncertain() {
     return OrderIntent(
@@ -173,6 +182,20 @@ final class OrderIntent {
     );
   }
 
+  OrderIntent withCartReconciled() {
+    return OrderIntent(
+      id: id,
+      createdAt: createdAt,
+      phase: phase,
+      table: table,
+      items: items,
+      block: block,
+      order: order,
+      rejection: rejection,
+      cartReconciled: true,
+    );
+  }
+
   OrderIntent blocked(OrderIntentBlock reason) {
     return OrderIntent(
       id: id,
@@ -194,6 +217,7 @@ final class OrderIntent {
     if (block != null) 'block': block!.name,
     if (order != null) 'order': order!.toJson(),
     if (rejection != null) 'rejection': rejection!.name,
+    if (cartReconciled) 'cartReconciled': true,
   };
 }
 
@@ -204,6 +228,12 @@ OrderIntentPhase _phase(String name) {
     if (phase.name == name) return phase;
   }
   throw FormatException('fase de intenção desconhecida');
+}
+
+bool _cartReconciled(Object? value) {
+  if (value == null) return false;
+  if (value is! bool) throw FormatException('conciliação do carrinho inválida');
+  return value;
 }
 
 OrderIntentRejection? _rejection(Object? value) {
