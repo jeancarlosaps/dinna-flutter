@@ -184,9 +184,8 @@ void main() {
     expect(cartButton, findsOneWidget);
     expect(tester.getRect(cartButton).bottom, lessThanOrEqualTo(220));
 
-    final menuScroll = find.descendant(
-      of: find.byType(CustomScrollView),
-      matching: find.byType(Scrollable),
+    final menuScroll = find.byWidgetPredicate(
+      (widget) => widget is Scrollable && widget.axisDirection == AxisDirection.down,
     );
     await tester.scrollUntilVisible(find.text('Suco'), 40, scrollable: menuScroll);
     expect(find.text('Suco'), findsOneWidget);
@@ -422,9 +421,8 @@ void main() {
     await tester.scrollUntilVisible(
       find.text('Esgotado'),
       80,
-      scrollable: find.descendant(
-        of: find.byType(CustomScrollView),
-        matching: find.byType(Scrollable),
+      scrollable: find.byWidgetPredicate(
+        (widget) => widget is Scrollable && widget.axisDirection == AxisDirection.down,
       ),
     );
     final sold = find.byWidgetPredicate((widget) => widget is Text && widget.data == 'Esgotado');
