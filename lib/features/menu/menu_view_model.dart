@@ -77,6 +77,7 @@ class MenuViewModel extends ChangeNotifier {
   }
 
   Future<void> load() async {
+    if (_disposed) return;
     final generation = ++_loadGeneration;
     _status = MenuStatus.loading;
     _errorMessage = null;
@@ -97,6 +98,10 @@ class MenuViewModel extends ChangeNotifier {
     } else {
       _status = MenuStatus.ready;
       _products = products;
+      // Categoria que sumiu do cardápio novo volta para "Todos".
+      if (!products.any((product) => product.category == _selectedCategory)) {
+        _selectedCategory = null;
+      }
     }
     notifyListeners();
   }

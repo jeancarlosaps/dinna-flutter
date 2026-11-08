@@ -172,4 +172,53 @@ void main() {
     expect(viewModel.groupedMatches(), isEmpty);
     expect(notified, 1);
   });
+
+  test('categoria que sumiu ao recarregar volta para todos', () async {
+    var calls = 0;
+    final viewModel = MenuViewModel(
+      FakeProductRepository(() async {
+        calls++;
+        if (calls == 1) {
+          return ProductList.ready([_product('1', 'Pizzas'), _product('2', 'Saladas')]);
+        }
+        return ProductList.ready([_product('1', 'Pizzas')]);
+      }),
+    );
+    await viewModel.load();
+    viewModel.selectCategory('Saladas');
+
+    await viewModel.load();
+
+    expect(viewModel.selectedCategory, isNull);
+    expect(viewModel.visibleProducts.map((p) => p.id), ['1']);
+  });
+
+  test('categoria que continua no cardápio fica escolhida ao recarregar', () async {
+    final viewModel = MenuViewModel(
+      FakeProductRepository(
+        () async => ProductList.ready([_product('1', 'Pizzas'), _product('2', 'Saladas')]),
+      ),
+    );
+    await viewModel.load();
+    viewModel.selectCategory('Saladas');
+
+    await viewModel.load();
+
+    expect(viewModel.selectedCategory, 'Saladas');
+  });
+
+  test('load depois do dispose não consulta nem notifica', () async {
+    var calls = 0;
+    final viewModel = MenuViewModel(
+      FakeProductRepository(() async {
+        calls++;
+        return ProductList.ready(const []);
+      }),
+    )..dispose();
+
+    await viewModel.load();
+
+    expect(calls, 0);
+    expect(viewModel.status, MenuStatus.loading);
+  });
 }
