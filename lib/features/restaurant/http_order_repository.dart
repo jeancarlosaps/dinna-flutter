@@ -30,6 +30,9 @@ class HttpOrderRepository implements OrderRepository {
 
   static const routeNotFoundCode = 'NOT_FOUND';
 
+  /// Código do hook `onRequest` quando o token está ausente ou é inválido.
+  static const unauthorizedCode = 'UNAUTHORIZED';
+
   static const idempotencyConflictCode = 'IDEMPOTENCY_KEY_CONFLICT';
 
   static const idempotencyInvalidCode = 'IDEMPOTENCY_STATE_INVALID';
@@ -114,6 +117,17 @@ class HttpOrderRepository implements OrderRepository {
       return const OrderSubmission.blocked(
         OrderSubmission.unreadableServerErrorMessage,
         failure: DataFailure.unavailable,
+      );
+    }
+
+    // O hook atual responde 401 UNAUTHORIZED antes de registrar o pedido.
+    // Sem esse código, um 401 não prova a mesma coisa e segue incerto.
+    if (!error.outcomeUncertain && status == 401 && code == unauthorizedCode) {
+      return OrderSubmission.failed(
+        OrderSubmission.unauthorizedRejectionMessage,
+        failure: DataFailure.unavailable,
+        detail: error.detail ?? error.message,
+        retainsIntent: true,
       );
     }
 

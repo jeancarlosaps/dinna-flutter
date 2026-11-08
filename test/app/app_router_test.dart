@@ -429,7 +429,7 @@ Future<void> _tapMenuText(WidgetTester tester, String text) async {
   await tester.pumpAndSettle();
 }
 
-class _RouterCartRepository implements CartRepository {
+class _RouterCartRepository extends CartRepository {
   final items = <CartItem>[];
 
   @override

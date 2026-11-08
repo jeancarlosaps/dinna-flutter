@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:dinna/core/domain/cart_item.dart';
 import 'package:dinna/core/domain/data_failure.dart';
+import 'package:dinna/features/client/order/order_intent.dart';
+import 'package:dinna/features/client/order/order_intent_store.dart';
 import 'package:dinna/features/client/order/order_submission_view_model.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -375,4 +377,161 @@ void main() {
     expect(repository.createCalls, 0);
     expect(() => repository.create(table: '12', items: items), throwsA(isA<UnsupportedError>()));
   });
+
+  const recoveredId = '00000000-0000-4000-8000-0000000000aa';
+  final fixedNow = DateTime.utc(2026, 11, 8, 12, 30);
+
+  OrderIntent pendingIntent() {
+    return OrderIntent.pending(
+      id: recoveredId,
+      createdAt: DateTime.utc(2026, 11, 8, 12),
+      table: '12',
+      items: const [
+        {'productId': 'p1', 'quantity': 2, 'note': 'sem cebola'},
+      ],
+    );
+  }
+
+  test('pending recuperado sem rejeição continua incerto depois do 401', () async {
+    final store = MemoryOrderIntentStore();
+    await store.save(pendingIntent());
+    final orders = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async {
+        return const OrderSubmission.failed(
+          OrderSubmission.unauthorizedRejectionMessage,
+          retainsIntent: true,
+        );
+      },
+    );
+    final viewModel = OrderSubmissionViewModel(
+      orders,
+      intentStore: store,
+      newIntentId: () => '00000000-0000-4000-8000-0000000000bb',
+      now: () => fixedNow,
+    );
+    addTearDown(viewModel.dispose);
+
+    await viewModel.restore();
+    await viewModel.resume(recoveredId);
+
+    expect(orders.lastIdempotencyKey, recoveredId);
+    expect(orders.createCalls, 1);
+    expect(viewModel.outcomeUncertain, isTrue);
+    expect(viewModel.authRejected, isFalse);
+    expect(viewModel.errorMessage, contains('pode ter sido registrado'));
+    expect(viewModel.canRequestSubmit, isFalse);
+    final stored = await store.load();
+    expect(stored?.id, recoveredId);
+    expect(stored?.phase, OrderIntentPhase.uncertain);
+    expect(stored?.rejection, isNull);
+  });
+
+  test('intenção expirada não reenvia o 401', () async {
+    final store = MemoryOrderIntentStore();
+    await store.save(pendingIntent());
+    final orders = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async {
+        return const OrderSubmission.failed(
+          OrderSubmission.unauthorizedRejectionMessage,
+          retainsIntent: true,
+        );
+      },
+    );
+    final viewModel = OrderSubmissionViewModel(
+      orders,
+      intentStore: store,
+      newIntentId: () => '00000000-0000-4000-8000-0000000000bb',
+      now: () => fixedNow.add(const Duration(hours: 23)),
+    );
+    addTearDown(viewModel.dispose);
+
+    await viewModel.restore();
+    await viewModel.resume(recoveredId);
+
+    expect(orders.createCalls, 0);
+    expect(viewModel.outcomeUncertain, isFalse);
+    expect(viewModel.authRejected, isFalse);
+    expect((await store.load())!.phase, OrderIntentPhase.blocked);
+  });
+
+  test('201 não gravado e timeout sem marca de incerto não viram recusa no 401', () async {
+    Future<void> recover(int failAt, OrderSubmission first) async {
+      final inner = MemoryOrderIntentStore();
+      final store = _FailNthSave(inner, failAt: failAt);
+      final firstModel = OrderSubmissionViewModel(
+        FakeOrderRepository(
+          () async => OrderList.ready(const []),
+          onCreate: ({required table, required items}) async => first,
+        ),
+        intentStore: store,
+        newIntentId: () => recoveredId,
+      );
+      addTearDown(firstModel.dispose);
+      await firstModel.submit(table: '12', items: items);
+      expect(await inner.load(), isNotNull);
+      expect((await inner.load())!.phase, OrderIntentPhase.pending);
+      expect((await inner.load())!.rejection, isNull);
+
+      final orders = FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async {
+          return const OrderSubmission.failed(
+            OrderSubmission.unauthorizedRejectionMessage,
+            retainsIntent: true,
+          );
+        },
+      );
+      final resumed = OrderSubmissionViewModel(
+        orders,
+        intentStore: inner,
+        newIntentId: () => '00000000-0000-4000-8000-0000000000bb',
+      );
+      addTearDown(resumed.dispose);
+      await resumed.restore();
+      await resumed.resume(recoveredId);
+
+      expect(orders.createCalls, 1);
+      expect(orders.lastIdempotencyKey, recoveredId);
+      expect(resumed.outcomeUncertain, isTrue);
+      expect(resumed.authRejected, isFalse);
+      expect(resumed.errorMessage, contains('pode ter sido registrado'));
+      expect((await inner.load())!.phase, OrderIntentPhase.uncertain);
+      expect((await inner.load())!.rejection, isNull);
+    }
+
+    await recover(2, OrderSubmission.created(sampleOrder(id: 'order-real')));
+    await recover(
+      2,
+      const OrderSubmission.failed(
+        OrderSubmission.uncertainOutcomeMessage,
+        failure: DataFailure.uncertain,
+        outcomeUncertain: true,
+      ),
+    );
+  });
+}
+
+final class _FailNthSave implements OrderIntentStore {
+  _FailNthSave(this.inner, {required this.failAt});
+
+  final MemoryOrderIntentStore inner;
+  final int failAt;
+  var saves = 0;
+
+  @override
+  Future<void> clear() => inner.clear();
+
+  @override
+  Future<OrderIntent?> load() => inner.load();
+
+  @override
+  Future<void> save(OrderIntent intent) async {
+    saves++;
+    if (saves == failAt) {
+      throw const OrderIntentStoreException(OrderIntentStoreProblem.unwritable);
+    }
+    await inner.save(intent);
+  }
 }

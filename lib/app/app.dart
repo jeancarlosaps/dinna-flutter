@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../features/client/cart/cart_lines.dart';
 import '../features/client/cart/cart_session.dart';
+import '../features/client/order/confirmed_cart_cleanup.dart';
 import '../features/client/order/order_intent_store.dart';
 import '../features/client/order/order_submission_view_model.dart';
 import '../features/home/api_status_repository.dart';
@@ -65,6 +66,7 @@ class _DinnaAppState extends State<DinnaApp> {
   CartLines? _cartLines;
   CartSession? _cartSession;
   late final OrderSubmissionViewModel _submission;
+  ConfirmedCartCleanup? _cartCleanup;
 
   @override
   void initState() {
@@ -78,6 +80,11 @@ class _DinnaAppState extends State<DinnaApp> {
       widget.orderRepository,
       intentStore: widget.orderIntentStore,
     );
+    _cartCleanup = ConfirmedCartCleanup(
+      submission: _submission,
+      session: _cartSession,
+      lines: _cartLines,
+    )..attach();
     unawaited(_submission.restore());
   }
 
@@ -91,6 +98,7 @@ class _DinnaAppState extends State<DinnaApp> {
 
   @override
   void dispose() {
+    _cartCleanup?.detach();
     _cartSession?.dispose();
     _submission.dispose();
     super.dispose();
@@ -115,6 +123,7 @@ class _DinnaAppState extends State<DinnaApp> {
         recommendationRepository: widget.recommendationRepository,
         recommendationPreferencesStore: widget.recommendationPreferencesStore,
         pollDelay: widget.pollDelay,
+        reconcileCart: () => _cartCleanup?.reconcile() ?? Future<bool>.value(false),
       ).onGenerateRoute,
     );
   }

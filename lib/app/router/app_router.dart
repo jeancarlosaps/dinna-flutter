@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../core/domain/order.dart';
 import '../../features/client/cart/cart_lines.dart';
+import '../../features/client/cart/cart_repository.dart';
 import '../../features/client/cart/cart_session.dart';
 import '../../features/client/cart/cart_view.dart';
 import '../../features/client/cart/cart_view_model.dart';
+import '../../features/client/order/confirmed_cart_cleanup.dart';
 import '../../features/client/order/order_confirmation_view.dart';
 import '../../features/client/order/order_submission_view_model.dart';
 import '../../features/client/order/order_tracking_view.dart';
@@ -106,6 +108,7 @@ class AppRouter {
     this.recommendationRepository,
     this.recommendationPreferencesStore,
     this.pollDelay,
+    this.reconcileCart,
   }) : assert(cartSession == null || cartLines == null);
 
   final ApiStatusRepository apiStatusRepository;
@@ -126,6 +129,9 @@ class AppRouter {
   /// Nulo deixa o formulário só na memória deste ViewModel.
   final RecommendationPreferencesStore? recommendationPreferencesStore;
   final Future<void> Function(Duration duration)? pollDelay;
+
+  /// Concilia o carrinho confirmado uma vez. Nulo mantém a limpeza local da rota.
+  final Future<bool> Function()? reconcileCart;
 
   /// Sempre devolve uma rota. Nome fora do mapa cai em [UnknownRouteView].
   Route<dynamic> onGenerateRoute(RouteSettings settings) {
@@ -168,13 +174,20 @@ class AppRouter {
             : CartViewModel.persisted(productRepository, session: cartSession!),
         cartSession: cartSession,
         submission: orderSubmission,
-        table: _tableArgument(settings.arguments),
+        table: _cartTable(settings.arguments),
+        reviewOnly: _cartReviewOnly(settings.arguments),
         onOpenMenu: (context) =>
             Navigator.of(context)
                 .pushNamed(AppRoutes.menu, arguments: _tableArgument(settings.arguments)),
         onOrderConfirmed: _openConfirmation,
+        reconcileCart: reconcileCart,
       ),
-      AppRoutes.order => OrderConfirmationView(onTrack: _openTracking),
+      AppRoutes.order => OrderConfirmationView(
+        onTrack: _openTracking,
+        onGoHome: _goHome,
+        onStartAnother: _startAnotherOrder,
+        submission: orderSubmission,
+      ),
       AppRoutes.orderTracking => const OrderTrackingView(),
       AppRoutes.restaurant => OrdersQueueView(
         createViewModel: () => OrdersQueueViewModel(orderRepository, delay: pollDelay),
@@ -189,6 +202,15 @@ class AppRouter {
     };
   }
 
+  String? _cartTable(Object? arguments) {
+    if (arguments is CartRouteArgs) return _tableArgument(arguments.table);
+    return _tableArgument(arguments);
+  }
+
+  bool _cartReviewOnly(Object? arguments) {
+    return arguments is CartRouteArgs && arguments.reviewOnly;
+  }
+
   /// A navegação entrega a mesa como [String]. Outro argumento não é mesa.
   String? _tableArgument(Object? arguments) {
     if (arguments is! String) return null;
@@ -197,8 +219,64 @@ class AppRouter {
   }
 
   Future<void> _openConfirmation(BuildContext context, Order order) async {
+    await Navigator.of(context).pushNamedAndRemoveUntil(
+      AppRoutes.order,
+      (route) => route.settings.name == AppRoutes.home,
+      arguments: OrderConfirmationArgs(order: order),
+    );
+  }
+
+  void _goHome(BuildContext context) {
+    Navigator.of(context)
+        .popUntil((route) => route.settings.name == AppRoutes.home || route.isFirst);
+  }
+
+  Future<void> _startAnotherOrder(BuildContext context) async {
+    if (!orderSubmission.canBeginAnotherOrder) return;
+    if (orderSubmission.legacyCartRemaining) {
+      final cart = cartSession;
+      if (cart != null && cart.isReady && cart.read().isNotEmpty) {
+        if (!context.mounted) return;
+        await Navigator.of(context).pushNamed(
+          AppRoutes.cart,
+          arguments: CartRouteArgs(table: orderSubmission.order?.table, reviewOnly: true),
+        );
+        return;
+      }
+    }
+    final reconcile = reconcileCart;
+    if (reconcile != null) {
+      if (!await reconcile()) return;
+    } else {
+      final confirmed = orderSubmission.confirmedItems;
+      final cart = cartSession;
+      if (cart != null && confirmed != null && !orderSubmission.cartReconciled) {
+        final intentId = orderSubmission.intentId;
+        if (intentId == null) return;
+        try {
+          if (!cart.isReady) await cart.restore();
+          final result = await cart.reconcileConfirmed(
+            intentId: intentId,
+            confirmedItems: confirmed,
+          );
+          if (result.outcome == CartReconciliation.unresolved && result.items.isNotEmpty) {
+            orderSubmission.noteLegacyCartRemaining(true);
+            return;
+          }
+        } catch (_) {
+          return;
+        }
+      }
+      final memory = cartLines;
+      if (cart == null && memory != null && confirmed != null && !orderSubmission.cartReconciled) {
+        final current = memory.read();
+        if (!memory.replace(current, withoutConfirmedItems(current, confirmed))) return;
+      }
+    }
+    await orderSubmission.beginAnotherOrder();
+    if (!context.mounted || orderSubmission.status != OrderSubmissionStatus.idle) return;
     await Navigator.of(context)
-        .pushNamed(AppRoutes.order, arguments: OrderConfirmationArgs(order: order));
+        .pushNamedAndRemoveUntil(AppRoutes.table, (route) => route.settings.name == AppRoutes.home);
   }
 
   Future<void> _openTracking(BuildContext context, Order order) async {

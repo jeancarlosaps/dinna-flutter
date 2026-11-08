@@ -28,6 +28,16 @@ final class RestaurantOrderArgs {
   final Order order;
 }
 
+/// Abertura do carrinho. [reviewOnly] impede a confirmação automática.
+///
+/// A mesa continua opcional. Sem este objeto, a rota aceita a mesa como [String].
+final class CartRouteArgs {
+  const CartRouteArgs({this.table, this.reviewOnly = false});
+
+  final String? table;
+  final bool reviewOnly;
+}
+
 /// Pedido que a API já confirmou e o envio gravou.
 ///
 /// A confirmação lê este valor e não repete `POST /orders` nem `GET /orders`.

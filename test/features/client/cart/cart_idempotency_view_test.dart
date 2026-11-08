@@ -92,8 +92,10 @@ void main() {
     expect(sent, hasLength(2));
     expect(sent.last.single.quantity, 1);
     expect(sent.last.single.note, 'sem cebola');
-    expect(find.text('Pedido enviado', skipOffstage: false), findsOneWidget);
-    expect(lines.read().single.quantity, 2);
+    expect(find.text('Pedido recebido'), findsWidgets);
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(find.byType(OrderConfirmationView), findsOneWidget);
+    expect(lines.read().single.quantity, 1);
   });
 
   testWidgets('reiniciar o app recupera o envio incerto e mantém o carrinho', (tester) async {
@@ -157,28 +159,29 @@ void main() {
     await tester.tap(find.text('Enviar pedido'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Pedido enviado', skipOffstage: false), findsOneWidget);
+    expect(find.text('Pedido recebido'), findsWidgets);
     expect(find.text('Enviar pedido'), findsNothing);
     expect(find.byType(OrderConfirmationView), findsOneWidget);
     expect(sent, hasLength(1));
+    expect(lines.read(), isEmpty);
 
-    Navigator.of(tester.element(find.byType(OrderConfirmationView))).pop();
-    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Fazer outro pedido'), 200);
     await tester.tap(find.text('Fazer outro pedido'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Pedido enviado'), findsNothing);
-    expect(find.text('Enviar pedido'), findsOneWidget);
+    expect(find.text('Qual é a sua mesa?'), findsOneWidget);
+    expect(find.text('Pedido recebido'), findsNothing);
+    expect(find.text('Enviar pedido'), findsNothing);
     expect(sent, hasLength(1));
+    expect(lines.read(), isEmpty);
 
-    await tester.tap(find.byTooltip('Aumentar quantidade'));
-    await tester.pump();
-    await tester.tap(find.text('Enviar pedido'));
+    Navigator.of(tester.element(find.text('Qual é a sua mesa?')))
+        .pushNamed(AppRoutes.cart, arguments: '12');
     await tester.pumpAndSettle();
 
-    expect(sent, hasLength(2));
-    expect(sent.last.single.quantity, 2);
-    expect(find.text('Pedido enviado', skipOffstage: false), findsOneWidget);
+    expect(find.text('Seu carrinho está vazio'), findsOneWidget);
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(sent, hasLength(1));
   });
 
   testWidgets('o diálogo aberto ainda publica expiração e relógio para trás', (tester) async {

@@ -843,7 +843,7 @@ void main() {
   });
 }
 
-class _MutableMenuCart implements CartRepository {
+class _MutableMenuCart extends CartRepository {
   _MutableMenuCart(List<CartItem> seed) : items = List<CartItem>.of(seed), _next = seed.length + 1;
 
   List<CartItem> items;
@@ -880,7 +880,7 @@ class _MutableMenuCart implements CartRepository {
       List<CartItem>.unmodifiable(items);
 }
 
-class _MenuCartRepository implements CartRepository {
+class _MenuCartRepository extends CartRepository {
   bool failLoad = false;
 
   @override
