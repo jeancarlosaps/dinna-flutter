@@ -21,6 +21,7 @@ import 'product_image.dart';
 /// carrinho e mostra a quantidade e o total estimados.
 ///
 /// Tocar um produto abre o detalhe em bottom sheet com [createDetailViewModel].
+/// O campo de busca filtra os cards pelo nome, junto com a categoria escolhida.
 /// [onOpenRecommendation] abre "Me ajuda a escolher" sem trocar o cardápio.
 class MenuView extends StatefulWidget {
   const MenuView({
@@ -54,6 +55,7 @@ class MenuView extends StatefulWidget {
 
 class _MenuViewState extends State<MenuView> {
   late final MenuViewModel _viewModel;
+  final _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -70,8 +72,14 @@ class _MenuViewState extends State<MenuView> {
   @override
   void dispose() {
     widget.cartSession?.removeListener(_onCartSessionChanged);
+    _searchController.dispose();
     _viewModel.dispose();
     super.dispose();
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    _viewModel.search('');
   }
 
   void Function(Product)? get _openProduct {
@@ -236,6 +244,8 @@ class _MenuViewState extends State<MenuView> {
                     ),
                     MenuStatus.ready => _MenuContent(
                       viewModel: _viewModel,
+                      searchController: _searchController,
+                      onClearSearch: _clearSearch,
                       onOpenProduct: _openProduct,
                       banner: displacedTable,
                       recommendation: recommendation,
@@ -325,12 +335,16 @@ class _CartAccessBar extends StatelessWidget {
 class _MenuContent extends StatelessWidget {
   const _MenuContent({
     required this.viewModel,
+    required this.searchController,
+    required this.onClearSearch,
     required this.onOpenProduct,
     this.banner,
     this.recommendation,
   });
 
   final MenuViewModel viewModel;
+  final TextEditingController searchController;
+  final VoidCallback onClearSearch;
   final ValueChanged<Product>? onOpenProduct;
   final Widget? banner;
   final Widget? recommendation;
@@ -338,18 +352,40 @@ class _MenuContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selected = viewModel.selectedCategory;
-    final sections = selected == null ? viewModel.categories : [selected];
     final headingStyle = Theme.of(context).textTheme.titleMedium;
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final grouped = viewModel.groupedProducts();
+        final grouped = viewModel.groupedMatches();
+        final sections = [
+          for (final category in selected == null ? viewModel.categories : [selected])
+            if ((grouped[category] ?? const []).isNotEmpty) category,
+        ];
         final grid = _gridMetrics(context, constraints.maxWidth - 32);
         return CustomScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           slivers: [
             if (recommendation != null) SliverToBoxAdapter(child: recommendation),
             if (banner != null) SliverToBoxAdapter(child: banner),
+            SliverToBoxAdapter(
+              child: _SearchField(
+                controller: searchController,
+                onChanged: viewModel.search,
+                onClear: onClearSearch,
+              ),
+            ),
             SliverToBoxAdapter(child: _CategoryStrip(viewModel: viewModel)),
+            if (sections.isEmpty)
+              SliverToBoxAdapter(
+                child: DinnaEmptyState(
+                  icon: Icons.search_off,
+                  title: 'Nenhum produto encontrado',
+                  message: _noMatchMessage(viewModel.query, selected),
+                  actionLabel: 'Limpar busca',
+                  onAction: onClearSearch,
+                  centered: false,
+                ),
+              ),
             for (final category in sections) ...[
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
@@ -376,6 +412,47 @@ class _MenuContent extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// Busca sem resultado diz o que foi buscado e, com filtro, em qual categoria.
+String _noMatchMessage(String query, String? category) {
+  final where = category == null ? '' : ' em ${_categoryLabel(category)}';
+  return 'Nenhum prato com “${query.trim()}”$where. Confira o nome ou limpe a busca.';
+}
+
+/// Campo de busca pelo nome. O botão de limpar só aparece com texto.
+class _SearchField extends StatelessWidget {
+  const _SearchField({required this.controller, required this.onChanged, required this.onClear});
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: ValueListenableBuilder<TextEditingValue>(
+        valueListenable: controller,
+        builder: (context, value, _) => TextField(
+          controller: controller,
+          onChanged: onChanged,
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            hintText: 'Buscar pelo nome',
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: value.text.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Limpar busca',
+                    icon: const Icon(Icons.close),
+                    onPressed: onClear,
+                  ),
+          ),
+        ),
+      ),
     );
   }
 }
