@@ -107,7 +107,8 @@ class LastOrderSession extends ChangeNotifier {
       _order = enriched;
       _errorMessage = null;
       await _persistRecoveredNumber(loaded, enriched);
-    } on Object {
+    } on Object catch (error) {
+      if (error is Error) rethrow;
       if (_disposed) return;
       if (_pendingSave == null) _errorMessage = readFailureMessage;
     } finally {
@@ -129,7 +130,7 @@ class LastOrderSession extends ChangeNotifier {
       final number = await lookup(loaded.id);
       if (number == null || number < 1) return loaded;
       return loaded.withOrderNumber(number);
-    } on Object {
+    } on Exception {
       return loaded;
     }
   }
@@ -142,7 +143,7 @@ class LastOrderSession extends ChangeNotifier {
     if (_pendingSave != null) return;
     try {
       await _store.save(enriched);
-    } on Object {
+    } on Exception {
       // A linha antiga continua válida. O número fica disponível nesta execução.
     }
   }

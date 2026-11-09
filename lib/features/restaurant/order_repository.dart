@@ -180,7 +180,7 @@ abstract final class OrderRequest {
 }
 
 /// Pedido consultado, ou a falha já traduzida. Não carrega status HTTP.
-class OrderLookup {
+final class OrderLookup {
   OrderLookup.ready(Order order) : this._(order: order);
 
   const OrderLookup.unavailable(

@@ -522,7 +522,7 @@ void main() {
     await handle.insert(DinnaDatabase.lastOrdersTable, {'id': 1, 'order_json': raw});
     final session = LastOrderSession(
       SqfliteLastOrderStore(database: database),
-      orderNumberLookup: (_) async => throw StateError('sem rede'),
+      orderNumberLookup: (_) async => throw Exception('sem rede'),
     );
     addTearDown(session.dispose);
 
@@ -542,6 +542,61 @@ void main() {
     expect(quiet.order, legacy);
     expect((await handle.query(DinnaDatabase.lastOrdersTable)).single['order_json'], raw);
   });
+
+  test('erro de programação ao recuperar o número não é engolido', () async {
+    final legacy = sampleOrder(id: 'o_antigo', table: '4');
+    final store = _FixedLastOrderStore(legacy);
+    final session = LastOrderSession(
+      store,
+      orderNumberLookup: (_) async => throw StateError('contrato'),
+    );
+    addTearDown(session.dispose);
+
+    await expectLater(session.restore(), throwsA(isA<StateError>()));
+
+    expect(session.order, isNull);
+    expect(await store.load(), legacy);
+  });
+
+  test('falha operacional ao gravar o número recuperado preserva a fotografia', () async {
+    final legacy = sampleOrder(id: 'o_antigo', table: '4');
+    final store = _FixedLastOrderStore(legacy, saveError: Exception('disco'));
+    final session = LastOrderSession(store, orderNumberLookup: (_) async => 5);
+    addTearDown(session.dispose);
+
+    await session.restore();
+
+    expect(session.order, legacy.withOrderNumber(5));
+    expect(session.errorMessage, isNull);
+    expect(await store.load(), legacy);
+  });
+
+  test('erro de programação ao gravar o número recuperado não é engolido', () async {
+    final legacy = sampleOrder(id: 'o_antigo', table: '4');
+    final store = _FixedLastOrderStore(legacy, saveError: StateError('disco'));
+    final session = LastOrderSession(store, orderNumberLookup: (_) async => 5);
+    addTearDown(session.dispose);
+
+    await expectLater(session.restore(), throwsA(isA<StateError>()));
+    expect(await store.load(), legacy);
+  });
+}
+
+final class _FixedLastOrderStore implements LastOrderStore {
+  _FixedLastOrderStore(this.loaded, {this.saveError});
+
+  Order? loaded;
+  final Object? saveError;
+
+  @override
+  Future<Order?> load() async => loaded;
+
+  @override
+  Future<void> save(Order order) async {
+    final error = saveError;
+    if (error != null) throw error;
+    loaded = order;
+  }
 }
 
 final class _UnexpectedSaveFailureStore implements LastOrderStore {
