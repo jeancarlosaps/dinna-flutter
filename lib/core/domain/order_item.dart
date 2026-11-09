@@ -1,14 +1,22 @@
 import 'json_values.dart';
 
 const _noteMaxLength = 200;
+const _nameMaxLength = 120;
 
 /// Item de um pedido (`OrderItem` no contrato REST).
 ///
-/// O carrinho local é outro tipo e só chega aqui pela conversão explícita
-/// antes de `POST /orders`. Não há preço neste objeto; o total do pedido
-/// vem em `totalCents`.
+/// O body de `POST /orders` manda só `productId`, `quantity` e `note` opcional.
+/// A resposta de `GET /orders` também traz `name`, `unitPriceCents` e
+/// `lineTotalCents` já resolvidos pela API.
 final class OrderItem {
-  OrderItem({required this.productId, required this.quantity, required this.note}) {
+  OrderItem({
+    required this.productId,
+    required this.quantity,
+    required this.note,
+    this.name,
+    this.unitPriceCents,
+    this.lineTotalCents,
+  }) {
     if (productId.isEmpty) {
       throw ArgumentError.value(productId, 'productId', 'productId deve ter ao menos 1 caractere');
     }
@@ -23,6 +31,22 @@ final class OrderItem {
         'note deve ter no máximo $_noteMaxLength caracteres',
       );
     }
+    final productName = name;
+    if (productName != null && (productName.isEmpty || productName.length > _nameMaxLength)) {
+      throw ArgumentError.value(
+        productName,
+        'name',
+        'name deve ter de 1 a $_nameMaxLength caracteres',
+      );
+    }
+    final unit = unitPriceCents;
+    if (unit != null && unit < 0) {
+      throw ArgumentError.value(unit, 'unitPriceCents', 'unitPriceCents deve ser >= 0');
+    }
+    final line = lineTotalCents;
+    if (line != null && line < 0) {
+      throw ArgumentError.value(line, 'lineTotalCents', 'lineTotalCents deve ser >= 0');
+    }
   }
 
   factory OrderItem.fromJson(Object? json) {
@@ -32,11 +56,14 @@ final class OrderItem {
         productId: readRequiredString(map, 'productId'),
         quantity: readRequiredInt(map, 'quantity', min: 1),
         note: readOptionalString(map, 'note', maxLength: _noteMaxLength),
+        name: readOptionalString(map, 'name', maxLength: _nameMaxLength),
+        unitPriceCents: readOptionalInt(map, 'unitPriceCents'),
+        lineTotalCents: readOptionalInt(map, 'lineTotalCents'),
       );
     });
   }
 
-  /// Referência ao produto. O objeto [Product] não vem aninhado.
+  /// Referência ao produto.
   final String productId;
 
   /// Inteiro ≥ 1.
@@ -45,12 +72,37 @@ final class OrderItem {
   /// Observação do cliente. Ausente e `null` significam sem observação.
   final String? note;
 
-  /// Omite `note` quando ela é nula, como no exemplo do `POST /orders`.
+  /// Nome do produto na resposta da API. Ausente no body de criação.
+  final String? name;
+
+  /// Preço unitário em centavos, na resposta da API.
+  final int? unitPriceCents;
+
+  /// Total da linha em centavos, na resposta da API.
+  final int? lineTotalCents;
+
+  /// Omite campos nulos. O POST só precisa de productId, quantity e note.
   Map<String, Object?> toJson() => {
     'productId': productId,
     'quantity': quantity,
+    if (name != null) 'name': name,
+    if (unitPriceCents != null) 'unitPriceCents': unitPriceCents,
+    if (lineTotalCents != null) 'lineTotalCents': lineTotalCents,
     if (note != null) 'note': note,
   };
+
+  /// Mantém snapshot de [previous] quando esta resposta omite nome ou preços.
+  OrderItem preservingSnapshotFrom(OrderItem? previous) {
+    if (previous == null) return this;
+    return OrderItem(
+      productId: productId,
+      quantity: quantity,
+      note: note,
+      name: name ?? previous.name,
+      unitPriceCents: unitPriceCents ?? previous.unitPriceCents,
+      lineTotalCents: lineTotalCents ?? previous.lineTotalCents,
+    );
+  }
 
   @override
   bool operator ==(Object other) {
@@ -58,12 +110,15 @@ final class OrderItem {
     return other is OrderItem &&
         other.productId == productId &&
         other.quantity == quantity &&
-        other.note == note;
+        other.note == note &&
+        other.name == name &&
+        other.unitPriceCents == unitPriceCents &&
+        other.lineTotalCents == lineTotalCents;
   }
 
   @override
-  int get hashCode => Object.hash(productId, quantity, note);
+  int get hashCode => Object.hash(productId, quantity, note, name, unitPriceCents, lineTotalCents);
 
   @override
-  String toString() => 'OrderItem(productId: $productId, quantity: $quantity)';
+  String toString() => 'OrderItem(productId: $productId, quantity: $quantity, name: $name)';
 }

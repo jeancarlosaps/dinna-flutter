@@ -45,7 +45,9 @@ void main() {
     WidgetTester tester, {
     required Object? arguments,
     required ProductRepository products,
+    OrderRepository? orders,
   }) async {
+    final orderRepository = orders ?? FakeOrderRepository(() async => OrderList.ready(const []));
     await tester.pumpWidget(
       MaterialApp(
         theme: DinnaTheme.light(),
@@ -56,7 +58,8 @@ void main() {
       MaterialPageRoute<void>(
         settings: RouteSettings(name: AppRoutes.restaurantOrder, arguments: arguments),
         builder: (_) => OrderDetailsView(
-          createViewModel: (order) => OrderDetailsViewModel(products, order: order),
+          createViewModel: (order) =>
+              OrderDetailsViewModel(products, orderRepository, order: order),
         ),
       ),
     );
@@ -146,6 +149,50 @@ void main() {
     expect(find.text('Suco de laranja'), findsOneWidget);
     expect(find.text('Total'), findsOneWidget);
     expect(find.text('R\$ 1.234,56'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('usa name e lineTotalCents do payload sem consultar o cardápio', (tester) async {
+    final repository = FakeProductRepository(() async => ProductList.ready(const []));
+    final order = sampleOrder(
+      id: 'o1',
+      table: '12',
+      status: OrderStatus.received,
+      createdAt: createdAt,
+      totalCents: 10470,
+      items: [
+        OrderItem(
+          productId: 'p1',
+          quantity: 2,
+          note: 'sem cebola',
+          name: 'Burger Clássico',
+          unitPriceCents: 3290,
+          lineTotalCents: 6580,
+        ),
+        OrderItem(
+          productId: 'p2',
+          quantity: 1,
+          note: null,
+          name: 'Burger Smoke',
+          unitPriceCents: 3890,
+          lineTotalCents: 3890,
+        ),
+      ],
+    );
+
+    await pumpDetails(
+      tester,
+      arguments: RestaurantOrderArgs(id: const AppRouteId('o1'), order: order),
+      products: repository,
+    );
+
+    expect(repository.calls, 0);
+    expect(find.text('Burger Clássico'), findsOneWidget);
+    expect(find.text('Burger Smoke'), findsOneWidget);
+    expect(find.text('R\$ 65,80'), findsOneWidget);
+    expect(find.text('R\$ 38,90'), findsOneWidget);
+    expect(find.text('R\$ 104,70'), findsOneWidget);
+    expect(find.text('Carregando nomes…'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

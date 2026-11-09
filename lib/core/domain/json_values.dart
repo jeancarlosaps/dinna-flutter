@@ -61,7 +61,9 @@ String? readOptionalString(Map<String, Object?> json, String key, {int? maxLengt
 }
 
 /// Inteiro opcional. Ausente e `null` viram `null`. `double` não é inteiro.
-int? readOptionalInt(Map<String, Object?> json, String key, {required int min}) {
+///
+/// [min] padrão é 0, para centavos. O número público do pedido usa `min: 1`.
+int? readOptionalInt(Map<String, Object?> json, String key, {int min = 0}) {
   if (!json.containsKey(key) || json[key] == null) return null;
 
   final value = json[key];

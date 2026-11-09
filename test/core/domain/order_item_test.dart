@@ -70,6 +70,30 @@ void main() {
     test('construtor rejeita quantidade menor que 1', () {
       expect(() => OrderItem(productId: 'p1', quantity: 0, note: null), throwsArgumentError);
     });
+
+    test('lê nome e preços enriquecidos da resposta GET', () {
+      final item = OrderItem.fromJson(
+        jsonDecode(
+          '{"productId":"p1","name":"Burger Clássico","quantity":2,'
+          '"unitPriceCents":3290,"lineTotalCents":6580,"note":"sem cebola"}',
+        ) as Object,
+      );
+
+      expect(item.name, 'Burger Clássico');
+      expect(item.unitPriceCents, 3290);
+      expect(item.lineTotalCents, 6580);
+      expect(item.toJson()['name'], 'Burger Clássico');
+      expect(item.toJson()['unitPriceCents'], 3290);
+      expect(item.toJson()['lineTotalCents'], 6580);
+    });
+
+    test('omite name e preços nulos no toJson do POST', () {
+      final item = OrderItem(productId: 'p1', quantity: 2, note: 'sem cebola');
+
+      expect(item.toJson().containsKey('name'), isFalse);
+      expect(item.toJson().containsKey('unitPriceCents'), isFalse);
+      expect(item.toJson().containsKey('lineTotalCents'), isFalse);
+    });
   });
 }
 

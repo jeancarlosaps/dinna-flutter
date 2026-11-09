@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dinna/core/domain/data_failure.dart';
+import 'package:dinna/core/domain/order_status.dart';
 import 'package:dinna/core/network/api_client.dart';
 import 'package:dinna/features/restaurant/http_order_repository.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
@@ -212,5 +213,52 @@ void main() {
     expect(client.message, isNot(contains('Connection refused')));
     expect(client.failure, DataFailure.unavailable);
     expect(client.detail, 'Connection refused');
+  });
+
+  test('avança status com PATCH /orders/:id/status', () async {
+    late http.Request requested;
+    final repository = HttpOrderRepository(
+      ApiClient(
+        baseUrl: baseUrl,
+        httpClient: MockClient((request) async {
+          requested = request;
+          return http.Response(
+            jsonEncode({..._older, 'status': 'preparing'}),
+            200,
+            headers: const {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      ),
+    );
+
+    final result = await repository.updateStatus(id: 'o1', status: OrderStatus.preparing);
+
+    expect(requested.method, 'PATCH');
+    expect(requested.url.toString(), 'http://localhost:3333/orders/o1/status');
+    expect(jsonDecode(requested.body), {'status': 'preparing'});
+    expect(result.order?.id, 'o1');
+    expect(result.order?.status, OrderStatus.preparing);
+    expect(result.message, isNull);
+  });
+
+  test('traduz 409 de transição inválida no avanço', () async {
+    final repository = repositoryReturning(
+      http.Response(
+        jsonEncode({
+          'error': {
+            'code': 'INVALID_STATUS_TRANSITION',
+            'message': 'Não é permitido avançar o pedido de received para ready',
+          },
+        }),
+        409,
+        headers: const {'content-type': 'application/json; charset=utf-8'},
+      ),
+    );
+
+    final result = await repository.updateStatus(id: 'o1', status: OrderStatus.ready);
+
+    expect(result.order, isNull);
+    expect(result.failure, DataFailure.conflict);
+    expect(result.message, 'Não é permitido avançar o pedido de received para ready');
   });
 }

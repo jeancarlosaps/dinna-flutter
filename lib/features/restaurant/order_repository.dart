@@ -1,6 +1,7 @@
 import '../../core/domain/cart_item.dart';
 import '../../core/domain/data_failure.dart';
 import '../../core/domain/order.dart';
+import '../../core/domain/order_status.dart';
 
 /// Fila já traduzida para o ViewModel.
 ///
@@ -142,6 +143,31 @@ class OrderSubmission {
   bool get shouldClearCart => order != null;
 }
 
+/// Resultado de `PATCH /orders/:id/status`, já traduzido para o ViewModel.
+class OrderUpdate {
+  OrderUpdate.ready(Order order) : this._(order: order);
+
+  const OrderUpdate.unavailable(
+    String message, {
+    DataFailure failure = DataFailure.unavailable,
+    String? detail,
+  }) : this._(message: message, failure: failure, detail: detail);
+
+  const OrderUpdate._({this.order, this.message, this.failure, this.detail});
+
+  /// `null` quando o avanço falhou.
+  final Order? order;
+
+  /// Preenchida só quando o avanço falha.
+  final String? message;
+
+  /// Nula quando o pedido atualizou.
+  final DataFailure? failure;
+
+  /// Causa técnica. A tela usa [message].
+  final String? detail;
+}
+
 /// Body e validação local de `POST /orders`, compartilhados pelo envio.
 ///
 /// A validação acontece antes de gravar a intenção. O body congelado é o que
@@ -208,8 +234,8 @@ final class OrderLookup {
 ///
 /// [list] traduz `GET /orders` na ordem recebida; o ViewModel da fila ordena.
 /// [findById] traduz `GET /orders/:id` e não cria pedido.
-/// [create] traduz `POST /orders`. O body é mesa e itens. O total não é
-/// calculado aqui.
+/// [create] traduz `POST /orders`. O body é mesa e itens.
+/// [updateStatus] traduz `PATCH /orders/:id/status`. O total não é calculado aqui.
 abstract interface class OrderRepository {
   Future<OrderList> list();
 
@@ -231,4 +257,7 @@ abstract interface class OrderRepository {
     String? idempotencyKey,
     Map<String, Object?>? body,
   });
+
+  /// Avança o pedido para [status]. O body envia o status destino.
+  Future<OrderUpdate> updateStatus({required String id, required OrderStatus status});
 }

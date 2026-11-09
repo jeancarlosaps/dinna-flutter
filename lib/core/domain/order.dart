@@ -98,6 +98,38 @@ final class Order {
     'createdAt': writeUtcIso8601(createdAt),
   };
 
+  /// Mantém name/preços de [previous] quando a resposta omite o snapshot dos itens.
+  ///
+  /// Usado após `PATCH /orders/:id/status`, que pode devolver itens sem os
+  /// campos enriquecidos já vistos no GET.
+  Order preservingItemSnapshotsFrom(Order previous) {
+    if (previous.id != id) return this;
+    final remaining = [...previous.items];
+    final merged = <OrderItem>[
+      for (final item in items) item.preservingSnapshotFrom(_takeMatchingItem(remaining, item)),
+    ];
+    return Order(
+      id: id,
+      orderNumber: orderNumber ?? previous.orderNumber,
+      table: table,
+      status: status,
+      items: merged,
+      totalCents: totalCents,
+      createdAt: createdAt,
+    );
+  }
+
+  static OrderItem? _takeMatchingItem(List<OrderItem> remaining, OrderItem incoming) {
+    final index = remaining.indexWhere(
+      (item) =>
+          item.productId == incoming.productId &&
+          item.quantity == incoming.quantity &&
+          item.note == incoming.note,
+    );
+    if (index < 0) return null;
+    return remaining.removeAt(index);
+  }
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;

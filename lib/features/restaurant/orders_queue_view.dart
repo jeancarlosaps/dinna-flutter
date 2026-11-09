@@ -1,16 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/domain/order.dart';
+import '../../core/domain/order_item.dart';
+import '../../core/domain/order_status.dart';
+import '../../shared/widgets/dinna_empty_state.dart';
 import 'order_format.dart';
 import 'orders_queue_view_model.dart';
 
 /// Fila de pedidos do restaurante, na rota `/restaurant`.
 ///
-/// O app não tinha um ciclo de vida de tela. Esta View junta o que o Flutter
-/// já oferece: [WidgetsBindingObserver] para o app em segundo plano e
-/// [RouteAware] para quando outra rota cobre a fila. Os dois sinais entram
-/// em [OrdersQueueViewModel.pause] e [OrdersQueueViewModel.resume]. O
-/// [RouteObserver] é o mesmo registrado no `MaterialApp`.
+/// Cards compactos: mesa, status e itens. Avanço de status fica no detalhe.
 class OrdersQueueView extends StatefulWidget {
   const OrdersQueueView({
     super.key,
@@ -19,14 +20,12 @@ class OrdersQueueView extends StatefulWidget {
     this.onOrderSelected,
   });
 
-  /// O ViewModel nasce e morre com o State da tela.
   final OrdersQueueViewModel Function() createViewModel;
-
-  /// Observa cobertura da rota. Sem ele, o polling segue o ciclo do app.
   final RouteObserver<PageRoute<dynamic>>? routeObserver;
 
-  /// Abre o detalhe. A View não escolhe a rota.
-  final void Function(BuildContext context, Order order)? onOrderSelected;
+  /// Abre o detalhe. O valor devolvido, quando é um [Order], entra na fila
+  /// antes do próximo refresh — um GET que falhe não descarta o status já confirmado.
+  final FutureOr<Object?> Function(BuildContext context, Order order)? onOrderSelected;
 
   @override
   State<OrdersQueueView> createState() => _OrdersQueueViewState();
@@ -90,14 +89,24 @@ class _OrdersQueueViewState extends State<OrdersQueueView> with WidgetsBindingOb
     }
   }
 
+  Future<void> _openOrder(Order order) async {
+    final result = await widget.onOrderSelected!(context, order);
+    if (!mounted || result is! Order) return;
+    _viewModel.applyConfirmedUpdate(result);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Fila de pedidos')),
       body: ListenableBuilder(
         listenable: _viewModel,
-        builder: (context, _) =>
-            _QueueBody(viewModel: _viewModel, onOrderSelected: widget.onOrderSelected),
+        builder: (context, _) => _QueueBody(
+          viewModel: _viewModel,
+          onOrderSelected: widget.onOrderSelected == null
+              ? null
+              : (context, order) => unawaited(_openOrder(order)),
+        ),
       ),
     );
   }
@@ -116,19 +125,27 @@ class _QueueBody extends StatelessWidget {
         final width = constraints.maxWidth > 720 ? 720.0 : constraints.maxWidth;
         return Align(
           alignment: Alignment.topCenter,
-          child: SizedBox(width: width, height: constraints.maxHeight, child: _content()),
+          child: SizedBox(width: width, height: constraints.maxHeight, child: _content(context)),
         );
       },
     );
   }
 
-  Widget _content() {
+  Widget _content(BuildContext context) {
     if (!viewModel.hasLoaded) {
       final message = viewModel.errorMessage;
       if (viewModel.isLoading || message == null) {
-        return const _LoadingState();
+        return const Center(child: CircularProgressIndicator());
       }
-      return _MessageState(message: message, onRetry: viewModel.retry);
+      return _ScrollableFill(
+        child: DinnaEmptyState(
+          icon: Icons.cloud_off_outlined,
+          title: 'Não foi possível carregar',
+          message: message,
+          actionLabel: 'Tentar novamente',
+          onAction: viewModel.retry,
+        ),
+      );
     }
 
     return Column(
@@ -137,96 +154,34 @@ class _QueueBody extends StatelessWidget {
         if (viewModel.refreshError case final message?)
           _RefreshNotice(message: message, onRetry: viewModel.retry),
         if (viewModel.orders.isEmpty)
-          const Expanded(child: _EmptyState())
+          const Expanded(
+            child: _ScrollableFill(
+              child: DinnaEmptyState(
+                icon: Icons.receipt_long_outlined,
+                title: 'Nenhum pedido na fila',
+                message: 'Quando um cliente enviar um pedido, ele aparece aqui.',
+              ),
+            ),
+          )
         else ...[
-          const _QueueHint(),
+          _QueueHeader(count: viewModel.orders.length),
           Expanded(
-            child: _OrdersList(orders: viewModel.orders, onOrderSelected: onOrderSelected),
+            child: ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+              itemCount: viewModel.orders.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                final order = viewModel.orders[index];
+                return _OrderTile(
+                  key: ValueKey(order.id),
+                  order: order,
+                  onOpen: onOrderSelected == null ? null : () => onOrderSelected!(context, order),
+                );
+              },
+            ),
           ),
         ],
       ],
-    );
-  }
-}
-
-class _LoadingState extends StatelessWidget {
-  const _LoadingState();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(child: CircularProgressIndicator());
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final minHeight = constraints.maxHeight.isFinite ? constraints.maxHeight : 0.0;
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: minHeight > 48 ? minHeight - 48 : 0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.receipt_long_outlined, size: 40, color: theme.colorScheme.primary),
-                const SizedBox(height: 16),
-                Text(
-                  'Nenhum pedido na fila',
-                  style: theme.textTheme.titleMedium,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Quando um cliente enviar um pedido, ele aparece aqui.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _MessageState extends StatelessWidget {
-  const _MessageState({required this.message, required this.onRetry});
-
-  final String message;
-  final Future<void> Function() onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final minHeight = constraints.maxHeight.isFinite ? constraints.maxHeight : 0.0;
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: minHeight > 48 ? minHeight - 48 : 0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.cloud_off_outlined, size: 40, color: theme.colorScheme.error),
-                const SizedBox(height: 16),
-                Text(message, style: theme.textTheme.bodyLarge, textAlign: TextAlign.center),
-                const SizedBox(height: 20),
-                FilledButton(onPressed: onRetry, child: const Text('Tentar novamente')),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }
@@ -241,22 +196,23 @@ class _RefreshNotice extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: scheme.errorContainer,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
         ),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+          child: Row(
             children: [
-              Text(message, style: TextStyle(color: scheme.onErrorContainer)),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(onPressed: onRetry, child: const Text('Tentar novamente')),
+              Expanded(
+                child: Text(
+                  message,
+                  style: TextStyle(color: scheme.onErrorContainer, fontSize: 13),
+                ),
               ),
+              TextButton(onPressed: onRetry, child: const Text('Tentar novamente')),
             ],
           ),
         ),
@@ -265,109 +221,200 @@ class _RefreshNotice extends StatelessWidget {
   }
 }
 
-class _QueueHint extends StatelessWidget {
-  const _QueueHint();
+class _ScrollableFill extends StatelessWidget {
+  const _ScrollableFill({required this.child});
+
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Text(
-        'Mais antigos primeiro',
-        style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-      ),
-    );
-  }
-}
-
-class _OrdersList extends StatelessWidget {
-  const _OrdersList({required this.orders, required this.onOrderSelected});
-
-  final List<Order> orders;
-  final void Function(BuildContext context, Order order)? onOrderSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-      itemCount: orders.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final order = orders[index];
-        return _OrderTile(key: ValueKey(order.id), order: order, onOrderSelected: onOrderSelected);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: child,
+          ),
+        );
       },
     );
   }
 }
 
-class _OrderTile extends StatelessWidget {
-  const _OrderTile({super.key, required this.order, required this.onOrderSelected});
+class _QueueHeader extends StatelessWidget {
+  const _QueueHeader({required this.count});
 
-  final Order order;
-  final void Function(BuildContext context, Order order)? onOrderSelected;
+  final int count;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final label = count == 1 ? '1 pedido' : '$count pedidos';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      child: Text(label, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+    );
+  }
+}
+
+class _OrderTile extends StatelessWidget {
+  const _OrderTile({super.key, required this.order, required this.onOpen});
+
+  final Order order;
+  final VoidCallback? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final time = formatOrderTimestamp(order.createdAt);
     final status = orderStatusLabel(order.status);
-    final number = order.orderNumber == null ? '' : ', ${publicOrderLabel(order.orderNumber)}';
-    final open = onOrderSelected;
+    final accent = orderStatusColor(scheme, order.status);
+    final ready = order.status == OrderStatus.ready;
 
-    return Semantics(
-      container: true,
-      button: open != null,
-      excludeSemantics: true,
-      onTap: open == null ? null : () => open(context, order),
-      label: open == null
-          ? 'Mesa ${order.table}, $time, $status$number'
-          : 'Mesa ${order.table}, $time, $status$number. Abrir detalhes',
-      child: Card(
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: open == null ? null : () => open(context, order),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Mesa ${order.table}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleMedium,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      time,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: ready ? scheme.secondary : scheme.outlineVariant),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ColoredBox(color: accent, child: const SizedBox(width: 3)),
+            Expanded(
+              child: Semantics(
+                container: true,
+                button: onOpen != null,
+                excludeSemantics: true,
+                onTap: onOpen,
+                label: _orderSemanticsLabel(
+                  order: order,
+                  time: time,
+                  status: status,
+                  canOpen: onOpen != null,
                 ),
-                if (order.orderNumber != null) ...[
-                  const SizedBox(height: 8),
-                  Text(publicOrderLabel(order.orderNumber), style: theme.textTheme.titleSmall),
-                ],
-                const SizedBox(height: 8),
-                Text(
-                  status,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: orderStatusColor(theme.colorScheme, order.status),
-                    fontWeight: FontWeight.w600,
+                child: InkWell(
+                  onTap: onOpen,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Mesa ${order.table}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              status,
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: accent,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            ),
+                            Text(
+                              time,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                                fontSize: 12,
+                              ),
+                            ),
+                            if (onOpen != null)
+                              Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant),
+                          ],
+                        ),
+                        if (order.orderNumber != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            publicOrderLabel(order.orderNumber),
+                            style: theme.textTheme.titleSmall,
+                          ),
+                        ],
+                        const SizedBox(height: 8),
+                        for (var i = 0; i < order.items.length; i++) ...[
+                          if (i > 0) const SizedBox(height: 4),
+                          _ItemRow(item: order.items[i]),
+                        ],
+                        if (onOpen != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Ver detalhes',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
   }
+}
+
+class _ItemRow extends StatelessWidget {
+  const _ItemRow({required this.item});
+
+  final OrderItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        SizedBox(
+          width: 28,
+          child: Text(
+            '${item.quantity}×',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: scheme.primary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            orderItemDisplayName(item.name),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+String _orderSemanticsLabel({
+  required Order order,
+  required String time,
+  required String status,
+  required bool canOpen,
+}) {
+  final items = [
+    for (final item in order.items) '${item.quantity}× ${orderItemDisplayName(item.name)}',
+  ].join(', ');
+  final number = order.orderNumber == null ? '' : ', ${publicOrderLabel(order.orderNumber)}';
+  final summary = 'Mesa ${order.table}$number, $time, $status. $items';
+  return canOpen ? '$summary. Ver detalhes' : summary;
 }
