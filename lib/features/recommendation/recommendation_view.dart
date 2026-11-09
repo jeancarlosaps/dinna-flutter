@@ -31,6 +31,11 @@ const _noAvailableTitle = 'Nenhum prato disponível';
 
 const _noAvailableMessage = 'As sugestões recebidas não estão no cardápio disponível agora.';
 
+const _noOtherTitle = 'Sem outras sugestões';
+
+const _noOtherMessage =
+    'A Dinna não encontrou outros pratos com essas respostas. Ajuste as respostas para ver opções diferentes.';
+
 const _failureTitle = 'Não foi possível pedir uma sugestão';
 
 const _failureMessage = 'O cardápio, o carrinho e o pedido continuam disponíveis.';
@@ -248,7 +253,15 @@ class _RecommendationViewState extends State<RecommendationView> with RouteAware
                         _viewModel.errorMessage ?? RecommendationViewModel.catalogFailureMessage,
                     onShowMenu: () => widget.onShowMenu(context),
                     actionLabel: 'Tentar de novo',
-                    onAction: () => unawaited(_viewModel.submit()),
+                    onAction: () => unawaited(_viewModel.retry()),
+                  ),
+                  RecommendationPhase.noOtherSuggestions => _OutcomeMessage(
+                    icon: Icons.restaurant,
+                    title: _noOtherTitle,
+                    message: _noOtherMessage,
+                    onShowMenu: () => widget.onShowMenu(context),
+                    actionLabel: 'Ajustar respostas',
+                    onAction: _viewModel.returnToEditing,
                   ),
                   RecommendationPhase.failed => _OutcomeMessage(
                     icon: Icons.wifi_off,
@@ -256,7 +269,7 @@ class _RecommendationViewState extends State<RecommendationView> with RouteAware
                     message: _viewModel.errorMessage ?? _failureMessage,
                     onShowMenu: () => widget.onShowMenu(context),
                     actionLabel: 'Tentar de novo',
-                    onAction: () => unawaited(_viewModel.submit()),
+                    onAction: () => unawaited(_viewModel.retry()),
                   ),
                 },
               ),
@@ -458,10 +471,20 @@ class _SuggestionResult extends StatelessWidget {
           ),
           const SizedBox(height: 12),
         ],
+        if (!fallback) ...[
+          const SizedBox(height: 4),
+          OutlinedButton(
+            onPressed: viewModel.canRequestAnother
+                ? () => unawaited(viewModel.requestAnother())
+                : null,
+            child: const Text('Pedir outra sugestão', textAlign: TextAlign.center),
+          ),
+          const SizedBox(height: 12),
+        ],
         if (fallback) ...[
           const SizedBox(height: 4),
           FilledButton(
-            onPressed: () => unawaited(viewModel.submit()),
+            onPressed: viewModel.hasPendingAddition ? null : () => unawaited(viewModel.retry()),
             child: const Text('Tentar a Dinna de novo'),
           ),
           const SizedBox(height: 12),
