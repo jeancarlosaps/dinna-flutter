@@ -199,15 +199,21 @@ class _RecommendationViewState extends State<RecommendationView> with RouteAware
                       child: const Text('Ver carrinho'),
                     ),
                 ],
-                leading: BackButton(
-                  onPressed: () {
-                    if (editing) {
-                      Navigator.of(context).maybePop();
-                    } else {
-                      _viewModel.returnToEditing();
-                    }
-                  },
-                ),
+                leading: _viewModel.hasPendingAddition
+                    ? IconButton(
+                        tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                        onPressed: null,
+                        icon: const BackButtonIcon(),
+                      )
+                    : BackButton(
+                        onPressed: () {
+                          if (editing) {
+                            Navigator.of(context).maybePop();
+                          } else {
+                            _viewModel.returnToEditing();
+                          }
+                        },
+                      ),
               ),
               body: SafeArea(
                 child: switch (_viewModel.phase) {
@@ -261,7 +267,7 @@ class _RecommendationViewState extends State<RecommendationView> with RouteAware
                     message: _noOtherMessage,
                     onShowMenu: () => widget.onShowMenu(context),
                     actionLabel: 'Ajustar respostas',
-                    onAction: _viewModel.returnToEditing,
+                    onAction: _viewModel.hasPendingAddition ? null : _viewModel.returnToEditing,
                   ),
                   RecommendationPhase.failed => _OutcomeMessage(
                     icon: Icons.wifi_off,

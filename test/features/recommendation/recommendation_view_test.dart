@@ -897,18 +897,81 @@ void main() {
     expect(find.text('revisão 1'), findsOneWidget);
   });
 
-  testWidgets('falha tardia da inclusão anterior não aparece na nova sugestão', (tester) async {
+  testWidgets('voltar durante a consulta pendente espera a inclusão e preserva as respostas', (
+    tester,
+  ) async {
     final lookup = Completer<ProductDetail>();
     final repository = _ViewCartRepository();
     final session = CartSession(repository);
     addTearDown(session.dispose);
     await session.restore();
     final burger = _product('p3', name: 'Burger da casa');
+    final fake = FakeRecommendationRepository((_) async => _answered());
 
     await _pump(
       tester,
       _model(
-        FakeRecommendationRepository((_) async => _answered()),
+        fake,
+        products: FakeProductRepository(
+          () async => ProductList.ready([burger]),
+          onFindById: (_) => lookup.future,
+        ),
+        cartSession: session,
+      ),
+    );
+    await _answerForm(tester);
+    await _tapLabel(tester, 'Me sugere um prato');
+    await tester.pumpAndSettle();
+    expect(fake.calls, 1);
+
+    await tester.tap(find.text('Adicionar ao carrinho'));
+    await tester.pump();
+
+    expect(_appBarBack(tester).onPressed, isNull);
+    expect(find.byType(BackButton), findsNothing);
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    expect(find.text('Burger da casa'), findsOneWidget);
+    expect(find.text('Quanto pretende gastar?'), findsNothing);
+    expect(session.read(), isEmpty);
+    expect(fake.calls, 1);
+
+    lookup.complete(ProductDetail.ready(burger));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(session.read(), hasLength(1));
+    expect(session.read().single.productId, 'p3');
+    expect(session.read().single.quantity, 1);
+    expect(repository.adds, 1);
+    expect(find.text('Burger da casa adicionado ao carrinho.'), findsOneWidget);
+    expect(_appBarBack(tester).onPressed, isNotNull);
+
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(find.text('Quanto pretende gastar?'), findsOneWidget);
+    await _scrollToSubmit(tester);
+    expect(_submitButton(tester).onPressed, isNotNull);
+    expect(session.read(), hasLength(1));
+    expect(fake.calls, 1);
+  });
+
+  testWidgets('falha da inclusão pendente aparece na sugestão e o retorno volta depois', (
+    tester,
+  ) async {
+    final lookup = Completer<ProductDetail>();
+    final repository = _ViewCartRepository();
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final burger = _product('p3', name: 'Burger da casa');
+    final fake = FakeRecommendationRepository((_) async => _answered());
+
+    await _pump(
+      tester,
+      _model(
+        fake,
         products: FakeProductRepository(
           () async => ProductList.ready([burger]),
           onFindById: (_) => lookup.future,
@@ -922,23 +985,33 @@ void main() {
     await tester.tap(find.text('Adicionar ao carrinho'));
     await tester.pump();
 
-    await tester.tap(find.byType(BackButton));
-    await tester.pumpAndSettle();
-    expect(find.text('Quanto pretende gastar?'), findsOneWidget);
-
-    await _tapLabel(tester, 'Me sugere um prato');
+    expect(_appBarBack(tester).onPressed, isNull);
+    await tester.binding.handlePopRoute();
     await tester.pump();
-    await tester.pump();
+    expect(find.text('Quanto pretende gastar?'), findsNothing);
     expect(find.text('Burger da casa'), findsOneWidget);
 
     lookup.complete(const ProductDetail.unavailable('timeout cru'));
     await tester.pump();
 
-    expect(find.text('Burger da casa'), findsOneWidget);
-    expect(find.text(RecommendationViewModel.addFailureMessage), findsNothing);
+    expect(find.text(RecommendationViewModel.addFailureMessage), findsOneWidget);
     expect(find.text('Burger da casa adicionado ao carrinho.'), findsNothing);
     expect(find.text('Este prato não está disponível para pedir agora.'), findsNothing);
     expect(session.read(), isEmpty);
+    expect(repository.adds, 0);
+    expect(_appBarBack(tester).onPressed, isNotNull);
+
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(find.text('Quanto pretende gastar?'), findsOneWidget);
+    expect(find.text(RecommendationViewModel.addFailureMessage), findsNothing);
+
+    await _tapLabel(tester, 'Me sugere um prato');
+    await tester.pumpAndSettle();
+    expect(find.text('Burger da casa'), findsOneWidget);
+    expect(find.text(RecommendationViewModel.addFailureMessage), findsNothing);
+    expect(session.read(), isEmpty);
+    expect(fake.calls, 2);
   });
 
   testWidgets('pedir outra sugestão troca os cards e avisa quando não há prato novo', (
@@ -1162,6 +1235,11 @@ Product _product(String id, {required String name, int priceCents = 1890, bool a
     imageUrl: null,
     available: available,
   );
+}
+
+IconButton _appBarBack(WidgetTester tester) {
+  final finder = find.descendant(of: find.byType(AppBar), matching: find.byType(IconButton));
+  return tester.widget<IconButton>(finder);
 }
 
 FilledButton _submitButton(WidgetTester tester) {
