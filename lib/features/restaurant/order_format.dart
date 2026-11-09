@@ -2,6 +2,20 @@ import 'package:flutter/material.dart';
 
 import '../../core/domain/order_status.dart';
 
+/// Número público com ao menos quatro dígitos. `#10000` não é cortado.
+String formatPublicOrderNumber(int orderNumber) {
+  if (orderNumber < 1) {
+    throw ArgumentError.value(orderNumber, 'orderNumber', 'orderNumber deve ser >= 1');
+  }
+  return '#${orderNumber.toString().padLeft(4, '0')}';
+}
+
+/// Rótulo visível do pedido. Sem o número, não usa o identificador técnico.
+String publicOrderLabel(int? orderNumber) {
+  if (orderNumber == null) return 'Pedido confirmado';
+  return 'Pedido ${formatPublicOrderNumber(orderNumber)}';
+}
+
 /// Horário local do pedido, no mesmo formato do card da fila: `dd/MM HH:mm`.
 String formatOrderTimestamp(DateTime createdAt) {
   final local = createdAt.toLocal();

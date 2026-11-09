@@ -8,17 +8,21 @@ class FakeOrderRepository implements OrderRepository {
   FakeOrderRepository(
     this._list, {
     this.onCreate,
+    this.onFind,
     Future<OrderUpdate> Function(String id, OrderStatus status)? updateStatus,
   }) : _onUpdateStatus = updateStatus;
 
   final Future<OrderList> Function() _list;
   final Future<OrderSubmission> Function({required String table, required List<CartItem> items})?
   onCreate;
+  final Future<OrderLookup> Function(String id)? onFind;
   final Future<OrderUpdate> Function(String id, OrderStatus status)? _onUpdateStatus;
   int calls = 0;
   int createCalls = 0;
+  int findCalls = 0;
   int updateCalls = 0;
   String? lastIdempotencyKey;
+  String? lastFoundId;
   Map<String, Object?>? lastBody;
   String? lastUpdateId;
   OrderStatus? lastUpdateStatus;
@@ -27,6 +31,17 @@ class FakeOrderRepository implements OrderRepository {
   Future<OrderList> list() {
     calls++;
     return _list();
+  }
+
+  @override
+  Future<OrderLookup> findById(String id) {
+    findCalls++;
+    lastFoundId = id;
+    final find = onFind;
+    if (find == null) {
+      return Future.value(const OrderLookup.unavailable('Consulta do pedido não configurada'));
+    }
+    return find(id);
   }
 
   @override

@@ -47,6 +47,22 @@ void main() {
       expect(order.totalCents, isA<int>());
       expect(order.createdAt, DateTime.utc(2026, 10, 16, 18));
       expect(order.createdAt.isUtc, isTrue);
+      expect(order.orderNumber, isNull);
+    });
+
+    test('lê orderNumber e o omite quando está ausente', () {
+      final numbered = Order.fromJson(_orderMap()..['orderNumber'] = 5);
+      final absent = Order.fromJson(_orderMap());
+      final explicitNull = Order.fromJson(_orderMap()..['orderNumber'] = null);
+
+      expect(numbered.orderNumber, 5);
+      expect(numbered.toJson()['orderNumber'], 5);
+      expect(absent.orderNumber, isNull);
+      expect(absent.toJson().containsKey('orderNumber'), isFalse);
+      expect(explicitNull.orderNumber, isNull);
+      expect(explicitNull.toJson(), absent.toJson());
+      expect(numbered.withOrderNumber(5), same(numbered));
+      expect(absent.withOrderNumber(5), numbered);
     });
 
     test('grava o JSON do contrato', () {
@@ -143,6 +159,55 @@ void main() {
       expect(merged.items.single.lineTotalCents, 6580);
     });
 
+    test('cruza linhas do mesmo produto pela quantidade e pela observação', () {
+      final previous = Order(
+        id: 'o1',
+        orderNumber: 5,
+        table: '12',
+        status: OrderStatus.received,
+        items: [
+          OrderItem(
+            productId: 'p1',
+            quantity: 2,
+            note: 'sem cebola',
+            name: 'Burger',
+            unitPriceCents: 1000,
+            lineTotalCents: 2000,
+          ),
+          OrderItem(
+            productId: 'p1',
+            quantity: 1,
+            note: null,
+            name: 'Burger',
+            unitPriceCents: 1000,
+            lineTotalCents: 1000,
+          ),
+        ],
+        totalCents: 3000,
+        createdAt: DateTime.utc(2026, 10, 16, 18),
+      );
+      final updated = Order(
+        id: 'o1',
+        table: '12',
+        status: OrderStatus.preparing,
+        items: [
+          OrderItem(productId: 'p1', quantity: 1, note: null),
+          OrderItem(productId: 'p1', quantity: 2, note: 'sem cebola'),
+        ],
+        totalCents: 3000,
+        createdAt: DateTime.utc(2026, 10, 16, 18),
+      );
+
+      final merged = updated.preservingItemSnapshotsFrom(previous);
+
+      expect(merged.orderNumber, 5);
+      expect(merged.status, OrderStatus.preparing);
+      expect(merged.items[0].lineTotalCents, 1000);
+      expect(merged.items[1].lineTotalCents, 2000);
+      expect(merged.items[0].quantity, 1);
+      expect(merged.items[1].quantity, 2);
+    });
+
     test('rejeita JSON incompatível com o contrato', () {
       final cases = <String, Object?>{
         'não é objeto': jsonDecode('null'),
@@ -167,6 +232,10 @@ void main() {
         'createdAt sem fuso': _orderMap()..['createdAt'] = '2026-10-16T18:00:00',
         'createdAt com offset': _orderMap()..['createdAt'] = '2026-10-16T15:00:00-03:00',
         'createdAt com z minúsculo': _orderMap()..['createdAt'] = '2026-10-16T18:00:00z',
+        'orderNumber zero': _orderMap()..['orderNumber'] = 0,
+        'orderNumber negativo': _orderMap()..['orderNumber'] = -1,
+        'orderNumber fracionário': _orderMap()..['orderNumber'] = 1.5,
+        'orderNumber texto': _orderMap()..['orderNumber'] = '0005',
       };
 
       for (final entry in cases.entries) {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/domain/order.dart';
@@ -20,7 +22,10 @@ class OrdersQueueView extends StatefulWidget {
 
   final OrdersQueueViewModel Function() createViewModel;
   final RouteObserver<PageRoute<dynamic>>? routeObserver;
-  final void Function(BuildContext context, Order order)? onOrderSelected;
+
+  /// Abre o detalhe. O valor devolvido, quando é um [Order], entra na fila
+  /// antes do próximo refresh — um GET que falhe não descarta o status já confirmado.
+  final FutureOr<Object?> Function(BuildContext context, Order order)? onOrderSelected;
 
   @override
   State<OrdersQueueView> createState() => _OrdersQueueViewState();
@@ -84,14 +89,24 @@ class _OrdersQueueViewState extends State<OrdersQueueView> with WidgetsBindingOb
     }
   }
 
+  Future<void> _openOrder(Order order) async {
+    final result = await widget.onOrderSelected!(context, order);
+    if (!mounted || result is! Order) return;
+    _viewModel.applyConfirmedUpdate(result);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Fila de pedidos')),
       body: ListenableBuilder(
         listenable: _viewModel,
-        builder: (context, _) =>
-            _QueueBody(viewModel: _viewModel, onOrderSelected: widget.onOrderSelected),
+        builder: (context, _) => _QueueBody(
+          viewModel: _viewModel,
+          onOrderSelected: widget.onOrderSelected == null
+              ? null
+              : (context, order) => unawaited(_openOrder(order)),
+        ),
       ),
     );
   }
@@ -122,12 +137,14 @@ class _QueueBody extends StatelessWidget {
       if (viewModel.isLoading || message == null) {
         return const Center(child: CircularProgressIndicator());
       }
-      return DinnaEmptyState(
-        icon: Icons.cloud_off_outlined,
-        title: 'Não foi possível carregar',
-        message: message,
-        actionLabel: 'Tentar novamente',
-        onAction: viewModel.retry,
+      return _ScrollableFill(
+        child: DinnaEmptyState(
+          icon: Icons.cloud_off_outlined,
+          title: 'Não foi possível carregar',
+          message: message,
+          actionLabel: 'Tentar novamente',
+          onAction: viewModel.retry,
+        ),
       );
     }
 
@@ -138,10 +155,12 @@ class _QueueBody extends StatelessWidget {
           _RefreshNotice(message: message, onRetry: viewModel.retry),
         if (viewModel.orders.isEmpty)
           const Expanded(
-            child: DinnaEmptyState(
-              icon: Icons.receipt_long_outlined,
-              title: 'Nenhum pedido na fila',
-              message: 'Quando um cliente enviar um pedido, ele aparece aqui.',
+            child: _ScrollableFill(
+              child: DinnaEmptyState(
+                icon: Icons.receipt_long_outlined,
+                title: 'Nenhum pedido na fila',
+                message: 'Quando um cliente enviar um pedido, ele aparece aqui.',
+              ),
             ),
           )
         else ...[
@@ -202,6 +221,26 @@ class _RefreshNotice extends StatelessWidget {
   }
 }
 
+class _ScrollableFill extends StatelessWidget {
+  const _ScrollableFill({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _QueueHeader extends StatelessWidget {
   const _QueueHeader({required this.count});
 
@@ -213,10 +252,7 @@ class _QueueHeader extends StatelessWidget {
     final label = count == 1 ? '1 pedido' : '$count pedidos';
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-      child: Text(
-        label,
-        style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-      ),
+      child: Text(label, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
     );
   }
 }
@@ -267,18 +303,18 @@ class _OrderTile extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
+                        Text(
+                          'Mesa ${order.table}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            Expanded(
-                              child: Text(
-                                'Mesa ${order.table}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
                             Text(
                               status,
                               style: theme.textTheme.labelLarge?.copyWith(
@@ -287,7 +323,6 @@ class _OrderTile extends StatelessWidget {
                                 fontSize: 12,
                               ),
                             ),
-                            const SizedBox(width: 8),
                             Text(
                               time,
                               style: theme.textTheme.bodySmall?.copyWith(
@@ -295,12 +330,17 @@ class _OrderTile extends StatelessWidget {
                                 fontSize: 12,
                               ),
                             ),
-                            if (onOpen != null) ...[
-                              const SizedBox(width: 4),
+                            if (onOpen != null)
                               Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant),
-                            ],
                           ],
                         ),
+                        if (order.orderNumber != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            publicOrderLabel(order.orderNumber),
+                            style: theme.textTheme.titleSmall,
+                          ),
+                        ],
                         const SizedBox(height: 8),
                         for (var i = 0; i < order.items.length; i++) ...[
                           if (i > 0) const SizedBox(height: 4),
@@ -374,6 +414,7 @@ String _orderSemanticsLabel({
   final items = [
     for (final item in order.items) '${item.quantity}× ${orderItemDisplayName(item.name)}',
   ].join(', ');
-  final summary = 'Mesa ${order.table}, $time, $status. $items';
+  final number = order.orderNumber == null ? '' : ', ${publicOrderLabel(order.orderNumber)}';
+  final summary = 'Mesa ${order.table}$number, $time, $status. $items';
   return canOpen ? '$summary. Ver detalhes' : summary;
 }

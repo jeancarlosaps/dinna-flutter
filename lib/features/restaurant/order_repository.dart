@@ -49,11 +49,13 @@ class OrderSubmission {
     DataFailure failure = DataFailure.unavailable,
     String? detail,
     bool outcomeUncertain = false,
+    bool retainsIntent = false,
   }) : this._(
          message: message,
          failure: failure,
          detail: detail,
          outcomeUncertain: outcomeUncertain,
+         retainsIntent: retainsIntent,
        );
 
   /// A chave não pode ser reenviada nem trocada por outra.
@@ -72,6 +74,7 @@ class OrderSubmission {
     this.detail,
     this.outcomeUncertain = false,
     this.resendBlocked = false,
+    this.retainsIntent = false,
   });
 
   /// Texto quando o POST pode ter sido aplicado e a confirmação não chegou.
@@ -97,6 +100,13 @@ class OrderSubmission {
   static const unreadableServerErrorMessage =
       'A resposta do servidor não trouxe o código do erro. Esta tentativa não será reenviada. Confira com o restaurante.';
 
+  /// HTTP 401 `UNAUTHORIZED` do hook atual da API.
+  ///
+  /// O acesso foi recusado antes do registro do pedido. Não é resultado
+  /// incerto e não autoriza outra chave.
+  static const unauthorizedRejectionMessage =
+      'O envio foi recusado. A API não aceitou o acesso e o pedido não foi registrado.';
+
   /// `null` quando a criação falhou.
   final Order? order;
 
@@ -115,11 +125,19 @@ class OrderSubmission {
   /// corpo ilegível que não seja 409 ou 500 com chave enviada, 404
   /// `NOT_FOUND`, 4xx não reconhecido depois da chave, resposta 2xx que não
   /// pôde ser lida como [Order] e HTTP 5xx que não prova a ausência do pedido.
-  /// Não é falha definitiva e não autoriza outra chave.
+  /// Não é falha definitiva e não autoriza outra chave. HTTP 401
+  /// `UNAUTHORIZED` não entra aqui: a API atual recusa o acesso antes de
+  /// processar o pedido.
   final bool outcomeUncertain;
 
   /// Verdadeiro quando outro POST, com esta chave ou com uma chave nova, é inseguro.
   final bool resendBlocked;
+
+  /// A falha não criou o pedido, mas a chave e o payload continuam válidos.
+  ///
+  /// Usado no HTTP 401 `UNAUTHORIZED`. Não libera outra chave e não pede
+  /// limpeza do carrinho.
+  final bool retainsIntent;
 
   /// A futura tela do carrinho limpa os itens somente neste caso.
   bool get shouldClearCart => order != null;
@@ -187,13 +205,42 @@ abstract final class OrderRequest {
   };
 }
 
+/// Pedido consultado, ou a falha já traduzida. Não carrega status HTTP.
+final class OrderLookup {
+  OrderLookup.ready(Order order) : this._(order: order);
+
+  const OrderLookup.unavailable(
+    String message, {
+    DataFailure failure = DataFailure.unavailable,
+    String? detail,
+  }) : this._(message: message, failure: failure, detail: detail);
+
+  const OrderLookup._({this.order, this.message, this.failure, this.detail});
+
+  /// `null` quando a consulta falhou.
+  final Order? order;
+
+  /// Preenchida só quando a consulta falha.
+  final String? message;
+
+  /// Nula quando o pedido foi lido.
+  final DataFailure? failure;
+
+  /// Causa técnica. Quem consulta o número não transforma isso em falha de envio.
+  final String? detail;
+}
+
 /// Fonte dos pedidos.
 ///
 /// [list] traduz `GET /orders` na ordem recebida; o ViewModel da fila ordena.
-/// [create] traduz `POST /orders`. [updateStatus] traduz
-/// `PATCH /orders/:id/status`. O total não é calculado aqui.
+/// [findById] traduz `GET /orders/:id` e não cria pedido.
+/// [create] traduz `POST /orders`. O body é mesa e itens.
+/// [updateStatus] traduz `PATCH /orders/:id/status`. O total não é calculado aqui.
 abstract interface class OrderRepository {
   Future<OrderList> list();
+
+  /// Lê um pedido existente. Identificador vazio não chama a API.
+  Future<OrderLookup> findById(String id);
 
   /// Cria o pedido da mesa.
   ///

@@ -5,24 +5,39 @@ import 'package:flutter/material.dart';
 import '../../../app/router/app_route_args.dart';
 import '../../../core/domain/order.dart';
 import '../../../core/domain/order_item.dart';
+import '../../../shared/widgets/dinna_banner.dart';
 import '../../../shared/widgets/dinna_empty_state.dart';
 import '../../restaurant/order_format.dart';
+import 'order_submission_view_model.dart';
 
 /// Confirmação do pedido já aceito pela API, na rota `/order`.
 ///
 /// Lê [OrderConfirmationArgs]. O [Order] é a fotografia gravada no envio:
-/// mesa, itens, quantidades, total e horário vêm dele. [OrderItem] não traz
-/// nome nem preço individual; a tela mostra o `productId` e não consulta o
-/// cardápio. Sem o argumento certo, explica a ausência, usa o título "Pedido"
-/// e não chama a API. Com o pedido, o título é "Pedido recebido".
+/// mesa, itens, quantidades, total e horário vêm dele. O número visível é
+/// `Pedido #0005` quando `orderNumber` existe; sem ele, "Pedido confirmado".
+/// O UUID não aparece. [OrderItem] não traz nome nem preço individual; a tela
+/// mostra o `productId` e não consulta o cardápio. Sem o argumento certo,
+/// explica a ausência, usa o título "Pedido" e não chama a API. Com o pedido,
+/// o título é "Pedido recebido".
 ///
-/// Não há ViewModel: o pedido é imutável e esta tela não envia, não retoma
-/// e não observa o carrinho. [onTrack] abre o acompanhamento com o mesmo
-/// [Order]. Um segundo toque enquanto a rota não voltou não empilha outra.
+/// Não há ViewModel próprio: o pedido é imutável e esta tela não envia nem
+/// retoma. [onTrack] abre o acompanhamento com o mesmo [Order]. [onGoHome]
+/// encerra o fluxo no início. [onStartAnother] só existe depois da confirmação
+/// gravada e não dispara POST. Um segundo toque enquanto a rota não voltou
+/// não empilha outra.
 class OrderConfirmationView extends StatefulWidget {
-  const OrderConfirmationView({super.key, required this.onTrack});
+  const OrderConfirmationView({
+    super.key,
+    required this.onTrack,
+    this.onGoHome,
+    this.onStartAnother,
+    this.submission,
+  });
 
   final Future<void> Function(BuildContext context, Order order) onTrack;
+  final void Function(BuildContext context)? onGoHome;
+  final Future<void> Function(BuildContext context)? onStartAnother;
+  final OrderSubmissionViewModel? submission;
 
   @override
   State<OrderConfirmationView> createState() => _OrderConfirmationViewState();
@@ -61,36 +76,65 @@ class _OrderConfirmationViewState extends State<OrderConfirmationView> {
     }
   }
 
+  void _leave() {
+    final goHome = widget.onGoHome;
+    if (goHome == null) return;
+    goHome(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final order = _order;
+    final blocksReturn = order != null && widget.onGoHome != null;
     return Scaffold(
-      appBar: AppBar(title: Text(order == null ? 'Pedido' : 'Pedido recebido')),
+      appBar: AppBar(
+        automaticallyImplyLeading: !blocksReturn,
+        title: Text(order == null ? 'Pedido' : 'Pedido recebido'),
+      ),
       body: order == null
-          ? const _MissingOrder()
-          : _ConfirmationBody(order: order, onTrack: () => unawaited(_track(order))),
+          ? _MissingOrder(onGoHome: widget.onGoHome == null ? null : _leave)
+          : _ConfirmationBody(
+              order: order,
+              onTrack: () => unawaited(_track(order)),
+              onGoHome: widget.onGoHome == null ? null : _leave,
+              onStartAnother: widget.onStartAnother,
+              submission: widget.submission,
+            ),
     );
   }
 }
 
 class _MissingOrder extends StatelessWidget {
-  const _MissingOrder();
+  const _MissingOrder({this.onGoHome});
+
+  final VoidCallback? onGoHome;
 
   @override
   Widget build(BuildContext context) {
-    return const DinnaEmptyState(
+    return DinnaEmptyState(
       icon: Icons.receipt_long_outlined,
       title: 'Pedido indisponível',
       message: 'Abra a confirmação depois que o restaurante receber o pedido.',
+      actionLabel: onGoHome == null ? null : 'Voltar ao início',
+      onAction: onGoHome,
     );
   }
 }
 
 class _ConfirmationBody extends StatelessWidget {
-  const _ConfirmationBody({required this.order, required this.onTrack});
+  const _ConfirmationBody({
+    required this.order,
+    required this.onTrack,
+    required this.onGoHome,
+    required this.onStartAnother,
+    required this.submission,
+  });
 
   final Order order;
   final VoidCallback onTrack;
+  final VoidCallback? onGoHome;
+  final Future<void> Function(BuildContext context)? onStartAnother;
+  final OrderSubmissionViewModel? submission;
 
   @override
   Widget build(BuildContext context) {
@@ -108,6 +152,8 @@ class _ConfirmationBody extends StatelessWidget {
   Widget _content(BuildContext context) {
     final theme = Theme.of(context);
     final items = order.items;
+    final startAnother = onStartAnother;
+    final currentSubmission = submission;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
@@ -128,7 +174,90 @@ class _ConfirmationBody extends StatelessWidget {
           onPressed: onTrack,
           child: const Text('Acompanhar pedido', textAlign: TextAlign.center),
         ),
+        if (onGoHome != null) ...[
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: onGoHome,
+            child: const Text('Voltar ao início', textAlign: TextAlign.center),
+          ),
+        ],
+        if (currentSubmission != null) _StoredIntentFailure(submission: currentSubmission),
+        if (currentSubmission != null) _LegacyCartNotice(submission: currentSubmission),
+        if (startAnother != null && currentSubmission != null)
+          _AnotherOrderButton(submission: currentSubmission, onStartAnother: startAnother),
       ],
+    );
+  }
+}
+
+class _AnotherOrderButton extends StatelessWidget {
+  const _AnotherOrderButton({required this.submission, required this.onStartAnother});
+
+  final OrderSubmissionViewModel submission;
+  final Future<void> Function(BuildContext context) onStartAnother;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: submission,
+      builder: (context, _) {
+        if (!submission.canBeginAnotherOrder) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: OutlinedButton(
+            onPressed: () => unawaited(onStartAnother(context)),
+            child: Text(
+              submission.legacyCartRemaining ? 'Rever carrinho' : 'Fazer outro pedido',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _StoredIntentFailure extends StatelessWidget {
+  const _StoredIntentFailure({required this.submission});
+
+  final OrderSubmissionViewModel submission;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: submission,
+      builder: (context, _) {
+        final message = submission.errorMessage;
+        if (message == null || message.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: DinnaBanner(
+            tone: DinnaBannerTone.warning,
+            title: 'Não foi possível começar outro pedido',
+            message: message,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _LegacyCartNotice extends StatelessWidget {
+  const _LegacyCartNotice({required this.submission});
+
+  final OrderSubmissionViewModel submission;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: submission,
+      builder: (context, _) {
+        if (!submission.legacyCartRemaining) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text(OrderSubmissionViewModel.legacyCartMessage),
+        );
+      },
     );
   }
 }
@@ -176,10 +305,11 @@ class _OrderCard extends StatelessWidget {
     final theme = Theme.of(context);
     final time = formatOrderTimestamp(order.createdAt);
     final status = orderStatusLabel(order.status);
+    final identification = publicOrderLabel(order.orderNumber);
     return Semantics(
       container: true,
       excludeSemantics: true,
-      label: 'Mesa ${order.table}, $time, $status, pedido ${order.id}',
+      label: 'Mesa ${order.table}, $time, $status, $identification',
       child: Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -208,9 +338,7 @@ class _OrderCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              Text('Pedido', style: theme.textTheme.bodyMedium),
-              const SizedBox(height: 4),
-              Text(order.id, style: theme.textTheme.titleMedium),
+              Text(identification, style: theme.textTheme.titleMedium),
             ],
           ),
         ),

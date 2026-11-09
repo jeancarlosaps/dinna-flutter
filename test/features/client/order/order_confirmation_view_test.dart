@@ -1,14 +1,20 @@
 import 'package:dinna/app/router/app_router.dart';
 import 'package:dinna/app/theme/dinna_theme.dart';
+import 'package:dinna/core/domain/cart_item.dart';
 import 'package:dinna/core/domain/order.dart';
 import 'package:dinna/core/domain/order_item.dart';
 import 'package:dinna/core/domain/order_status.dart';
 import 'package:dinna/features/client/order/order_confirmation_view.dart';
+import 'package:dinna/features/client/order/order_intent_store.dart';
+import 'package:dinna/features/client/order/order_submission_view_model.dart';
 import 'package:dinna/features/client/order/order_tracking_view.dart';
 import 'package:dinna/features/restaurant/order_format.dart';
+import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../restaurant/fake_order_repository.dart';
 import '../../restaurant/sample_order.dart';
 
 void main() {
@@ -16,6 +22,7 @@ void main() {
 
   Order confirmed({
     String id = 'order-1',
+    int? orderNumber,
     String table = '12',
     OrderStatus status = OrderStatus.received,
     List<OrderItem>? items,
@@ -23,6 +30,7 @@ void main() {
   }) {
     return sampleOrder(
       id: id,
+      orderNumber: orderNumber,
       table: table,
       status: status,
       createdAt: createdAt,
@@ -86,7 +94,8 @@ void main() {
     expect(find.text('Mesa 12'), findsOneWidget);
     expect(find.text('Recebido'), findsOneWidget);
     expect(find.text(formatOrderTimestamp(order.createdAt)), findsOneWidget);
-    expect(find.text('order-1'), findsOneWidget);
+    expect(find.text('Pedido confirmado'), findsOneWidget);
+    expect(find.text('order-1'), findsNothing);
     expect(find.text('2×'), findsOneWidget);
     expect(find.text('1×'), findsOneWidget);
     expect(find.text('p1'), findsOneWidget);
@@ -160,7 +169,8 @@ void main() {
     final route = ModalRoute.of(tracking)!;
     expect(route.settings.name, AppRoutes.orderTracking);
     expect(route.settings.arguments, const AppRouteId('order-1'));
-    expect(find.text('order-1'), findsWidgets);
+    expect(find.text('Pedido confirmado'), findsWidgets);
+    expect(find.text('order-1'), findsNothing);
     expect(find.text('Status ao vivo indisponível'), findsOneWidget);
     expect(find.text('Preparando'), findsNothing);
     expect(find.text('Tela ainda não implementada.'), findsNothing);
@@ -195,6 +205,87 @@ void main() {
     }
   });
 
+  testWidgets('mostra Pedido #0005 e não o UUID', (tester) async {
+    const id = 'o_6dbadd42-c7e1-4790-8f96-4d60620ad1fa';
+    final order = confirmed(id: id, orderNumber: 5);
+    final handle = tester.ensureSemantics();
+    try {
+      await pumpConfirmation(tester, arguments: OrderConfirmationArgs(order: order));
+
+      expect(find.text('Pedido #0005'), findsOneWidget);
+      expect(find.text('#0005'), findsNothing);
+      expect(find.textContaining(id), findsNothing);
+      expect(find.text('Pedido confirmado'), findsNothing);
+      final labels = _semanticsLabels(tester);
+      expect(labels.where((label) => label.contains('Pedido #0005')), isNotEmpty);
+      expect(labels.where((label) => label.contains(id)), isEmpty);
+      expect(tester.takeException(), isNull);
+    } finally {
+      handle.dispose();
+    }
+  });
+
+  testWidgets('o número com cinco dígitos cabe em tela baixa e texto ampliado', (tester) async {
+    tester.view.physicalSize = const Size(320, 480);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    const id = 'o_56fd0ea0-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(2)),
+          child: child ?? const SizedBox.shrink(),
+        ),
+        home: const Scaffold(body: SizedBox.shrink()),
+      ),
+    );
+    Navigator.of(tester.element(find.byType(Scaffold))).push(
+      MaterialPageRoute<void>(
+        settings: RouteSettings(
+          name: AppRoutes.order,
+          arguments: OrderConfirmationArgs(order: confirmed(id: id, orderNumber: 10000)),
+        ),
+        builder: (_) => OrderConfirmationView(
+          onTrack: (context, order) async {
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                settings: RouteSettings(
+                  name: AppRoutes.orderTracking,
+                  arguments: OrderTrackingArgs(
+                    id: AppRouteId(order.id),
+                    orderNumber: order.orderNumber,
+                  ),
+                ),
+                builder: (_) => const OrderTrackingView(),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final label = find.text('Pedido #10000');
+    await tester.scrollUntilVisible(label, 80);
+    expect(label, findsOneWidget);
+    expect(find.text('Pedido #1000'), findsNothing);
+    expect(find.textContaining(id), findsNothing);
+
+    final action = find.widgetWithText(FilledButton, 'Acompanhar pedido');
+    await tester.scrollUntilVisible(action, 80);
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Pedido #10000'), findsWidgets);
+    expect(find.textContaining(id), findsNothing);
+    expect(find.byType(OrderTrackingView), findsOneWidget);
+  });
+
   testWidgets('a confirmação cabe numa tela baixa', (tester) async {
     tester.view.physicalSize = const Size(320, 480);
     tester.view.devicePixelRatio = 1;
@@ -209,4 +300,117 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(action, findsOneWidget);
   });
+
+  testWidgets('intenção antiga explica o carrinho e não volta para o envio', (tester) async {
+    final order = confirmed();
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async => OrderSubmission.created(order),
+      ),
+      intentStore: MemoryOrderIntentStore(),
+      newIntentId: () => '00000000-0000-4000-8000-0000000000aa',
+    );
+    addTearDown(submission.dispose);
+    await submission.submit(
+      table: '12',
+      items: [CartItem(productId: 'p1', quantity: 2, note: 'sem cebola')],
+    );
+    submission.noteLegacyCartRemaining(true);
+    var another = 0;
+
+    await tester.pumpWidget(MaterialApp(theme: DinnaTheme.light(), home: const SizedBox.shrink()));
+    Navigator.of(tester.element(find.byType(SizedBox))).push(
+      MaterialPageRoute<void>(
+        settings: RouteSettings(
+          name: AppRoutes.order,
+          arguments: OrderConfirmationArgs(order: order),
+        ),
+        builder: (_) => OrderConfirmationView(
+          onTrack: (_, _) async {},
+          onGoHome: (_) {},
+          onStartAnother: (_) async => another++,
+          submission: submission,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pedido recebido'), findsWidgets);
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(tester.widget<AppBar>(find.byType(AppBar)).automaticallyImplyLeading, isFalse);
+    await tester.scrollUntilVisible(find.text(OrderSubmissionViewModel.legacyCartMessage), 80);
+    expect(find.text(OrderSubmissionViewModel.legacyCartMessage), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Rever carrinho'), 80);
+    await tester.tap(find.text('Rever carrinho'));
+    await tester.pumpAndSettle();
+
+    expect(another, 1);
+    expect(find.byType(OrderConfirmationView), findsOneWidget);
+    expect(find.text('Enviar pedido'), findsNothing);
+  });
+
+  testWidgets('falha ao iniciar outro pedido aparece na confirmação', (tester) async {
+    final order = confirmed();
+    final store = MemoryOrderIntentStore();
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async => OrderSubmission.created(order),
+      ),
+      intentStore: store,
+      newIntentId: () => '00000000-0000-4000-8000-0000000000aa',
+    );
+    addTearDown(submission.dispose);
+    await submission.submit(
+      table: '12',
+      items: [CartItem(productId: 'p1', quantity: 2, note: 'sem cebola')],
+    );
+
+    await tester.pumpWidget(MaterialApp(theme: DinnaTheme.light(), home: const SizedBox.shrink()));
+    Navigator.of(tester.element(find.byType(SizedBox))).push(
+      MaterialPageRoute<void>(
+        settings: RouteSettings(
+          name: AppRoutes.order,
+          arguments: OrderConfirmationArgs(order: order),
+        ),
+        builder: (_) => OrderConfirmationView(
+          onTrack: (_, _) async {},
+          onGoHome: (_) {},
+          onStartAnother: (_) => submission.beginAnotherOrder(),
+          submission: submission,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    store.failNextSave();
+    await tester.scrollUntilVisible(find.text('Fazer outro pedido'), 80);
+    await tester.tap(find.text('Fazer outro pedido'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pedido recebido'), findsWidgets);
+    expect(find.text(OrderSubmissionViewModel.unreadableIntentMessage), findsOneWidget);
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(submission.canRequestSubmit, isFalse);
+    expect(submission.canViewPersistedConfirmation, isTrue);
+  });
+}
+
+List<String> _semanticsLabels(WidgetTester tester) {
+  final renderView = tester.binding.renderViews.firstWhere(
+    (view) => view.flutterView == tester.view,
+  );
+  final root = renderView.owner!.semanticsOwner!.rootSemanticsNode!;
+  final labels = <String>[];
+  void visit(SemanticsNode node) {
+    final label = node.getSemanticsData().label.trim();
+    if (label.isNotEmpty) labels.add(label);
+    node.visitChildren((child) {
+      visit(child);
+      return true;
+    });
+  }
+
+  visit(root);
+  return labels;
 }

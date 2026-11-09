@@ -127,6 +127,29 @@ void main() {
     expect(item.lineTotalCents, 6580);
   });
 
+  test('status confirmado no detalhe permanece quando o refresh da fila falha', () async {
+    final listed = sampleOrder(id: 'o1', status: OrderStatus.received);
+    var failRefresh = false;
+    final repository = FakeOrderRepository(() async {
+      if (failRefresh) return const OrderList.unavailable('sem rede');
+      return OrderList.ready([listed]);
+    });
+    final delay = ControllableDelay();
+    keep(OrdersQueueViewModel(repository, delay: delay.call));
+
+    viewModel.resume();
+    await flushAsync();
+    viewModel.applyConfirmedUpdate(sampleOrder(id: 'o1', status: OrderStatus.preparing));
+    expect(viewModel.orders.single.status, OrderStatus.preparing);
+
+    failRefresh = true;
+    delay.elapse();
+    await flushAsync();
+
+    expect(viewModel.orders.single.status, OrderStatus.preparing);
+    expect(viewModel.refreshError, 'sem rede');
+  });
+
   test('trata lista vazia como fila sem pedidos', () async {
     final repository = FakeOrderRepository(() async => OrderList.ready(const []));
     keep(OrdersQueueViewModel(repository, delay: ControllableDelay().call));

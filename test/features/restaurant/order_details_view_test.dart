@@ -78,9 +78,32 @@ void main() {
     expect(find.text(_clock(order.createdAt)), findsOneWidget);
     expect(find.text('Preparando'), findsOneWidget);
     expect(find.text('Recebido'), findsNothing);
+    expect(find.text('Pedido confirmado'), findsNothing);
 
     final scheme = Theme.of(tester.element(find.text('Preparando'))).colorScheme;
     expect(tester.widget<Text>(find.text('Preparando')).style?.color, scheme.tertiary);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('mostra o número público no detalhe sem o UUID', (tester) async {
+    const id = 'o_6dbadd42-c7e1-4790-8f96-4d60620ad1fa';
+    final numbered = sampleOrder(
+      id: id,
+      orderNumber: 5,
+      table: '12',
+      status: OrderStatus.received,
+      createdAt: createdAt,
+      totalCents: 123456,
+      items: detailOrder().items,
+    );
+    await pumpDetails(
+      tester,
+      arguments: RestaurantOrderArgs(id: AppRouteId(id), order: numbered),
+      products: catalog([]),
+    );
+
+    expect(find.text('Pedido #0005'), findsOneWidget);
+    expect(find.textContaining(id), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

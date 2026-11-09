@@ -201,6 +201,15 @@ class OrdersQueueViewModel extends ChangeNotifier {
     _notify();
   }
 
+  /// Aplica um status já confirmado no detalhe, antes do próximo `GET /orders`.
+  void applyConfirmedUpdate(Order updated) {
+    if (_disposed) return;
+    final current = _orders.where((order) => order.id == updated.id).firstOrNull;
+    if (current == updated) return;
+    _applyUpdatedOrder(updated);
+    if (updated.status == OrderStatus.finished) _notify();
+  }
+
   void _applyUpdatedOrder(Order updated) {
     _actionError = null;
     _actionFailure = null;

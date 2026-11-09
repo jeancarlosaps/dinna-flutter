@@ -60,11 +60,11 @@ String? readOptionalString(Map<String, Object?> json, String key, {int? maxLengt
   return value;
 }
 
-/// Inteiro JSON. `double` (mesmo `3290.0`) não é centavo do contrato.
-int readRequiredInt(Map<String, Object?> json, String key, {required int min}) {
-  if (!json.containsKey(key) || json[key] == null) {
-    throw FormatException('Campo $key é obrigatório');
-  }
+/// Inteiro opcional. Ausente e `null` viram `null`. `double` não é inteiro.
+///
+/// [min] padrão é 0, para centavos. O número público do pedido usa `min: 1`.
+int? readOptionalInt(Map<String, Object?> json, String key, {int min = 0}) {
+  if (!json.containsKey(key) || json[key] == null) return null;
 
   final value = json[key];
   if (value is! int) {
@@ -76,9 +76,11 @@ int readRequiredInt(Map<String, Object?> json, String key, {required int min}) {
   return value;
 }
 
-/// Ausente e `null` viram `null`. Outro tipo é erro: não há coerção.
-int? readOptionalInt(Map<String, Object?> json, String key, {int min = 0}) {
-  if (!json.containsKey(key) || json[key] == null) return null;
+/// Inteiro JSON. `double` (mesmo `3290.0`) não é centavo do contrato.
+int readRequiredInt(Map<String, Object?> json, String key, {required int min}) {
+  if (!json.containsKey(key) || json[key] == null) {
+    throw FormatException('Campo $key é obrigatório');
+  }
 
   final value = json[key];
   if (value is! int) {

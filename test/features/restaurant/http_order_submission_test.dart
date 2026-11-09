@@ -23,6 +23,12 @@ const _created = {
   ],
   'totalCents': 10470,
   'createdAt': '2026-10-25T18:00:00.000Z',
+  'orderNumber': 5,
+};
+
+final _legacy = {
+  for (final entry in _created.entries)
+    if (entry.key != 'orderNumber') entry.key: entry.value,
 };
 
 final _items = [
@@ -86,6 +92,7 @@ void main() {
     expect(result.outcomeUncertain, isFalse);
     expect(result.shouldClearCart, isTrue);
     expect(order.id, 'o_550e8400-e29b-41d4-a716-446655440000');
+    expect(order.orderNumber, 5);
     expect(order.table, '12');
     expect(order.status, OrderStatus.received);
     expect(order.items.map((item) => item.productId), ['p1', 'p2']);
@@ -224,6 +231,38 @@ void main() {
     expect(errorBody.message, OrderSubmission.uncertainOutcomeMessage);
     expect(errorBody.detail, 'HTTP 500: corpo inválido');
     expect(errorBody.shouldClearCart, isFalse);
+  });
+
+  test('HTTP 401 UNAUTHORIZED recusa o envio e conserva a intenção', () async {
+    final result = await repositoryReturning(
+      http.Response(
+        jsonEncode({
+          'error': {'code': 'UNAUTHORIZED', 'message': 'Token de acesso ausente ou inválido'},
+        }),
+        401,
+        headers: const {'content-type': 'application/json; charset=utf-8'},
+      ),
+    ).create(table: '12', items: _items, idempotencyKey: '00000000-0000-4000-8000-0000000000aa');
+
+    expect(result.order, isNull);
+    expect(result.outcomeUncertain, isFalse);
+    expect(result.retainsIntent, isTrue);
+    expect(result.resendBlocked, isFalse);
+    expect(result.shouldClearCart, isFalse);
+    expect(result.failure, DataFailure.unavailable);
+    expect(result.message, OrderSubmission.unauthorizedRejectionMessage);
+    expect(result.message, isNot(contains('pode ter sido registrado')));
+  });
+
+  test('HTTP 401 sem código UNAUTHORIZED continua incerto depois da chave', () async {
+    final result = await repositoryReturning(
+      http.Response('{}', 401, headers: const {'content-type': 'application/json'}),
+    ).create(table: '12', items: _items, idempotencyKey: '00000000-0000-4000-8000-0000000000aa');
+
+    expect(result.outcomeUncertain, isTrue);
+    expect(result.retainsIntent, isFalse);
+    expect(result.shouldClearCart, isFalse);
+    expect(result.message, OrderSubmission.uncertainOutcomeMessage);
   });
 
   test('falha de transporte em send é incerta: o body pode ter saído', () async {
@@ -408,6 +447,179 @@ void main() {
     expect(withoutKey.resendBlocked, isFalse);
     expect(withoutKey.outcomeUncertain, isFalse);
     expect(withoutKey.failure, DataFailure.conflict);
+  });
+
+  test('replay sem orderNumber consulta o pedido e não faz outro POST', () async {
+    final calls = <String>[];
+    final repository = HttpOrderRepository(
+      ApiClient(
+        baseUrl: baseUrl,
+        apiToken: 'token-de-teste',
+        httpClient: MockClient((request) async {
+          calls.add('${request.method} ${request.url.path}');
+          if (request.method == 'GET') {
+            expect(request.headers['x-dinna-api-token'], 'token-de-teste');
+            return http.Response(
+              jsonEncode({..._legacy, 'orderNumber': 5, 'status': 'preparing'}),
+              200,
+              headers: const {'content-type': 'application/json; charset=utf-8'},
+            );
+          }
+          return http.Response(
+            jsonEncode(_legacy),
+            201,
+            headers: const {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      ),
+    );
+
+    final result = await repository.create(table: '12', items: _items);
+    final order = result.order!;
+
+    expect(calls, ['POST /orders', 'GET /orders/${_legacy['id']}']);
+    expect(order.orderNumber, 5);
+    expect(order.id, _legacy['id']);
+    expect(order.status, OrderStatus.received);
+    expect(order.totalCents, 10470);
+    expect(result.shouldClearCart, isTrue);
+    expect(result.outcomeUncertain, isFalse);
+    expect(result.failure, isNull);
+    expect(result.message, isNull);
+  });
+
+  test('falha ao consultar orderNumber não desfaz o 201', () async {
+    final calls = <String>[];
+    final repository = HttpOrderRepository(
+      ApiClient(
+        baseUrl: baseUrl,
+        httpClient: MockClient((request) async {
+          calls.add(request.method);
+          if (request.method == 'GET') {
+            return http.Response(
+              jsonEncode({
+                'error': {'code': 'UNAUTHORIZED', 'message': 'Token ausente'},
+              }),
+              401,
+              headers: const {'content-type': 'application/json; charset=utf-8'},
+            );
+          }
+          return http.Response(
+            jsonEncode(_legacy),
+            201,
+            headers: const {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      ),
+    );
+
+    final refused = await repository.create(table: '12', items: _items);
+    final missing = await HttpOrderRepository(
+      ApiClient(
+        baseUrl: baseUrl,
+        httpClient: MockClient((request) async {
+          calls.add(request.method);
+          if (request.method == 'GET') {
+            return http.Response('not-json', 200);
+          }
+          return http.Response(
+            jsonEncode(_legacy),
+            201,
+            headers: const {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      ),
+    ).create(table: '12', items: _items);
+
+    expect(calls, ['POST', 'GET', 'POST', 'GET']);
+    for (final result in [refused, missing]) {
+      expect(result.order, isNotNull);
+      expect(result.order!.orderNumber, isNull);
+      expect(result.order!.id, _legacy['id']);
+      expect(result.shouldClearCart, isTrue);
+      expect(result.outcomeUncertain, isFalse);
+      expect(result.failure, isNull);
+      expect(result.retainsIntent, isFalse);
+      expect(result.message, isNull);
+    }
+  });
+
+  test('exceção operacional no GET do número não desfaz o 201', () async {
+    final calls = <String>[];
+    final repository = HttpOrderRepository(
+      ApiClient(
+        baseUrl: baseUrl,
+        httpClient: MockClient((request) async {
+          calls.add(request.method);
+          if (request.method == 'GET') throw Exception('sem rede');
+          return http.Response(
+            jsonEncode(_legacy),
+            201,
+            headers: const {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      ),
+    );
+
+    final result = await repository.create(table: '12', items: _items);
+
+    expect(calls, ['POST', 'GET']);
+    expect(result.order, isNotNull);
+    expect(result.order!.orderNumber, isNull);
+    expect(result.order!.id, _legacy['id']);
+    expect(result.shouldClearCart, isTrue);
+    expect(result.outcomeUncertain, isFalse);
+    expect(result.failure, isNull);
+  });
+
+  test('erro de programação no GET do número não é engolido', () async {
+    final calls = <String>[];
+    final repository = HttpOrderRepository(
+      ApiClient(
+        baseUrl: baseUrl,
+        httpClient: MockClient((request) async {
+          calls.add(request.method);
+          if (request.method == 'GET') throw StateError('contrato');
+          return http.Response(
+            jsonEncode(_legacy),
+            201,
+            headers: const {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      ),
+    );
+
+    await expectLater(repository.create(table: '12', items: _items), throwsA(isA<StateError>()));
+    expect(calls, ['POST', 'GET']);
+  });
+
+  test('GET com outro id não inventa número para o 201', () async {
+    final repository = HttpOrderRepository(
+      ApiClient(
+        baseUrl: baseUrl,
+        httpClient: MockClient((request) async {
+          if (request.method == 'GET') {
+            return http.Response(
+              jsonEncode({..._legacy, 'id': 'o_outro', 'orderNumber': 9}),
+              200,
+              headers: const {'content-type': 'application/json; charset=utf-8'},
+            );
+          }
+          return http.Response(
+            jsonEncode(_legacy),
+            201,
+            headers: const {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      ),
+    );
+
+    final result = await repository.create(table: '12', items: _items);
+
+    expect(result.order!.id, _legacy['id']);
+    expect(result.order!.orderNumber, isNull);
+    expect(result.shouldClearCart, isTrue);
+    expect(result.outcomeUncertain, isFalse);
   });
 }
 

@@ -28,6 +28,36 @@ final class RestaurantOrderArgs {
   final Order order;
 }
 
+/// Abertura do carrinho. [reviewOnly] impede a confirmação automática.
+///
+/// A mesa continua opcional. Sem este objeto, a rota aceita a mesa como [String].
+final class CartRouteArgs {
+  const CartRouteArgs({this.table, this.reviewOnly = false});
+
+  final String? table;
+  final bool reviewOnly;
+}
+
+/// Acompanhamento de um pedido já confirmado.
+///
+/// [id] permanece o identificador técnico da rota. [orderNumber] é o número
+/// público, quando ele já veio na resposta. A tela não consulta a API.
+final class OrderTrackingArgs {
+  const OrderTrackingArgs({required this.id, this.orderNumber});
+
+  final AppRouteId id;
+  final int? orderNumber;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other is OrderTrackingArgs && other.id == id && other.orderNumber == orderNumber);
+  }
+
+  @override
+  int get hashCode => Object.hash(id, orderNumber);
+}
+
 /// Pedido que a API já confirmou e o envio gravou.
 ///
 /// A confirmação lê este valor e não repete `POST /orders` nem `GET /orders`.

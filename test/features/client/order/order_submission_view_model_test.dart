@@ -3,6 +3,12 @@ import 'dart:io';
 
 import 'package:dinna/core/domain/cart_item.dart';
 import 'package:dinna/core/domain/data_failure.dart';
+import 'package:dinna/core/domain/order.dart';
+import 'package:dinna/features/client/order/last_order_session.dart';
+import 'package:dinna/features/client/order/last_order_store.dart';
+import 'package:dinna/features/client/order/order_intent.dart';
+import 'package:dinna/features/client/order/order_intent_id.dart';
+import 'package:dinna/features/client/order/order_intent_store.dart';
 import 'package:dinna/features/client/order/order_submission_view_model.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -76,6 +82,122 @@ void main() {
     expect(viewModel.shouldClearCart, isTrue);
     expect(viewModel.canRequestSubmit, isFalse);
     expect(items.single.quantity, 2);
+  });
+
+  test('grava o pedido confirmado no histórico independente da intenção', () async {
+    final order = sampleOrder(id: 'o-history');
+    final store = MemoryLastOrderStore();
+    final session = LastOrderSession(store);
+    final viewModel = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async => OrderSubmission.created(order),
+      ),
+      lastOrderSession: session,
+    );
+    addTearDown(session.dispose);
+    addTearDown(viewModel.dispose);
+
+    await viewModel.submit(table: '12', items: items);
+
+    expect(viewModel.status, OrderSubmissionStatus.succeeded);
+    expect(session.order, order);
+    expect(session.isPersisted(order), isTrue);
+    expect(await store.load(), order);
+    expect(viewModel.canBeginAnotherOrder, isTrue);
+  });
+
+  test('notifica quando o retry do histórico libera outro pedido', () async {
+    final order = sampleOrder(id: 'o-history-retry');
+    final store = MemoryLastOrderStore()..failNextSave();
+    final session = LastOrderSession(store);
+    final viewModel = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async => OrderSubmission.created(order),
+      ),
+      lastOrderSession: session,
+    );
+    addTearDown(session.dispose);
+    addTearDown(viewModel.dispose);
+
+    await viewModel.submit(table: '12', items: items);
+    expect(session.isPersisted(order), isFalse);
+    expect(viewModel.canBeginAnotherOrder, isFalse);
+
+    var notifications = 0;
+    viewModel.addListener(() => notifications++);
+    await session.retry();
+
+    expect(session.isPersisted(order), isTrue);
+    expect(viewModel.canBeginAnotherOrder, isTrue);
+    expect(notifications, greaterThan(0));
+  });
+
+  test('reconstrói o histórico a partir de uma intenção concluída guardada', () async {
+    final order = sampleOrder(id: 'o-recovered');
+    final intentStore = MemoryOrderIntentStore();
+    final latestOrderStore = MemoryLastOrderStore();
+    final session = LastOrderSession(latestOrderStore);
+    final now = DateTime.utc(2026, 11, 7, 12);
+    final intent = OrderIntent.pending(
+      id: newOrderIntentId(),
+      createdAt: now.subtract(const Duration(minutes: 1)),
+      table: '12',
+      items: [
+        {'productId': 'p1', 'quantity': 2},
+      ],
+    ).succeeded(order);
+    await intentStore.save(intent);
+    final viewModel = OrderSubmissionViewModel(
+      FakeOrderRepository(() async => OrderList.ready(const [])),
+      intentStore: intentStore,
+      lastOrderSession: session,
+      now: () => now,
+    );
+    addTearDown(session.dispose);
+    addTearDown(viewModel.dispose);
+
+    await viewModel.restore();
+
+    expect(viewModel.status, OrderSubmissionStatus.succeeded);
+    expect(session.isPersisted(order), isTrue);
+    expect(await latestOrderStore.load(), order);
+    expect(viewModel.canViewPersistedConfirmation, isTrue);
+    expect(viewModel.canBeginAnotherOrder, isTrue);
+  });
+
+  test('não grava de novo um pedido já persistido ao restaurar a intenção', () async {
+    final order = sampleOrder(id: 'o-already-persisted');
+    final backingStore = MemoryLastOrderStore();
+    await backingStore.save(order);
+    final latestOrderStore = _CountingLastOrderStore(backingStore);
+    final session = LastOrderSession(latestOrderStore);
+    final intentStore = MemoryOrderIntentStore();
+    final now = DateTime.utc(2026, 11, 7, 12);
+    final intent = OrderIntent.pending(
+      id: newOrderIntentId(),
+      createdAt: now.subtract(const Duration(minutes: 1)),
+      table: '12',
+      items: [
+        {'productId': 'p1', 'quantity': 2},
+      ],
+    ).succeeded(order);
+    await intentStore.save(intent);
+    final viewModel = OrderSubmissionViewModel(
+      FakeOrderRepository(() async => OrderList.ready(const [])),
+      intentStore: intentStore,
+      lastOrderSession: session,
+      now: () => now,
+    );
+    addTearDown(session.dispose);
+    addTearDown(viewModel.dispose);
+
+    await viewModel.restore();
+
+    expect(latestOrderStore.saveCalls, 0);
+    expect(session.isPersisted(order), isTrue);
+    expect(viewModel.canBeginAnotherOrder, isTrue);
   });
 
   test('validação falha sem limpar o carrinho', () async {
@@ -375,4 +497,177 @@ void main() {
     expect(repository.createCalls, 0);
     expect(() => repository.create(table: '12', items: items), throwsA(isA<UnsupportedError>()));
   });
+
+  const recoveredId = '00000000-0000-4000-8000-0000000000aa';
+  final fixedNow = DateTime.utc(2026, 11, 8, 12, 30);
+
+  OrderIntent pendingIntent() {
+    return OrderIntent.pending(
+      id: recoveredId,
+      createdAt: DateTime.utc(2026, 11, 8, 12),
+      table: '12',
+      items: const [
+        {'productId': 'p1', 'quantity': 2, 'note': 'sem cebola'},
+      ],
+    );
+  }
+
+  test('pending recuperado sem rejeição continua incerto depois do 401', () async {
+    final store = MemoryOrderIntentStore();
+    await store.save(pendingIntent());
+    final orders = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async {
+        return const OrderSubmission.failed(
+          OrderSubmission.unauthorizedRejectionMessage,
+          retainsIntent: true,
+        );
+      },
+    );
+    final viewModel = OrderSubmissionViewModel(
+      orders,
+      intentStore: store,
+      newIntentId: () => '00000000-0000-4000-8000-0000000000bb',
+      now: () => fixedNow,
+    );
+    addTearDown(viewModel.dispose);
+
+    await viewModel.restore();
+    await viewModel.resume(recoveredId);
+
+    expect(orders.lastIdempotencyKey, recoveredId);
+    expect(orders.createCalls, 1);
+    expect(viewModel.outcomeUncertain, isTrue);
+    expect(viewModel.authRejected, isFalse);
+    expect(viewModel.errorMessage, contains('pode ter sido registrado'));
+    expect(viewModel.canRequestSubmit, isFalse);
+    final stored = await store.load();
+    expect(stored?.id, recoveredId);
+    expect(stored?.phase, OrderIntentPhase.uncertain);
+    expect(stored?.rejection, isNull);
+  });
+
+  test('intenção expirada não reenvia o 401', () async {
+    final store = MemoryOrderIntentStore();
+    await store.save(pendingIntent());
+    final orders = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async {
+        return const OrderSubmission.failed(
+          OrderSubmission.unauthorizedRejectionMessage,
+          retainsIntent: true,
+        );
+      },
+    );
+    final viewModel = OrderSubmissionViewModel(
+      orders,
+      intentStore: store,
+      newIntentId: () => '00000000-0000-4000-8000-0000000000bb',
+      now: () => fixedNow.add(const Duration(hours: 23)),
+    );
+    addTearDown(viewModel.dispose);
+
+    await viewModel.restore();
+    await viewModel.resume(recoveredId);
+
+    expect(orders.createCalls, 0);
+    expect(viewModel.outcomeUncertain, isFalse);
+    expect(viewModel.authRejected, isFalse);
+    expect((await store.load())!.phase, OrderIntentPhase.blocked);
+  });
+
+  test('201 não gravado e timeout sem marca de incerto não viram recusa no 401', () async {
+    Future<void> recover(int failAt, OrderSubmission first) async {
+      final inner = MemoryOrderIntentStore();
+      final store = _FailNthSave(inner, failAt: failAt);
+      final firstModel = OrderSubmissionViewModel(
+        FakeOrderRepository(
+          () async => OrderList.ready(const []),
+          onCreate: ({required table, required items}) async => first,
+        ),
+        intentStore: store,
+        newIntentId: () => recoveredId,
+      );
+      addTearDown(firstModel.dispose);
+      await firstModel.submit(table: '12', items: items);
+      expect(await inner.load(), isNotNull);
+      expect((await inner.load())!.phase, OrderIntentPhase.pending);
+      expect((await inner.load())!.rejection, isNull);
+
+      final orders = FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async {
+          return const OrderSubmission.failed(
+            OrderSubmission.unauthorizedRejectionMessage,
+            retainsIntent: true,
+          );
+        },
+      );
+      final resumed = OrderSubmissionViewModel(
+        orders,
+        intentStore: inner,
+        newIntentId: () => '00000000-0000-4000-8000-0000000000bb',
+      );
+      addTearDown(resumed.dispose);
+      await resumed.restore();
+      await resumed.resume(recoveredId);
+
+      expect(orders.createCalls, 1);
+      expect(orders.lastIdempotencyKey, recoveredId);
+      expect(resumed.outcomeUncertain, isTrue);
+      expect(resumed.authRejected, isFalse);
+      expect(resumed.errorMessage, contains('pode ter sido registrado'));
+      expect((await inner.load())!.phase, OrderIntentPhase.uncertain);
+      expect((await inner.load())!.rejection, isNull);
+    }
+
+    await recover(2, OrderSubmission.created(sampleOrder(id: 'order-real')));
+    await recover(
+      2,
+      const OrderSubmission.failed(
+        OrderSubmission.uncertainOutcomeMessage,
+        failure: DataFailure.uncertain,
+        outcomeUncertain: true,
+      ),
+    );
+  });
+}
+
+final class _FailNthSave implements OrderIntentStore {
+  _FailNthSave(this.inner, {required this.failAt});
+
+  final MemoryOrderIntentStore inner;
+  final int failAt;
+  var saves = 0;
+
+  @override
+  Future<void> clear() => inner.clear();
+
+  @override
+  Future<OrderIntent?> load() => inner.load();
+
+  @override
+  Future<void> save(OrderIntent intent) async {
+    saves++;
+    if (saves == failAt) {
+      throw const OrderIntentStoreException(OrderIntentStoreProblem.unwritable);
+    }
+    await inner.save(intent);
+  }
+}
+
+final class _CountingLastOrderStore implements LastOrderStore {
+  _CountingLastOrderStore(this._delegate);
+
+  final LastOrderStore _delegate;
+  var saveCalls = 0;
+
+  @override
+  Future<Order?> load() => _delegate.load();
+
+  @override
+  Future<void> save(Order order) async {
+    saveCalls++;
+    await _delegate.save(order);
+  }
 }

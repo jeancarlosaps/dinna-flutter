@@ -45,6 +45,7 @@ void main() {
   Order confirmedOrder() {
     return sampleOrder(
       id: 'order-real',
+      orderNumber: 5,
       table: '4',
       totalCents: 2500,
       items: [OrderItem(productId: 'p9', quantity: 1, note: 'sem sal')],
@@ -111,7 +112,8 @@ void main() {
     expect(find.byType(OrderConfirmationView), findsOneWidget);
     expect(find.text('Mesa 4'), findsOneWidget);
     expect(find.text('Mesa 12'), findsNothing);
-    expect(find.text('order-real'), findsOneWidget);
+    expect(find.text('Pedido #0005'), findsOneWidget);
+    expect(find.text('order-real'), findsNothing);
     expect(find.text('1×'), findsOneWidget);
     expect(find.text('p9'), findsOneWidget);
     expect(find.text('sem sal'), findsOneWidget);
@@ -127,11 +129,11 @@ void main() {
       find.descendant(of: find.byType(OrderConfirmationView), matching: find.text('2×')),
       findsNothing,
     );
-    expect(lines.read().single.quantity, 2);
-    expect(lines.read().single.note, 'sem cebola');
+    expect(lines.read(), isEmpty);
 
     final action = find.text('Acompanhar pedido');
-    await tester.scrollUntilVisible(action, 200);
+    await tester.ensureVisible(action);
+    await tester.pump();
     await tester.tap(action);
     await tester.pumpAndSettle();
 
@@ -140,7 +142,12 @@ void main() {
     expect(products.calls, 1);
     final tracking = ModalRoute.of(tester.element(find.byType(OrderTrackingView)))!;
     expect(tracking.settings.name, AppRoutes.orderTracking);
-    expect(tracking.settings.arguments, const AppRouteId('order-real'));
+    expect(
+      tracking.settings.arguments,
+      const OrderTrackingArgs(id: AppRouteId('order-real'), orderNumber: 5),
+    );
+    expect(find.text('Pedido #0005'), findsWidgets);
+    expect(find.textContaining('order-real'), findsNothing);
     expect(find.text('Status ao vivo indisponível'), findsOneWidget);
 
     Navigator.of(tester.element(find.byType(OrderTrackingView))).pop();
@@ -172,7 +179,7 @@ void main() {
 
     expect(calls, 1);
     expect(find.byType(OrderConfirmationView), findsOneWidget);
-    expect(lines.read(), hasLength(1));
+    expect(lines.read(), isEmpty);
   });
 
   testWidgets('o 201 repetido não abre outra confirmação nem outro POST', (tester) async {
@@ -298,21 +305,26 @@ void main() {
     expect(calls, 0);
     expect(orders.createCalls, 0);
     expect(find.byType(OrderConfirmationView), findsOneWidget);
-    expect(find.text('order-real'), findsOneWidget);
+    expect(find.text('Pedido #0005'), findsOneWidget);
+    expect(find.text('order-real'), findsNothing);
     expect(find.text('Mesa 4'), findsOneWidget);
     expect(find.text('1×'), findsOneWidget);
-    expect(lines.read().single.quantity, 2);
+    expect(lines.read(), isEmpty);
+    await tester.scrollUntilVisible(find.text('Voltar ao início'), 200);
+    expect(find.text('Voltar ao início'), findsOneWidget);
+    expect(find.text('Fazer outro pedido'), findsOneWidget);
+
+    final stored = await store.load();
+    expect(stored!.order!.id, 'order-real');
+    expect(stored.phase.name, 'succeeded');
 
     Navigator.of(tester.element(find.byType(OrderConfirmationView))).pop();
     await tester.pumpAndSettle();
-    expect(find.text('Fazer outro pedido'), findsOneWidget);
-    expect(find.text('Ver confirmação'), findsOneWidget);
+    expect(find.byType(OrderConfirmationView), findsNothing);
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(find.text('dinna'), findsWidgets);
     expect(calls, 0);
-
-    await tester.tap(find.text('Ver confirmação'));
-    await tester.pumpAndSettle();
-    expect(find.byType(OrderConfirmationView), findsOneWidget);
-    expect(calls, 0);
+    expect((await store.load())!.order!.id, 'order-real');
   });
 
   testWidgets('resultado incerto não abre confirmação', (tester) async {
@@ -421,8 +433,9 @@ void main() {
 
     expect(calls, 1);
     expect(find.byType(OrderConfirmationView), findsOneWidget);
-    expect(find.text('order-real'), findsOneWidget);
-    expect(lines.read().single.quantity, 1);
+    expect(find.text('Pedido #0005'), findsOneWidget);
+    expect(find.text('order-real'), findsNothing);
+    expect(lines.read(), isEmpty);
   });
 
   testWidgets('falha ao apagar o sucesso mantém o comprovante e bloqueia outro envio', (
@@ -512,7 +525,8 @@ void main() {
 
     expect(opened, 2);
     expect(shown!.id, 'order-real');
-    expect(find.text('order-real'), findsOneWidget);
+    expect(find.text('Pedido #0005'), findsOneWidget);
+    expect(find.text('order-real'), findsNothing);
     expect(find.byType(OrderConfirmationView), findsOneWidget);
 
     await submission.submit(table: '7', items: lines.read());

@@ -8,18 +8,51 @@ import 'api_exception.dart';
 
 /// Service concreto do MVVM: ponto único de acesso HTTP à dinna-api.
 ///
-/// Cuida de URL, timeout, serialização e status code. Repositories dependem
-/// dele; Views e ViewModels não usam `http` nem este tipo.
+/// Cuida de URL, timeout, serialização e status code. Com token de execução,
+/// acrescenta [accessTokenHeader] sem substituir header que o repositório já
+/// definiu. Repositories dependem dele; Views e ViewModels não usam `http`
+/// nem este tipo.
 class ApiClient {
   ApiClient({
     required this.baseUrl,
     required this._httpClient,
+    String? apiToken,
     this.timeout = const Duration(seconds: 10),
-  });
+  }) : _apiToken = _usableToken(apiToken);
+
+  /// Header da proteção temporária do ambiente. Não é sessão de usuário.
+  static const accessTokenHeader = 'X-Dinna-Api-Token';
 
   final Uri baseUrl;
   final Duration timeout;
   final http.Client _httpClient;
+  final String? _apiToken;
+
+  static String? _usableToken(String? raw) {
+    final token = raw?.trim();
+    if (token == null || token.isEmpty) return null;
+    return token;
+  }
+
+  bool _hasAccessToken(Map<String, String> headers) {
+    final name = accessTokenHeader.toLowerCase();
+    for (final key in headers.keys) {
+      if (key.toLowerCase() == name) return true;
+    }
+    return false;
+  }
+
+  Map<String, String> _withAccessToken(Map<String, String> headers) {
+    final token = _apiToken;
+    if (token == null || _hasAccessToken(headers)) return headers;
+    return {...headers, accessTokenHeader: token};
+  }
+
+  void _applyAccessToken(http.BaseRequest request) {
+    final token = _apiToken;
+    if (token == null || _hasAccessToken(request.headers)) return;
+    request.headers[accessTokenHeader] = token;
+  }
 
   /// Texto da interface quando o erro HTTP não traz `error.message` utilizável.
   static const httpFailureMessage = 'Não foi possível concluir a consulta';
@@ -33,7 +66,10 @@ class ApiClient {
 
   Future<Object?> getJson(String path) async {
     return _send(
-      () => _httpClient.get(baseUrl.resolve(path), headers: const {'Accept': 'application/json'}),
+      () => _httpClient.get(
+        baseUrl.resolve(path),
+        headers: _withAccessToken(const {'Accept': 'application/json'}),
+      ),
     );
   }
 
@@ -42,7 +78,10 @@ class ApiClient {
     return _send(
       () => _httpClient.patch(
         baseUrl.resolve(path),
-        headers: const {'Accept': 'application/json', 'Content-Type': 'application/json'},
+        headers: _withAccessToken(const {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        }),
         body: jsonEncode(body),
       ),
     );
@@ -76,6 +115,7 @@ class ApiClient {
     final request = http.Request('POST', baseUrl.resolve(path))
       ..headers.addAll(const {'Accept': 'application/json', 'Content-Type': 'application/json'});
     if (headers != null) request.headers.addAll(headers);
+    _applyAccessToken(request);
     request.body = jsonEncode(jsonBody);
 
     final deadline = DateTime.now().add(timeout);

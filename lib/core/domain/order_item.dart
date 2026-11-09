@@ -32,8 +32,7 @@ final class OrderItem {
       );
     }
     final productName = name;
-    if (productName != null &&
-        (productName.isEmpty || productName.length > _nameMaxLength)) {
+    if (productName != null && (productName.isEmpty || productName.length > _nameMaxLength)) {
       throw ArgumentError.value(
         productName,
         'name',

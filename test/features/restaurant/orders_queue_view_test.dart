@@ -5,6 +5,7 @@ import 'package:dinna/app/theme/dinna_theme.dart';
 import 'package:dinna/core/domain/order.dart';
 import 'package:dinna/core/domain/order_item.dart';
 import 'package:dinna/core/domain/order_status.dart';
+import 'package:dinna/features/restaurant/order_format.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:dinna/features/restaurant/orders_queue_view.dart';
 import 'package:dinna/features/restaurant/orders_queue_view_model.dart';
@@ -20,7 +21,7 @@ void main() {
   Future<void> pumpQueue(
     WidgetTester tester,
     OrdersQueueViewModel Function() create, {
-    void Function(BuildContext context, Order order)? onOrderSelected,
+    FutureOr<Object?> Function(BuildContext context, Order order)? onOrderSelected,
   }) {
     return tester.pumpWidget(
       MaterialApp(
@@ -41,6 +42,23 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     expect(find.text('Nenhum pedido na fila'), findsNothing);
     expect(find.text('Tentar novamente'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('mostra o número público e não o identificador técnico', (tester) async {
+    const id = 'o_6dbadd42-c7e1-4790-8f96-4d60620ad1fa';
+    final order = sampleOrder(id: id, table: '12', orderNumber: 5);
+    await pumpQueue(
+      tester,
+      () => OrdersQueueViewModel(
+        FakeOrderRepository(() async => OrderList.ready([order])),
+        delay: pendingPollDelay,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(publicOrderLabel(5)), findsOneWidget);
+    expect(find.textContaining(id), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -391,6 +409,93 @@ void main() {
     expect(repository.calls, 2);
     expect(find.text('Mesa 5'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
+  testWidgets('aplica o pedido devolvido pelo detalhe', (tester) async {
+    final order = sampleOrder(id: 'o1', table: '12', status: OrderStatus.received);
+    final updated = sampleOrder(id: 'o1', table: '12', status: OrderStatus.preparing);
+    await pumpQueue(
+      tester,
+      () => OrdersQueueViewModel(
+        FakeOrderRepository(() async => OrderList.ready([order])),
+        delay: pendingPollDelay,
+      ),
+      onOrderSelected: (context, selectedOrder) => updated,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Recebido'), findsOneWidget);
+    await tester.tap(find.text('Ver detalhes'));
+    await tester.pump();
+
+    expect(find.text('Preparando'), findsOneWidget);
+    expect(find.text('Recebido'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('tela estreita com texto ampliado não estoura o card nem a fila vazia', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 240);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    Future<void> pumpScaled(OrdersQueueViewModel Function() create) {
+      return tester.pumpWidget(
+        MaterialApp(
+          theme: DinnaTheme.light(),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(2)),
+            child: child!,
+          ),
+          home: OrdersQueueView(createViewModel: create),
+        ),
+      );
+    }
+
+    await pumpScaled(
+      () => OrdersQueueViewModel(
+        FakeOrderRepository(
+          () async => OrderList.ready([
+            sampleOrder(id: 'o1', table: '12', orderNumber: 5, status: OrderStatus.preparing),
+          ]),
+        ),
+        delay: pendingPollDelay,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Mesa 12'), findsOneWidget);
+    expect(find.text('Pedido #0005'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('fila vazia em tela baixa com texto ampliado continua rolável', (tester) async {
+    tester.view.physicalSize = const Size(320, 240);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(2)),
+          child: child!,
+        ),
+        home: OrdersQueueView(
+          createViewModel: () => OrdersQueueViewModel(
+            FakeOrderRepository(() async => OrderList.ready(const [])),
+            delay: pendingPollDelay,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Nenhum pedido na fila'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }
 

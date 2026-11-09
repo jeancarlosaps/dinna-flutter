@@ -2,29 +2,51 @@ import 'package:flutter/material.dart';
 
 import '../../../app/router/app_route_args.dart';
 import '../../../shared/widgets/dinna_empty_state.dart';
+import '../../restaurant/order_format.dart';
 
 /// Identificação do pedido na rota `/order/tracking`.
 ///
-/// Lê [AppRouteId]. Não consulta a API, não observa status e não cria outro
-/// pedido. A atualização do andamento fica fora desta tela. Sem o id, explica
-/// a ausência.
+/// Lê [OrderTrackingArgs] ou, ainda, [AppRouteId]. Não consulta a API, não
+/// observa status e não cria outro pedido. Mostra o número público quando ele
+/// veio no argumento. Sem o número, explica o pedido de forma neutra e não
+/// exibe o UUID. A atualização do andamento fica fora desta tela. Sem id,
+/// explica a ausência.
 class OrderTrackingView extends StatelessWidget {
   const OrderTrackingView({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final id = _orderId(ModalRoute.of(context)?.settings.arguments);
+    final tracked = _trackedOrder(ModalRoute.of(context)?.settings.arguments);
     return Scaffold(
       appBar: AppBar(title: const Text('Acompanhamento')),
-      body: id == null ? const _MissingTracking() : _KnownOrder(id: id),
+      body: tracked == null
+          ? const _MissingTracking()
+          : _KnownOrder(orderNumber: tracked.orderNumber),
     );
   }
 
-  String? _orderId(Object? arguments) {
-    if (arguments is! AppRouteId) return null;
-    if (arguments.value.trim().isEmpty) return null;
-    return arguments.value;
+  /// `null` quando a rota não identifica um pedido. O número público pode
+  /// faltar num pedido válido.
+  _TrackedOrder? _trackedOrder(Object? arguments) {
+    if (arguments is OrderTrackingArgs) {
+      if (arguments.id.value.trim().isEmpty) return null;
+      final number = arguments.orderNumber;
+      if (number != null && number < 1) return const _TrackedOrder(null);
+      return _TrackedOrder(number);
+    }
+    if (arguments is AppRouteId) {
+      if (arguments.value.trim().isEmpty) return null;
+      return const _TrackedOrder(null);
+    }
+    return null;
   }
+}
+
+/// Pedido já identificado. [orderNumber] nulo não é uma rota inválida.
+final class _TrackedOrder {
+  const _TrackedOrder(this.orderNumber);
+
+  final int? orderNumber;
 }
 
 class _MissingTracking extends StatelessWidget {
@@ -41,12 +63,13 @@ class _MissingTracking extends StatelessWidget {
 }
 
 class _KnownOrder extends StatelessWidget {
-  const _KnownOrder({required this.id});
+  const _KnownOrder({required this.orderNumber});
 
-  final String id;
+  final int? orderNumber;
 
   @override
   Widget build(BuildContext context) {
+    final label = publicOrderLabel(orderNumber);
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth > 720 ? 720.0 : constraints.maxWidth;
@@ -58,9 +81,7 @@ class _KnownOrder extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
-                Text('Pedido', style: Theme.of(context).textTheme.bodyMedium),
-                const SizedBox(height: 4),
-                Text(id, style: Theme.of(context).textTheme.titleMedium),
+                Text(label, style: Theme.of(context).textTheme.titleMedium),
                 const DinnaEmptyState(
                   icon: Icons.receipt_long_outlined,
                   title: 'Status ao vivo indisponível',

@@ -25,6 +25,16 @@ class OrderDetailsView extends StatefulWidget {
 
 class _OrderDetailsViewState extends State<OrderDetailsView> {
   OrderDetailsViewModel? _viewModel;
+  var _closing = false;
+
+  void _requestClose() {
+    if (_closing) return;
+    setState(() => _closing = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context).pop(_viewModel?.order);
+    });
+  }
 
   @override
   void didChangeDependencies() {
@@ -53,14 +63,21 @@ class _OrderDetailsViewState extends State<OrderDetailsView> {
   @override
   Widget build(BuildContext context) {
     final viewModel = _viewModel;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Pedido')),
-      body: viewModel == null
-          ? const _MissingOrder()
-          : ListenableBuilder(
-              listenable: viewModel,
-              builder: (context, _) => _DetailsScaffold(viewModel: viewModel),
-            ),
+    return PopScope(
+      canPop: _closing,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop || _closing) return;
+        _requestClose();
+      },
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Pedido')),
+        body: viewModel == null
+            ? const _MissingOrder()
+            : ListenableBuilder(
+                listenable: viewModel,
+                builder: (context, _) => _DetailsScaffold(viewModel: viewModel),
+              ),
+      ),
     );
   }
 }
@@ -220,10 +237,13 @@ class _SummaryCard extends StatelessWidget {
     final scheme = theme.colorScheme;
     final time = formatOrderTimestamp(viewModel.createdAt);
     final status = orderStatusLabel(viewModel.status);
+    final number = viewModel.orderNumber == null
+        ? ''
+        : ', ${publicOrderLabel(viewModel.orderNumber)}';
     return Semantics(
       container: true,
       excludeSemantics: true,
-      label: 'Mesa ${viewModel.table}, $time, $status',
+      label: 'Mesa ${viewModel.table}, $time, $status$number',
       child: Card(
         margin: EdgeInsets.zero,
         child: Padding(
@@ -240,6 +260,13 @@ class _SummaryCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                     ),
+                    if (viewModel.orderNumber != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        publicOrderLabel(viewModel.orderNumber),
+                        style: theme.textTheme.titleSmall,
+                      ),
+                    ],
                     const SizedBox(height: 4),
                     Text(
                       time,

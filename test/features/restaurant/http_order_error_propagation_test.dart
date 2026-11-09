@@ -279,6 +279,7 @@ void main() {
     ],
     'totalCents': 6580,
     'createdAt': '2026-10-25T18:00:00.000Z',
+    'orderNumber': 5,
   };
 
   Map<String, Object?> decodeBody(String raw) {

@@ -1,0 +1,595 @@
+import 'package:flutter/foundation.dart';
+
+import '../../core/domain/data_failure.dart';
+import '../client/cart/cart_session.dart';
+import '../menu/product_repository.dart';
+import 'recommendation.dart';
+import 'recommendation_catalog.dart';
+import 'recommendation_preferences.dart';
+import 'recommendation_preferences_store.dart';
+import 'recommendation_repository.dart';
+import 'recommendation_request.dart';
+
+/// O que a tela de recomendação está mostrando.
+enum RecommendationPhase {
+  /// Formulário com as respostas atuais.
+  editing,
+
+  /// Há um POST em andamento. Outro toque não dispara outro envio.
+  loading,
+
+  /// `answered` + `suggestions`, com ao menos um prato disponível no cardápio.
+  suggestions,
+
+  /// `unavailable` + `suggestions`, com ao menos um prato disponível.
+  /// Sucesso com fallback, não é erro.
+  fallback,
+
+  /// `not_called` + `no_compatible_products`.
+  noCompatibleProducts,
+
+  /// `not_called` + `empty_catalog`.
+  emptyCatalog,
+
+  /// A IA devolveu ids, mas nenhum existe e está disponível.
+  noAvailableProducts,
+
+  /// A consulta ao cardápio falhou depois de uma recomendação com sugestões.
+  catalogFailed,
+
+  /// HTTP, transporte ou JSON fora dos quatro pares.
+  failed,
+
+  /// "Pedir outra sugestão" só trouxe pratos que já apareceram.
+  noOtherSuggestions,
+}
+
+/// Inclusão de uma sugestão no carrinho já aberto.
+sealed class RecommendationCartAddition {
+  const RecommendationCartAddition();
+}
+
+/// A sessão confirmou a nova linha.
+final class RecommendationCartAdded extends RecommendationCartAddition {
+  const RecommendationCartAdded(this.productName);
+
+  final String productName;
+}
+
+/// O toque não gravou. [message] é o que a tela pode mostrar.
+final class RecommendationCartRejected extends RecommendationCartAddition {
+  const RecommendationCartRejected(this.message);
+
+  final String message;
+}
+
+/// Toque repetido ou resposta que chegou depois do encerramento da tela.
+final class RecommendationCartIgnored extends RecommendationCartAddition {
+  const RecommendationCartIgnored();
+}
+
+/// Formulário "Me ajuda a escolher" e o resultado do POST.
+///
+/// As cinco escolhas não ganham default. Restrição marcada permanece no
+/// pedido. Contradição desabilita o envio e não apaga o que a pessoa marcou.
+///
+/// O armazenamento, quando existe, devolve o formulário já salvo e grava cada
+/// alteração. Abrir a tela não chama [RecommendationRepository.recommend].
+class RecommendationViewModel extends ChangeNotifier {
+  RecommendationViewModel(
+    this._repository, {
+    required ProductRepository products,
+    this.cartSession,
+    this.preferencesStore,
+    this.table,
+    this.limit = 3,
+  }) : _products = products,
+       _catalog = RecommendationCatalog(products) {
+    final stored = _readStored();
+    if (stored != null) {
+      _budget = stored.budget;
+      _hunger = stored.hunger;
+      _protein = stored.protein;
+      _style = stored.style;
+      _taste = stored.taste;
+      _restrictions = stored.restrictions;
+    }
+    _lastSaved = _capture();
+    _seenEpoch = _epoch(preferencesStore);
+  }
+
+  final RecommendationRepository _repository;
+  final ProductRepository _products;
+  final RecommendationCatalog _catalog;
+
+  /// Nulo deixa o formulário só nesta instância. A tela não lê o armazenamento.
+  final RecommendationPreferencesStore? preferencesStore;
+
+  /// Carrinho já restaurado da sessão. Nulo não cria outro carrinho.
+  final CartSession? cartSession;
+  final String? table;
+  final int limit;
+
+  static const fishAndSeafoodMessage = 'Peixe não combina com a restrição sem frutos do mar.';
+
+  static const animalAndVeganMessage = 'A proteína escolhida não cabe numa restrição vegana.';
+
+  static const catalogFailureTitle = 'Não foi possível carregar os pratos sugeridos';
+
+  static const catalogFailureMessage = 'O cardápio, o carrinho e o pedido continuam disponíveis.';
+
+  static const unavailableProductMessage = 'Este prato não está disponível para pedir agora.';
+
+  static const addFailureMessage = 'Não foi possível adicionar o produto. Tente novamente.';
+
+  MealBudget? _budget;
+  MealHunger? _hunger;
+  MealProtein? _protein;
+  MealStyle? _style;
+  MealTaste? _taste;
+  List<DietaryRestriction> _restrictions = const [];
+  late RecommendationSelection _lastSaved;
+  RecommendationSelection? _queued;
+  var _seenEpoch = 0;
+  Future<void> _settled = Future<void>.value();
+
+  /// Termina quando a gravação já pedida chega ao armazenamento.
+  ///
+  /// A tela não espera esta future. Quem recria o fluxo espera, para ler a
+  /// última escolha e não uma gravação que ainda estava na fila.
+  Future<void> get preferencesSettled => _settled;
+
+  RecommendationPhase _phase = RecommendationPhase.editing;
+  List<RecommendedProduct> _recommendedProducts = const [];
+  bool _usedFallback = false;
+  String? _errorTitle;
+  String? _errorMessage;
+  RecommendationFailure? _failure;
+  bool _inFlight = false;
+  bool _disposed = false;
+  int _generation = 0;
+  final Set<String> _addingProductIds = <String>{};
+
+  /// Pratos já mostrados desde o último envio do formulário.
+  ///
+  /// Só [submit] recomeça a sequência. [requestAnother] e [retry] mantêm o
+  /// histórico.
+  final Set<String> _shownProductIds = <String>{};
+
+  /// A sequência já passou por [requestAnother]: a resposta só mostra prato
+  /// que ainda não apareceu. [retry] herda este modo. Fora dele, a nova
+  /// tentativa depois do envio do formulário segue as regras do fallback.
+  bool _filterShown = false;
+
+  MealBudget? get budget => _budget;
+  MealHunger? get hunger => _hunger;
+  MealProtein? get protein => _protein;
+  MealStyle? get style => _style;
+  MealTaste? get taste => _taste;
+  List<DietaryRestriction> get restrictions => _restrictions;
+  RecommendationPhase get phase => _phase;
+
+  /// Pratos reais, na ordem das sugestões. Vazio fora de [RecommendationPhase.suggestions]
+  /// e [RecommendationPhase.fallback].
+  List<RecommendedProduct> get recommendedProducts => _recommendedProducts;
+
+  /// Verdadeiro só quando há card e a lista veio do fallback.
+  bool get usedFallback => _usedFallback;
+
+  String? get errorTitle => _errorTitle;
+  String? get errorMessage => _errorMessage;
+  RecommendationFailure? get failure => _failure;
+
+  /// As cinco perguntas respondidas, sem contradição e sem POST em curso.
+  bool get canSubmit => _answered && contradiction == null && !_inFlight;
+
+  /// Há sugestões da Dinna na tela, nenhum POST em curso e nenhuma inclusão
+  /// no carrinho esperando a consulta ou a gravação.
+  bool get canRequestAnother =>
+      _phase == RecommendationPhase.suggestions && !_inFlight && !hasPendingAddition;
+
+  /// A gravação deste prato ainda não foi confirmada pela sessão.
+  bool isAdding(String productId) => _addingProductIds.contains(productId);
+
+  /// Alguma inclusão ainda espera a consulta ou a gravação.
+  ///
+  /// Nesse intervalo a sessão ainda não tem operação pendente, porque
+  /// [CartSession.addLine] só começa depois do detalhe do prato.
+  bool get hasPendingAddition => _addingProductIds.isNotEmpty;
+
+  bool get _answered =>
+      _budget != null && _hunger != null && _protein != null && _style != null && _taste != null;
+
+  /// Mensagem visível enquanto a combinação é recusada. Nula se pode enviar
+  /// ou se ainda falta alguma escolha única.
+  String? get contradiction {
+    final selectedProtein = _protein;
+    if (selectedProtein == null) return null;
+    final blocksSeafood = _restrictions.contains(DietaryRestriction.noSeafood);
+    final blocksVegan = _restrictions.contains(DietaryRestriction.vegan);
+    if (selectedProtein == MealProtein.fish && blocksSeafood) return fishAndSeafoodMessage;
+    if (blocksVegan && selectedProtein != MealProtein.vegetarian) return animalAndVeganMessage;
+    return null;
+  }
+
+  void selectBudget(MealBudget? value) => _select(() => _budget = value ?? _budget, value);
+
+  void selectHunger(MealHunger? value) => _select(() => _hunger = value ?? _hunger, value);
+
+  void selectProtein(MealProtein? value) => _select(() => _protein = value ?? _protein, value);
+
+  void selectStyle(MealStyle? value) => _select(() => _style = value ?? _style, value);
+
+  void selectTaste(MealTaste? value) => _select(() => _taste = value ?? _taste, value);
+
+  void _select(void Function() apply, Object? value) {
+    if (value == null || _disposed) return;
+    apply();
+    notifyListeners();
+    _persist();
+  }
+
+  /// Marca ou desmarca uma restrição. As outras escolhas ficam onde estão.
+  void setRestriction(DietaryRestriction restriction, {required bool selected}) {
+    if (_disposed) return;
+    final next = {..._restrictions};
+    if (selected) {
+      next.add(restriction);
+    } else {
+      next.remove(restriction);
+    }
+    _restrictions = List.unmodifiable([
+      for (final item in DietaryRestriction.values)
+        if (next.contains(item)) item,
+    ]);
+    notifyListeners();
+    _persist();
+  }
+
+  RecommendationSelection? _readStored() {
+    final store = preferencesStore;
+    if (store == null) return null;
+    try {
+      final stored = store.current;
+      if (stored == null || stored.isEmpty) return null;
+      return stored;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  RecommendationSelection? _stored(RecommendationPreferencesStore store) {
+    try {
+      return store.current;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  RecommendationSelection _capture() {
+    return RecommendationSelection(
+      budget: _budget,
+      hunger: _hunger,
+      protein: _protein,
+      style: _style,
+      taste: _taste,
+      restrictions: _restrictions,
+    );
+  }
+
+  /// A rota voltou a ficar visível. Outra abertura pode ter gravado escolhas
+  /// mais novas enquanto esta instância continuava montada.
+  ///
+  /// Um marco novo é alteração externa: a tela passa a mostrá-la, inclusive
+  /// quando a seleção veio vazia, e descarta sugestão da preferência anterior.
+  /// O mesmo marco, com o store de volta ao durável, é falha desta tela. A
+  /// edição continua visível e é republicada, sem novo POST.
+  void syncFromStore() {
+    if (_disposed) return;
+    final store = preferencesStore;
+    if (store == null) return;
+    final int epoch;
+    final RecommendationSelection? stored;
+    try {
+      epoch = store.epoch;
+      stored = store.current;
+    } catch (_) {
+      return;
+    }
+    final incoming = stored ?? RecommendationSelection();
+    if (epoch == _seenEpoch) {
+      if (_queued == null && incoming != _capture()) _persist();
+      return;
+    }
+
+    final changed = incoming != _capture();
+    if (changed) {
+      _budget = incoming.budget;
+      _hunger = incoming.hunger;
+      _protein = incoming.protein;
+      _style = incoming.style;
+      _taste = incoming.taste;
+      _restrictions = incoming.restrictions;
+    }
+    _seenEpoch = epoch;
+    if (_queued == null) _lastSaved = _capture();
+    if (changed && (_phase != RecommendationPhase.editing || _inFlight)) {
+      returnToEditing();
+    } else if (changed) {
+      notifyListeners();
+    }
+  }
+
+  int _epoch(RecommendationPreferencesStore? store) {
+    if (store == null) return _seenEpoch;
+    try {
+      return store.epoch;
+    } catch (_) {
+      return _seenEpoch;
+    }
+  }
+
+  /// Cada alteração segue na hora para o armazenamento compartilhado.
+  ///
+  /// A fila de lá ordena as escritas, inclusive entre uma tela que está
+  /// fechando e outra que já reabriu. Repetir a seleção que esta instância
+  /// já pediu só é redundante enquanto o store ainda está nela. Se outra
+  /// instância mudou a revisão compartilhada, voltar ao valor anterior é
+  /// uma intenção nova.
+  void _persist() {
+    final store = preferencesStore;
+    if (store == null) return;
+    final next = _capture();
+    final stored = _stored(store);
+    if (next == _queued && next == stored) return;
+    if (_queued == null && next == _lastSaved && next == stored) return;
+    _queued = next;
+    final pending = store.save(next);
+    _seenEpoch = _epoch(store);
+    _settled = pending.then<void>(
+      (_) {
+        if (!identical(_queued, next)) return;
+        _lastSaved = next;
+        _queued = null;
+      },
+      onError: (Object _, StackTrace _) {
+        if (identical(_queued, next)) _queued = null;
+      },
+    );
+  }
+
+  /// Envio do formulário. Ignora toque repetido enquanto o POST não volta.
+  ///
+  /// Recomeça o histórico de pratos já mostrados. Uma resposta de geração
+  /// anterior, ou que chega depois do [dispose], não altera o estado.
+  Future<void> submit() => _send(newSequence: true);
+
+  /// Tenta de novo com as mesmas respostas, depois de falha ou fallback.
+  ///
+  /// Mantém o histórico da sequência. Se a tentativa anterior veio de
+  /// [requestAnother], pratos que já apareceram não voltam. Não dispara
+  /// enquanto uma inclusão no carrinho ainda está pendente.
+  Future<void> retry() async {
+    if (hasPendingAddition) return;
+    await _send(newSequence: false);
+  }
+
+  /// Pede outra sugestão com as mesmas respostas.
+  ///
+  /// A API não recebe os pratos já vistos e o fallback é determinístico, então
+  /// a resposta pode repetir pratos. Só os que ainda não apareceram na
+  /// sequência viram card. Sem prato novo, a fase vira
+  /// [RecommendationPhase.noOtherSuggestions].
+  ///
+  /// Não dispara enquanto uma inclusão no carrinho está pendente, para que
+  /// a nova geração não descarte a inclusão já aceita.
+  Future<void> requestAnother() async {
+    if (!canRequestAnother) return;
+    await _send(newSequence: false, another: true);
+  }
+
+  Future<void> _send({required bool newSequence, bool another = false}) async {
+    if (_disposed || _inFlight || !_answered || contradiction != null) return;
+    if (newSequence) {
+      _shownProductIds.clear();
+      _filterShown = false;
+    }
+    if (another) _filterShown = true;
+
+    final generation = ++_generation;
+    _inFlight = true;
+    _phase = RecommendationPhase.loading;
+    _recommendedProducts = const [];
+    _usedFallback = false;
+    _errorTitle = null;
+    _errorMessage = null;
+    _failure = null;
+    notifyListeners();
+
+    RecommendationAttempt attempt;
+    try {
+      final request = RecommendationRequest(
+        table: table,
+        preferences: RecommendationPreferences(
+          budget: _budget!,
+          hunger: _hunger!,
+          protein: _protein!,
+          style: _style!,
+          taste: _taste!,
+          restrictions: _restrictions,
+        ),
+        limit: limit,
+      );
+      attempt = await _repository.recommend(request);
+    } catch (_) {
+      attempt = const RecommendationAttempt.failed(
+        RecommendationFailure.unavailable,
+        title: RecommendationRepository.failureTitle,
+        message: RecommendationRepository.failureMessage,
+      );
+    }
+    if (_disposed || generation != _generation) return;
+
+    final recommendation = attempt.recommendation;
+    if (recommendation == null || recommendation.outcome != RecommendationOutcome.suggestions) {
+      _inFlight = false;
+      _apply(attempt);
+      notifyListeners();
+      return;
+    }
+
+    final lookup = await _catalog.lookup(recommendation.products);
+    if (_disposed || generation != _generation) return;
+
+    _inFlight = false;
+    _failure = null;
+    final resolved = lookup.products;
+    if (resolved == null) {
+      _phase = RecommendationPhase.catalogFailed;
+      _recommendedProducts = const [];
+      _usedFallback = false;
+      _errorTitle = catalogFailureTitle;
+      _errorMessage = catalogFailureMessage;
+      notifyListeners();
+      return;
+    }
+
+    _errorTitle = null;
+    _errorMessage = null;
+    if (resolved.isEmpty) {
+      _phase = RecommendationPhase.noAvailableProducts;
+      _recommendedProducts = const [];
+      _usedFallback = false;
+      notifyListeners();
+      return;
+    }
+
+    final fresh = _filterShown
+        ? resolved.where((item) => !_shownProductIds.contains(item.product.id)).toList()
+        : resolved;
+    if (fresh.isEmpty) {
+      _phase = RecommendationPhase.noOtherSuggestions;
+      _recommendedProducts = const [];
+      _usedFallback = false;
+      notifyListeners();
+      return;
+    }
+
+    _shownProductIds.addAll(fresh.map((item) => item.product.id));
+    _recommendedProducts = fresh;
+    _usedFallback = recommendation.usedFallback;
+    _phase = _usedFallback ? RecommendationPhase.fallback : RecommendationPhase.suggestions;
+    notifyListeners();
+  }
+
+  /// Inclui um prato que está na lista atual, com quantidade 1.
+  ///
+  /// Um segundo toque no mesmo prato espera a sessão confirmar a gravação.
+  /// Produto ausente ou indisponível não chega ao repositório. Uma resposta
+  /// de geração anterior, ou que chega depois do [dispose], não vira aviso.
+  Future<RecommendationCartAddition> addRecommended(String productId) async {
+    if (_disposed || _addingProductIds.contains(productId)) {
+      return const RecommendationCartIgnored();
+    }
+
+    final suggested = _suggested(productId);
+    if (suggested == null || !suggested.product.available) {
+      return const RecommendationCartRejected(unavailableProductMessage);
+    }
+
+    final session = cartSession;
+    if (session == null || !session.isReady) {
+      return const RecommendationCartRejected(addFailureMessage);
+    }
+
+    final generation = _generation;
+    _addingProductIds.add(productId);
+    notifyListeners();
+    try {
+      final detail = await _products.findById(productId);
+      if (_disposed || generation != _generation) return const RecommendationCartIgnored();
+      final product = detail.product;
+      if (product == null) {
+        if (detail.failure == DataFailure.notFound) {
+          return const RecommendationCartRejected(unavailableProductMessage);
+        }
+        return const RecommendationCartRejected(addFailureMessage);
+      }
+      if (product.id != productId || !product.available) {
+        return const RecommendationCartRejected(unavailableProductMessage);
+      }
+
+      await session.addLine(productId: productId, quantity: 1);
+      if (_disposed || generation != _generation) return const RecommendationCartIgnored();
+      return RecommendationCartAdded(product.name);
+    } catch (_) {
+      if (_disposed || generation != _generation) return const RecommendationCartIgnored();
+      return const RecommendationCartRejected(addFailureMessage);
+    } finally {
+      _addingProductIds.remove(productId);
+      if (!_disposed) notifyListeners();
+    }
+  }
+
+  RecommendedProduct? _suggested(String productId) {
+    for (final suggestion in _recommendedProducts) {
+      if (suggestion.product.id == productId) return suggestion;
+    }
+    return null;
+  }
+
+  /// Volta ao formulário com as mesmas respostas e invalida o POST em curso.
+  void returnToEditing() {
+    if (_disposed) return;
+    if (_phase == RecommendationPhase.editing && !_inFlight) return;
+    _generation++;
+    _inFlight = false;
+    _phase = RecommendationPhase.editing;
+    _recommendedProducts = const [];
+    _usedFallback = false;
+    _errorTitle = null;
+    _errorMessage = null;
+    _failure = null;
+    notifyListeners();
+  }
+
+  /// Outcomes sem sugestão e falha da recomendação. Sugestão com card passa
+  /// pelo catálogo em [submit].
+  void _apply(RecommendationAttempt attempt) {
+    final recommendation = attempt.recommendation;
+    _recommendedProducts = const [];
+    _usedFallback = false;
+    if (recommendation == null) {
+      _phase = RecommendationPhase.failed;
+      _failure = attempt.failure ?? RecommendationFailure.unavailable;
+      _errorTitle = attempt.title ?? RecommendationRepository.failureTitle;
+      _errorMessage = attempt.message ?? RecommendationRepository.failureMessage;
+      return;
+    }
+
+    switch (recommendation.outcome) {
+      case RecommendationOutcome.suggestions:
+        _phase = RecommendationPhase.failed;
+        _failure = RecommendationFailure.unavailable;
+        _errorTitle = RecommendationRepository.failureTitle;
+        _errorMessage = RecommendationRepository.failureMessage;
+      case RecommendationOutcome.noCompatibleProducts:
+        _failure = null;
+        _errorTitle = null;
+        _errorMessage = null;
+        _phase = RecommendationPhase.noCompatibleProducts;
+      case RecommendationOutcome.emptyCatalog:
+        _failure = null;
+        _errorTitle = null;
+        _errorMessage = null;
+        _phase = RecommendationPhase.emptyCatalog;
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _generation++;
+    super.dispose();
+  }
+}
