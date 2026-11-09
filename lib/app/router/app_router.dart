@@ -7,6 +7,7 @@ import '../../features/client/cart/cart_session.dart';
 import '../../features/client/cart/cart_view.dart';
 import '../../features/client/cart/cart_view_model.dart';
 import '../../features/client/order/confirmed_cart_cleanup.dart';
+import '../../features/client/order/last_order_session.dart';
 import '../../features/client/order/order_confirmation_view.dart';
 import '../../features/client/order/order_submission_view_model.dart';
 import '../../features/client/order/order_tracking_view.dart';
@@ -104,6 +105,7 @@ class AppRouter {
     required this.cartLines,
     this.cartSession,
     required this.orderSubmission,
+    this.lastOrderSession,
     required this.routeObserver,
     this.recommendationRepository,
     this.recommendationPreferencesStore,
@@ -121,6 +123,7 @@ class AppRouter {
 
   /// Envio da sessão. Sair de `/cart` não cria outro.
   final OrderSubmissionViewModel orderSubmission;
+  final LastOrderSession? lastOrderSession;
   final RouteObserver<PageRoute<dynamic>> routeObserver;
 
   /// Nulo responde à rota com falha traduzida, sem consultar a API.
@@ -141,7 +144,11 @@ class AppRouter {
   Widget _pageFor(RouteSettings settings) {
     final name = settings.name;
     return switch (name) {
-      AppRoutes.home => HomeView(createViewModel: () => HomeViewModel(apiStatusRepository)),
+      AppRoutes.home => HomeView(
+        createViewModel: () => HomeViewModel(apiStatusRepository),
+        lastOrderSession: lastOrderSession,
+        onOpenLastOrder: _openConfirmation,
+      ),
       AppRoutes.table => const TableView(),
       AppRoutes.menu => MenuView(
         createViewModel: () => MenuViewModel(productRepository),
@@ -280,7 +287,10 @@ class AppRouter {
   }
 
   Future<void> _openTracking(BuildContext context, Order order) async {
-    await Navigator.of(context).pushNamed(AppRoutes.orderTracking, arguments: AppRouteId(order.id));
+    await Navigator.of(context).pushNamed(
+      AppRoutes.orderTracking,
+      arguments: OrderTrackingArgs(id: AppRouteId(order.id), orderNumber: order.orderNumber),
+    );
   }
 
   void _openOrder(BuildContext context, Order order) {

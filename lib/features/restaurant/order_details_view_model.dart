@@ -51,6 +51,8 @@ class OrderDetailsViewModel extends ChangeNotifier {
 
   String get table => order.table;
 
+  int? get orderNumber => order.orderNumber;
+
   OrderStatus get status => order.status;
 
   DateTime get createdAt => order.createdAt;

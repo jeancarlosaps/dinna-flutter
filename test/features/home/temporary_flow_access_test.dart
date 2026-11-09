@@ -1,5 +1,7 @@
 import 'package:dinna/app/app.dart';
 import 'package:dinna/app/router/app_router.dart';
+import 'package:dinna/features/client/order/last_order_store.dart';
+import 'package:dinna/features/client/order/order_confirmation_view.dart';
 import 'package:dinna/features/client/table/table_view.dart';
 import 'package:dinna/features/home/api_status_repository.dart';
 import 'package:dinna/features/home/temporary_flow_access.dart';
@@ -34,6 +36,86 @@ void main() {
     expect(find.text('Fila de pedidos'), findsOneWidget);
     expect(find.text('pendente'), findsOneWidget);
     expect(find.text('O detalhe do pedido abre ao tocar um item da fila.'), findsOneWidget);
+  });
+
+  testWidgets('a home abre a confirmação do último pedido restaurado', (tester) async {
+    final order = sampleOrder(id: 'o-history', table: '7');
+    final store = MemoryLastOrderStore();
+    await store.save(order);
+    await _pumpApp(tester, lastOrders: store);
+    await tester.pumpAndSettle();
+
+    final button = find.text('Ver último pedido');
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(OrderConfirmationView), findsOneWidget);
+    expect(find.text('Mesa 7'), findsOneWidget);
+    final context = tester.element(find.byType(OrderConfirmationView));
+    expect(ModalRoute.of(context)!.settings.name, AppRoutes.order);
+    expect(ModalRoute.of(context)!.settings.arguments, isA<OrderConfirmationArgs>());
+  });
+
+  testWidgets('a home abre uma única confirmação com ativações rápidas', (tester) async {
+    final order = sampleOrder(id: 'o-history', table: '7');
+    final store = MemoryLastOrderStore();
+    await store.save(order);
+    await _pumpApp(tester, lastOrders: store);
+    await tester.pumpAndSettle();
+
+    final button = tester.widget<OutlinedButton>(
+      find.ancestor(of: find.text('Ver último pedido'), matching: find.byType(OutlinedButton)),
+    );
+    final onPressed = button.onPressed!;
+    onPressed();
+    onPressed();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(OrderConfirmationView), findsOneWidget);
+    final context = tester.element(find.byType(OrderConfirmationView));
+    Navigator.of(context).pop();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(OrderConfirmationView), findsNothing);
+    expect(find.text('dinna'), findsOneWidget);
+  });
+
+  testWidgets('a home reabre o último pedido pelo número público sem novo POST', (tester) async {
+    const id = 'o_56fd0ea0-1111-4111-8111-111111111111';
+    final stored = sampleOrder(id: id, table: '9');
+    final store = MemoryLastOrderStore();
+    await store.save(stored);
+    final orders = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async =>
+          OrderSubmission.created(sampleOrder(id: 'nao-deve')),
+      onFind: (foundId) async {
+        expect(foundId, id);
+        return OrderLookup.ready(stored.withOrderNumber(5));
+      },
+    );
+
+    await _pumpApp(tester, orders: orders, lastOrders: store);
+    await tester.pumpAndSettle();
+
+    expect(orders.createCalls, 0);
+    expect(orders.findCalls, 1);
+    expect(orders.calls, 0);
+    expect(find.text('Mesa 9 · Pedido #0005'), findsOneWidget);
+    expect(find.textContaining(id), findsNothing);
+    expect((await store.load())!.orderNumber, 5);
+
+    final button = find.text('Ver último pedido');
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(OrderConfirmationView), findsOneWidget);
+    expect(find.text('Pedido #0005'), findsOneWidget);
+    expect(find.textContaining(id), findsNothing);
+    expect(orders.createCalls, 0);
+    expect(orders.findCalls, 1);
   });
 
   testWidgets('abre a mesa e volta para a home', (tester) async {
@@ -153,13 +235,19 @@ void main() {
   });
 }
 
-Future<void> _pumpApp(WidgetTester tester, {OrderRepository? orders, ProductRepository? products}) {
+Future<void> _pumpApp(
+  WidgetTester tester, {
+  OrderRepository? orders,
+  ProductRepository? products,
+  LastOrderStore? lastOrders,
+}) {
   return tester.pumpWidget(
     DinnaApp(
       key: UniqueKey(),
       apiStatusRepository: FakeApiStatusRepository(() async => const ApiAvailability.online()),
       orderRepository: orders ?? FakeOrderRepository(() async => OrderList.ready(const [])),
       productRepository: products ?? FakeProductRepository(() async => ProductList.ready(const [])),
+      lastOrderStore: lastOrders,
       pollDelay: pendingPollDelay,
     ),
   );

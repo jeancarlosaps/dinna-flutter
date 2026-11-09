@@ -4,6 +4,7 @@ import 'package:dinna/core/domain/order_status.dart';
 
 Order sampleOrder({
   required String id,
+  int? orderNumber,
   String table = '12',
   OrderStatus status = OrderStatus.received,
   DateTime? createdAt,
@@ -12,6 +13,7 @@ Order sampleOrder({
 }) {
   return Order(
     id: id,
+    orderNumber: orderNumber,
     table: table,
     status: status,
     items: items ?? [OrderItem(productId: 'p1', quantity: 1, note: null)],

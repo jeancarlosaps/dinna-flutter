@@ -139,10 +139,13 @@ class _SummaryCard extends StatelessWidget {
     final theme = Theme.of(context);
     final time = formatOrderTimestamp(viewModel.createdAt);
     final status = orderStatusLabel(viewModel.status);
+    final number = viewModel.orderNumber == null
+        ? ''
+        : ', ${publicOrderLabel(viewModel.orderNumber)}';
     return Semantics(
       container: true,
       excludeSemantics: true,
-      label: 'Mesa ${viewModel.table}, $time, $status',
+      label: 'Mesa ${viewModel.table}, $time, $status$number',
       child: Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -168,6 +171,10 @@ class _SummaryCard extends StatelessWidget {
                   ),
                 ],
               ),
+              if (viewModel.orderNumber != null) ...[
+                const SizedBox(height: 8),
+                Text(publicOrderLabel(viewModel.orderNumber), style: theme.textTheme.titleSmall),
+              ],
               const SizedBox(height: 8),
               Text(
                 status,

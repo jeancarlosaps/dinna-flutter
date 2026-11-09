@@ -13,10 +13,12 @@ import 'order_submission_view_model.dart';
 /// Confirmação do pedido já aceito pela API, na rota `/order`.
 ///
 /// Lê [OrderConfirmationArgs]. O [Order] é a fotografia gravada no envio:
-/// mesa, itens, quantidades, total e horário vêm dele. [OrderItem] não traz
-/// nome nem preço individual; a tela mostra o `productId` e não consulta o
-/// cardápio. Sem o argumento certo, explica a ausência, usa o título "Pedido"
-/// e não chama a API. Com o pedido, o título é "Pedido recebido".
+/// mesa, itens, quantidades, total e horário vêm dele. O número visível é
+/// `Pedido #0005` quando `orderNumber` existe; sem ele, "Pedido confirmado".
+/// O UUID não aparece. [OrderItem] não traz nome nem preço individual; a tela
+/// mostra o `productId` e não consulta o cardápio. Sem o argumento certo,
+/// explica a ausência, usa o título "Pedido" e não chama a API. Com o pedido,
+/// o título é "Pedido recebido".
 ///
 /// Não há ViewModel próprio: o pedido é imutável e esta tela não envia nem
 /// retoma. [onTrack] abre o acompanhamento com o mesmo [Order]. [onGoHome]
@@ -303,10 +305,11 @@ class _OrderCard extends StatelessWidget {
     final theme = Theme.of(context);
     final time = formatOrderTimestamp(order.createdAt);
     final status = orderStatusLabel(order.status);
+    final identification = publicOrderLabel(order.orderNumber);
     return Semantics(
       container: true,
       excludeSemantics: true,
-      label: 'Mesa ${order.table}, $time, $status, pedido ${order.id}',
+      label: 'Mesa ${order.table}, $time, $status, $identification',
       child: Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -335,9 +338,7 @@ class _OrderCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              Text('Pedido', style: theme.textTheme.bodyMedium),
-              const SizedBox(height: 4),
-              Text(order.id, style: theme.textTheme.titleMedium),
+              Text(identification, style: theme.textTheme.titleMedium),
             ],
           ),
         ),

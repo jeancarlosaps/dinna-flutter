@@ -312,6 +312,7 @@ class _OrderTile extends StatelessWidget {
     final theme = Theme.of(context);
     final time = formatOrderTimestamp(order.createdAt);
     final status = orderStatusLabel(order.status);
+    final number = order.orderNumber == null ? '' : ', ${publicOrderLabel(order.orderNumber)}';
     final open = onOrderSelected;
 
     return Semantics(
@@ -320,8 +321,8 @@ class _OrderTile extends StatelessWidget {
       excludeSemantics: true,
       onTap: open == null ? null : () => open(context, order),
       label: open == null
-          ? 'Mesa ${order.table}, $time, $status'
-          : 'Mesa ${order.table}, $time, $status. Abrir detalhes',
+          ? 'Mesa ${order.table}, $time, $status$number'
+          : 'Mesa ${order.table}, $time, $status$number. Abrir detalhes',
       child: Card(
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -350,6 +351,10 @@ class _OrderTile extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (order.orderNumber != null) ...[
+                  const SizedBox(height: 8),
+                  Text(publicOrderLabel(order.orderNumber), style: theme.textTheme.titleSmall),
+                ],
                 const SizedBox(height: 8),
                 Text(
                   status,
