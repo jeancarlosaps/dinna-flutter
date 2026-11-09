@@ -544,6 +544,55 @@ void main() {
     }
   });
 
+  test('exceção operacional no GET do número não desfaz o 201', () async {
+    final calls = <String>[];
+    final repository = HttpOrderRepository(
+      ApiClient(
+        baseUrl: baseUrl,
+        httpClient: MockClient((request) async {
+          calls.add(request.method);
+          if (request.method == 'GET') throw Exception('sem rede');
+          return http.Response(
+            jsonEncode(_legacy),
+            201,
+            headers: const {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      ),
+    );
+
+    final result = await repository.create(table: '12', items: _items);
+
+    expect(calls, ['POST', 'GET']);
+    expect(result.order, isNotNull);
+    expect(result.order!.orderNumber, isNull);
+    expect(result.order!.id, _legacy['id']);
+    expect(result.shouldClearCart, isTrue);
+    expect(result.outcomeUncertain, isFalse);
+    expect(result.failure, isNull);
+  });
+
+  test('erro de programação no GET do número não é engolido', () async {
+    final calls = <String>[];
+    final repository = HttpOrderRepository(
+      ApiClient(
+        baseUrl: baseUrl,
+        httpClient: MockClient((request) async {
+          calls.add(request.method);
+          if (request.method == 'GET') throw StateError('contrato');
+          return http.Response(
+            jsonEncode(_legacy),
+            201,
+            headers: const {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      ),
+    );
+
+    await expectLater(repository.create(table: '12', items: _items), throwsA(isA<StateError>()));
+    expect(calls, ['POST', 'GET']);
+  });
+
   test('GET com outro id não inventa número para o 201', () async {
     final repository = HttpOrderRepository(
       ApiClient(

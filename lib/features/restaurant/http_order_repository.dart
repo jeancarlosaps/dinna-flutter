@@ -109,8 +109,9 @@ class HttpOrderRepository implements OrderRepository {
   ///
   /// A consulta é `GET /orders/:id`, com o mesmo cliente autenticado. O
   /// número entra na fotografia já confirmada. Outro status ou outros itens
-  /// lidos agora não substituem essa fotografia. Falha, corpo sem número ou
-  /// pedido diferente não alteram o sucesso do POST e não disparam outro POST.
+  /// lidos agora não substituem essa fotografia. Falha operacional, corpo sem
+  /// número ou pedido diferente não alteram o sucesso do POST e não disparam
+  /// outro POST. `Error` segue adiante.
   Future<Order> _withPublicNumber(Order order) async {
     if (order.orderNumber != null) return order;
     try {
@@ -120,7 +121,7 @@ class HttpOrderRepository implements OrderRepository {
       final number = recovered.orderNumber;
       if (number == null) return order;
       return order.withOrderNumber(number);
-    } on Object {
+    } on Exception {
       return order;
     }
   }
