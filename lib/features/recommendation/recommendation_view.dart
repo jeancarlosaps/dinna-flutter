@@ -31,6 +31,11 @@ const _noAvailableTitle = 'Nenhum prato disponível';
 
 const _noAvailableMessage = 'As sugestões recebidas não estão no cardápio disponível agora.';
 
+const _noOtherTitle = 'Sem outras sugestões';
+
+const _noOtherMessage =
+    'A Dinna não encontrou outros pratos com essas respostas. Ajuste as respostas para ver opções diferentes.';
+
 const _failureTitle = 'Não foi possível pedir uma sugestão';
 
 const _failureMessage = 'O cardápio, o carrinho e o pedido continuam disponíveis.';
@@ -250,6 +255,14 @@ class _RecommendationViewState extends State<RecommendationView> with RouteAware
                     actionLabel: 'Tentar de novo',
                     onAction: () => unawaited(_viewModel.submit()),
                   ),
+                  RecommendationPhase.noOtherSuggestions => _OutcomeMessage(
+                    icon: Icons.restaurant,
+                    title: _noOtherTitle,
+                    message: _noOtherMessage,
+                    onShowMenu: () => widget.onShowMenu(context),
+                    actionLabel: 'Ajustar respostas',
+                    onAction: _viewModel.returnToEditing,
+                  ),
                   RecommendationPhase.failed => _OutcomeMessage(
                     icon: Icons.wifi_off,
                     title: _viewModel.errorTitle ?? _failureTitle,
@@ -455,6 +468,14 @@ class _SuggestionResult extends StatelessWidget {
             suggestion: suggestion,
             isAdding: viewModel.isAdding(suggestion.product.id),
             onAdd: () => onAdd(suggestion),
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (viewModel.canRequestAnother) ...[
+          const SizedBox(height: 4),
+          OutlinedButton(
+            onPressed: () => unawaited(viewModel.requestAnother()),
+            child: const Text('Pedir outra sugestão', textAlign: TextAlign.center),
           ),
           const SizedBox(height: 12),
         ],

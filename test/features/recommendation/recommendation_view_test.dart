@@ -940,6 +940,82 @@ void main() {
     expect(find.text('Este prato não está disponível para pedir agora.'), findsNothing);
     expect(session.read(), isEmpty);
   });
+
+  testWidgets('pedir outra sugestão troca os cards e avisa quando não há prato novo', (
+    tester,
+  ) async {
+    final responses = [
+      ['p1'],
+      ['p1', 'p2'],
+      ['p2'],
+    ];
+    final viewModel = _model(
+      FakeRecommendationRepository(
+        (_) async => RecommendationAttempt.ready(
+          Recommendation(
+            provider: RecommendationProvider.answered,
+            outcome: RecommendationOutcome.suggestions,
+            products: [
+              for (final id in responses.removeAt(0))
+                RecommendationSuggestion(productId: id, reason: 'Frango, Salgado'),
+            ],
+          ),
+        ),
+      ),
+      products: FakeProductRepository(
+        () async => ProductList.ready([
+          _product('p1', name: 'Burger da casa'),
+          _product('p2', name: 'Frango grelhado'),
+        ]),
+      ),
+    );
+    await _pump(tester, viewModel);
+    await _answerForm(tester);
+    await _tapLabel(tester, 'Me sugere um prato');
+    await tester.pumpAndSettle();
+    expect(find.text('Burger da casa'), findsOneWidget);
+
+    await _tapLabel(tester, 'Pedir outra sugestão');
+    await tester.pumpAndSettle();
+    expect(find.text('Frango grelhado'), findsOneWidget);
+    expect(find.text('Burger da casa'), findsNothing);
+
+    await _tapLabel(tester, 'Pedir outra sugestão');
+    await tester.pumpAndSettle();
+    expect(find.text('Sem outras sugestões'), findsOneWidget);
+    expect(find.text('Pedir outra sugestão'), findsNothing);
+
+    await _tapLabel(tester, 'Ajustar respostas');
+    await tester.pumpAndSettle();
+    expect(viewModel.phase, RecommendationPhase.editing);
+    await _see(tester, 'Quanto pretende gastar?');
+  });
+
+  testWidgets('fallback não mostra pedir outra sugestão', (tester) async {
+    final viewModel = _model(
+      FakeRecommendationRepository(
+        (_) async => RecommendationAttempt.ready(
+          Recommendation(
+            provider: RecommendationProvider.unavailable,
+            outcome: RecommendationOutcome.suggestions,
+            products: [RecommendationSuggestion(productId: 'p2', reason: 'Carne, Salgado')],
+          ),
+        ),
+      ),
+      products: FakeProductRepository(
+        () async => ProductList.ready([_product('p2', name: 'Salada da casa')]),
+      ),
+    );
+    await _pump(tester, viewModel);
+    await _answerForm(tester);
+    await _tapLabel(tester, 'Me sugere um prato');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Salada da casa'), findsOneWidget);
+    await _see(tester, 'Ver cardápio completo');
+    expect(find.text('Tentar a Dinna de novo'), findsOneWidget);
+    expect(find.text('Pedir outra sugestão'), findsNothing);
+  });
 }
 
 Future<void> _pump(WidgetTester tester, RecommendationViewModel viewModel) {
