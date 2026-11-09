@@ -539,8 +539,11 @@ class RecommendationViewModel extends ChangeNotifier {
   }
 
   /// Volta ao formulário com as mesmas respostas e invalida o POST em curso.
+  ///
+  /// Uma inclusão já aceita continua até a consulta ou a gravação terminar.
+  /// Nesse intervalo o retorno não muda a geração, as sugestões nem as respostas.
   void returnToEditing() {
-    if (_disposed) return;
+    if (_disposed || hasPendingAddition) return;
     if (_phase == RecommendationPhase.editing && !_inFlight) return;
     _generation++;
     _inFlight = false;

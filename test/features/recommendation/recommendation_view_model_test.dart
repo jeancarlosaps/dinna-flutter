@@ -983,6 +983,154 @@ void main() {
     expect(await pending, isA<RecommendationCartAdded>());
     expect(session.read().single.productId, 'p1');
   });
+
+  test('voltar ao formulário durante a consulta conclui a inclusão uma vez', () async {
+    final lookup = Completer<ProductDetail>();
+    final repository = _CartRepository();
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final burger = _product('p3', name: 'Burger da casa');
+    final fake = FakeRecommendationRepository((_) async => _answered());
+    final viewModel = _model(
+      fake,
+      products: FakeProductRepository(
+        () async => ProductList.ready([burger]),
+        onFindById: (_) => lookup.future,
+      ),
+      cartSession: session,
+    );
+    _answer(viewModel);
+    await viewModel.submit();
+
+    final pending = viewModel.addRecommended('p3');
+    expect(viewModel.hasPendingAddition, isTrue);
+    expect(viewModel.phase, RecommendationPhase.suggestions);
+
+    viewModel.returnToEditing();
+
+    expect(viewModel.phase, RecommendationPhase.suggestions);
+    expect(viewModel.recommendedProducts.single.product.id, 'p3');
+    expect(viewModel.budget, MealBudget.upTo20);
+    expect(viewModel.hunger, MealHunger.normal);
+    expect(viewModel.protein, MealProtein.chicken);
+    expect(viewModel.style, MealStyle.balanced);
+    expect(viewModel.taste, MealTaste.savory);
+    expect(fake.calls, 1);
+    expect(repository.adds, 0);
+
+    lookup.complete(ProductDetail.ready(burger));
+    final result = await pending;
+
+    expect(result, isA<RecommendationCartAdded>());
+    expect((result as RecommendationCartAdded).productName, 'Burger da casa');
+    expect(repository.adds, 1);
+    expect(repository.added, [('p3', 1)]);
+    expect(session.read(), hasLength(1));
+    expect(session.read().single.productId, 'p3');
+    expect(session.read().single.quantity, 1);
+    expect(viewModel.hasPendingAddition, isFalse);
+    expect(viewModel.phase, RecommendationPhase.suggestions);
+    expect(fake.calls, 1);
+
+    viewModel.returnToEditing();
+    expect(viewModel.phase, RecommendationPhase.editing);
+    expect(viewModel.budget, MealBudget.upTo20);
+    expect(viewModel.protein, MealProtein.chicken);
+    expect(session.read(), hasLength(1));
+    expect(fake.calls, 1);
+  });
+
+  test('voltar ao formulário durante a gravação conclui a inclusão uma vez', () async {
+    final write = Completer<CartItem>();
+    final repository = _CartRepository(addGate: write.future);
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final burger = _product('p3', name: 'Burger da casa');
+    final fake = FakeRecommendationRepository((_) async => _answered());
+    final viewModel = _model(
+      fake,
+      products: FakeProductRepository(
+        () async => ProductList.ready([burger]),
+        onFindById: (_) async => ProductDetail.ready(burger),
+      ),
+      cartSession: session,
+    );
+    _answer(viewModel);
+    await viewModel.submit();
+
+    final pending = viewModel.addRecommended('p3');
+    await pumpEventQueue();
+    expect(repository.adds, 1);
+    expect(viewModel.hasPendingAddition, isTrue);
+
+    viewModel.returnToEditing();
+    expect(viewModel.phase, RecommendationPhase.suggestions);
+    expect(viewModel.recommendedProducts.single.product.id, 'p3');
+    expect(viewModel.budget, MealBudget.upTo20);
+    expect(fake.calls, 1);
+
+    write.complete(CartItem(lineId: 'line-1', productId: 'p3', quantity: 1, note: null));
+    final result = await pending;
+
+    expect(result, isA<RecommendationCartAdded>());
+    expect(repository.adds, 1);
+    expect(repository.added, [('p3', 1)]);
+    expect(session.read(), hasLength(1));
+    expect(session.read().single.quantity, 1);
+    expect(viewModel.hasPendingAddition, isFalse);
+    expect(viewModel.phase, RecommendationPhase.suggestions);
+
+    viewModel.returnToEditing();
+    expect(viewModel.phase, RecommendationPhase.editing);
+    expect(session.read(), hasLength(1));
+    expect(fake.calls, 1);
+  });
+
+  test('voltar ao formulário durante a consulta preserva a falha da inclusão', () async {
+    final lookup = Completer<ProductDetail>();
+    final repository = _CartRepository();
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final burger = _product('p3', name: 'Burger da casa');
+    final viewModel = _model(
+      FakeRecommendationRepository((_) async => _answered()),
+      products: FakeProductRepository(
+        () async => ProductList.ready([burger]),
+        onFindById: (_) => lookup.future,
+      ),
+      cartSession: session,
+    );
+    _answer(viewModel);
+    await viewModel.submit();
+
+    final pending = viewModel.addRecommended('p3');
+    viewModel.returnToEditing();
+    expect(viewModel.phase, RecommendationPhase.suggestions);
+
+    lookup.complete(
+      const ProductDetail.unavailable('timeout cru', failure: DataFailure.unavailable),
+    );
+    final result = await pending;
+
+    expect(result, isA<RecommendationCartRejected>());
+    expect(
+      (result as RecommendationCartRejected).message,
+      RecommendationViewModel.addFailureMessage,
+    );
+    expect(repository.adds, 0);
+    expect(session.read(), isEmpty);
+    expect(viewModel.hasPendingAddition, isFalse);
+    expect(viewModel.phase, RecommendationPhase.suggestions);
+    expect(viewModel.budget, MealBudget.upTo20);
+
+    viewModel.returnToEditing();
+    expect(viewModel.phase, RecommendationPhase.editing);
+    expect(viewModel.recommendedProducts, isEmpty);
+    expect(session.read(), isEmpty);
+  });
 }
 
 RecommendationViewModel _model(
