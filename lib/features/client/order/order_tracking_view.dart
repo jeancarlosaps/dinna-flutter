@@ -16,28 +16,37 @@ class OrderTrackingView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final number = _orderNumber(ModalRoute.of(context)?.settings.arguments);
+    final tracked = _trackedOrder(ModalRoute.of(context)?.settings.arguments);
     return Scaffold(
       appBar: AppBar(title: const Text('Acompanhamento')),
-      body: number == null ? const _MissingTracking() : _KnownOrder(orderNumber: number.$1),
+      body: tracked == null
+          ? const _MissingTracking()
+          : _KnownOrder(orderNumber: tracked.orderNumber),
     );
   }
 
-  /// `null` quando a rota não identifica um pedido. O inteiro é o número
-  /// público e também pode ser nulo.
-  (int?,)? _orderNumber(Object? arguments) {
+  /// `null` quando a rota não identifica um pedido. O número público pode
+  /// faltar num pedido válido.
+  _TrackedOrder? _trackedOrder(Object? arguments) {
     if (arguments is OrderTrackingArgs) {
       if (arguments.id.value.trim().isEmpty) return null;
       final number = arguments.orderNumber;
-      if (number != null && number < 1) return (null,);
-      return (number,);
+      if (number != null && number < 1) return const _TrackedOrder(null);
+      return _TrackedOrder(number);
     }
     if (arguments is AppRouteId) {
       if (arguments.value.trim().isEmpty) return null;
-      return (null,);
+      return const _TrackedOrder(null);
     }
     return null;
   }
+}
+
+/// Pedido já identificado. [orderNumber] nulo não é uma rota inválida.
+final class _TrackedOrder {
+  const _TrackedOrder(this.orderNumber);
+
+  final int? orderNumber;
 }
 
 class _MissingTracking extends StatelessWidget {
