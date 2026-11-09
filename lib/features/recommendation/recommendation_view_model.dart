@@ -150,12 +150,16 @@ class RecommendationViewModel extends ChangeNotifier {
   int _generation = 0;
   final Set<String> _addingProductIds = <String>{};
 
-  /// Pratos já mostrados na sequência de "Pedir outra sugestão".
+  /// Pratos já mostrados desde o último envio do formulário.
+  ///
+  /// Só [submit] recomeça a sequência. [requestAnother] e [retry] mantêm o
+  /// histórico.
   final Set<String> _shownProductIds = <String>{};
 
-  /// Geração do último [requestAnother]. Diferente de [_generation], a lista
-  /// na tela veio de um envio do formulário e a sequência recomeça.
-  int? _anotherGeneration;
+  /// A sequência já passou por [requestAnother]: a resposta só mostra prato
+  /// que ainda não apareceu. [retry] herda este modo. Fora dele, a nova
+  /// tentativa depois do envio do formulário segue as regras do fallback.
+  bool _filterShown = false;
 
   MealBudget? get budget => _budget;
   MealHunger? get hunger => _hunger;
@@ -179,8 +183,10 @@ class RecommendationViewModel extends ChangeNotifier {
   /// As cinco perguntas respondidas, sem contradição e sem POST em curso.
   bool get canSubmit => _answered && contradiction == null && !_inFlight;
 
-  /// Há sugestões da Dinna na tela e nenhum POST em curso.
-  bool get canRequestAnother => _phase == RecommendationPhase.suggestions && !_inFlight;
+  /// Há sugestões da Dinna na tela, nenhum POST em curso e nenhuma inclusão
+  /// no carrinho esperando a consulta ou a gravação.
+  bool get canRequestAnother =>
+      _phase == RecommendationPhase.suggestions && !_inFlight && !hasPendingAddition;
 
   /// A gravação deste prato ainda não foi confirmada pela sessão.
   bool isAdding(String productId) => _addingProductIds.contains(productId);
@@ -352,12 +358,43 @@ class RecommendationViewModel extends ChangeNotifier {
     );
   }
 
-  /// Envia o body atual. Ignora toque repetido enquanto o POST não volta.
+  /// Envio do formulário. Ignora toque repetido enquanto o POST não volta.
   ///
-  /// Uma resposta de geração anterior, ou que chega depois do [dispose],
-  /// não altera o estado.
-  Future<void> submit() async {
+  /// Recomeça o histórico de pratos já mostrados. Uma resposta de geração
+  /// anterior, ou que chega depois do [dispose], não altera o estado.
+  Future<void> submit() => _send(newSequence: true);
+
+  /// Tenta de novo com as mesmas respostas, depois de falha ou fallback.
+  ///
+  /// Mantém o histórico da sequência. Se a tentativa anterior veio de
+  /// [requestAnother], pratos que já apareceram não voltam. Não dispara
+  /// enquanto uma inclusão no carrinho ainda está pendente.
+  Future<void> retry() async {
+    if (hasPendingAddition) return;
+    await _send(newSequence: false);
+  }
+
+  /// Pede outra sugestão com as mesmas respostas.
+  ///
+  /// A API não recebe os pratos já vistos e o fallback é determinístico, então
+  /// a resposta pode repetir pratos. Só os que ainda não apareceram na
+  /// sequência viram card. Sem prato novo, a fase vira
+  /// [RecommendationPhase.noOtherSuggestions].
+  ///
+  /// Não dispara enquanto uma inclusão no carrinho está pendente, para que
+  /// a nova geração não descarte a inclusão já aceita.
+  Future<void> requestAnother() async {
+    if (!canRequestAnother) return;
+    await _send(newSequence: false, another: true);
+  }
+
+  Future<void> _send({required bool newSequence, bool another = false}) async {
     if (_disposed || _inFlight || !_answered || contradiction != null) return;
+    if (newSequence) {
+      _shownProductIds.clear();
+      _filterShown = false;
+    }
+    if (another) _filterShown = true;
 
     final generation = ++_generation;
     _inFlight = true;
@@ -427,43 +464,21 @@ class RecommendationViewModel extends ChangeNotifier {
       return;
     }
 
-    _recommendedProducts = resolved;
-    _usedFallback = recommendation.usedFallback;
-    _phase = _usedFallback ? RecommendationPhase.fallback : RecommendationPhase.suggestions;
-    notifyListeners();
-  }
-
-  /// Pede outra sugestão com as mesmas respostas, por [submit].
-  ///
-  /// A API não recebe os pratos já vistos e o fallback é determinístico, então
-  /// a resposta pode repetir pratos. Só os que ainda não apareceram na
-  /// sequência viram card. Sem prato novo, a fase vira
-  /// [RecommendationPhase.noOtherSuggestions].
-  Future<void> requestAnother() async {
-    if (!canRequestAnother) return;
-    if (_anotherGeneration != _generation) _shownProductIds.clear();
-    _shownProductIds.addAll(_recommendedProducts.map((item) => item.product.id));
-
-    // O submit desta chamada é a próxima geração. Outra geração no fim quer
-    // dizer que a pessoa voltou ao formulário ou enviou de novo.
-    final expected = _generation + 1;
-    await submit();
-    if (_disposed || _generation != expected) return;
-    _anotherGeneration = expected;
-    if (_phase != RecommendationPhase.suggestions && _phase != RecommendationPhase.fallback) {
-      return;
-    }
-
-    final fresh = _recommendedProducts
-        .where((item) => !_shownProductIds.contains(item.product.id))
-        .toList();
+    final fresh = _filterShown
+        ? resolved.where((item) => !_shownProductIds.contains(item.product.id)).toList()
+        : resolved;
     if (fresh.isEmpty) {
       _phase = RecommendationPhase.noOtherSuggestions;
       _recommendedProducts = const [];
       _usedFallback = false;
-    } else {
-      _recommendedProducts = fresh;
+      notifyListeners();
+      return;
     }
+
+    _shownProductIds.addAll(fresh.map((item) => item.product.id));
+    _recommendedProducts = fresh;
+    _usedFallback = recommendation.usedFallback;
+    _phase = _usedFallback ? RecommendationPhase.fallback : RecommendationPhase.suggestions;
     notifyListeners();
   }
 

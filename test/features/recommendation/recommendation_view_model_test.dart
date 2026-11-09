@@ -776,6 +776,213 @@ void main() {
     await retry;
     expect(viewModel.canRequestAnother, isTrue);
   });
+
+  test('outra sugestão espera a inclusão pendente e o prato entra uma vez', () async {
+    final lookup = Completer<ProductDetail>();
+    final repository = _CartRepository();
+    final session = CartSession(repository);
+    addTearDown(session.dispose);
+    await session.restore();
+    final burger = _product('p1', name: 'Burger da casa');
+    final responses = [
+      _suggestions(['p1']),
+      _suggestions(['p2']),
+    ];
+    final fake = FakeRecommendationRepository((_) async => responses.removeAt(0));
+    final viewModel = _model(
+      fake,
+      products: FakeProductRepository(
+        () async => ProductList.ready([burger, _product('p2', name: 'Frango grelhado')]),
+        onFindById: (_) => lookup.future,
+      ),
+      cartSession: session,
+    );
+    _answer(viewModel);
+    await viewModel.submit();
+
+    final pending = viewModel.addRecommended('p1');
+    expect(viewModel.hasPendingAddition, isTrue);
+    expect(viewModel.canRequestAnother, isFalse);
+
+    await viewModel.requestAnother();
+    expect(fake.calls, 1);
+    expect(viewModel.phase, RecommendationPhase.suggestions);
+
+    lookup.complete(ProductDetail.ready(burger));
+    final result = await pending;
+
+    expect(result, isA<RecommendationCartAdded>());
+    expect(repository.adds, 1);
+    expect(repository.added, [('p1', 1)]);
+    expect(session.read().single.productId, 'p1');
+    expect(session.read().single.quantity, 1);
+    expect(viewModel.canRequestAnother, isTrue);
+
+    await viewModel.requestAnother();
+    expect(fake.calls, 2);
+    expect(viewModel.recommendedProducts.map((item) => item.product.id), ['p2']);
+    expect(repository.adds, 1);
+  });
+
+  test('tentar de novo após falha não repete prato e mantém as respostas', () async {
+    final responses = [
+      _suggestions(['p1']),
+      const RecommendationAttempt.failed(
+        RecommendationFailure.unavailable,
+        title: RecommendationRepository.failureTitle,
+        message: RecommendationRepository.failureMessage,
+      ),
+      _suggestions(['p1', 'p2']),
+    ];
+    final fake = FakeRecommendationRepository((_) async => responses.removeAt(0));
+    final viewModel = _model(fake, products: _anotherCatalog());
+    _answer(viewModel);
+    await viewModel.submit();
+    final firstPreferences = fake.lastRequest!.preferences.toJson();
+
+    await viewModel.requestAnother();
+    expect(viewModel.phase, RecommendationPhase.failed);
+
+    await viewModel.retry();
+
+    expect(fake.calls, 3);
+    expect(fake.lastRequest!.preferences.toJson(), firstPreferences);
+    expect(viewModel.budget, MealBudget.upTo20);
+    expect(viewModel.protein, MealProtein.chicken);
+    expect(viewModel.phase, RecommendationPhase.suggestions);
+    expect(viewModel.recommendedProducts.map((item) => item.product.id), ['p2']);
+  });
+
+  test('tentar de novo após falha do cardápio filtra os pratos já vistos', () async {
+    var catalogFails = false;
+    final responses = [
+      _suggestions(['p1']),
+      _suggestions(['p1', 'p3']),
+      _suggestions(['p1', 'p3']),
+    ];
+    final viewModel = _model(
+      FakeRecommendationRepository((_) async => responses.removeAt(0)),
+      products: FakeProductRepository(() async {
+        if (catalogFails) return const ProductList.unavailable('offline');
+        return _anotherCatalog().list();
+      }),
+    );
+    _answer(viewModel);
+    await viewModel.submit();
+
+    catalogFails = true;
+    await viewModel.requestAnother();
+    expect(viewModel.phase, RecommendationPhase.catalogFailed);
+
+    catalogFails = false;
+    await viewModel.retry();
+
+    expect(viewModel.phase, RecommendationPhase.suggestions);
+    expect(viewModel.recommendedProducts.map((item) => item.product.id), ['p3']);
+  });
+
+  test('tentar de novo sem prato novo avisa e o próximo envio recomeça', () async {
+    final responses = [
+      _suggestions(['p1']),
+      const RecommendationAttempt.failed(
+        RecommendationFailure.unavailable,
+        title: RecommendationRepository.failureTitle,
+        message: RecommendationRepository.failureMessage,
+      ),
+      _suggestions(['p1']),
+      _suggestions(['p1']),
+    ];
+    final viewModel = _model(
+      FakeRecommendationRepository((_) async => responses.removeAt(0)),
+      products: _anotherCatalog(),
+    );
+    _answer(viewModel);
+    await viewModel.submit();
+    await viewModel.requestAnother();
+
+    await viewModel.retry();
+    expect(viewModel.phase, RecommendationPhase.noOtherSuggestions);
+    expect(viewModel.recommendedProducts, isEmpty);
+    expect(viewModel.canRequestAnother, isFalse);
+
+    viewModel.returnToEditing();
+    await viewModel.submit();
+    expect(viewModel.phase, RecommendationPhase.suggestions);
+    expect(viewModel.recommendedProducts.map((item) => item.product.id), ['p1']);
+  });
+
+  test('fallback do envio mantém a nova tentativa sem filtro e sem outra sugestão', () async {
+    final responses = [
+      _suggestions(['p1'], provider: RecommendationProvider.unavailable),
+      _suggestions(['p1'], provider: RecommendationProvider.unavailable),
+    ];
+    final viewModel = _model(
+      FakeRecommendationRepository((_) async => responses.removeAt(0)),
+      products: _anotherCatalog(),
+    );
+    _answer(viewModel);
+    await viewModel.submit();
+    expect(viewModel.phase, RecommendationPhase.fallback);
+    expect(viewModel.canRequestAnother, isFalse);
+
+    await viewModel.retry();
+
+    expect(viewModel.phase, RecommendationPhase.fallback);
+    expect(viewModel.recommendedProducts.map((item) => item.product.id), ['p1']);
+    expect(viewModel.canRequestAnother, isFalse);
+  });
+
+  test('fallback dentro da sequência filtra na nova tentativa da Dinna', () async {
+    final responses = [
+      _suggestions(['p1']),
+      _suggestions(['p1', 'p2'], provider: RecommendationProvider.unavailable),
+      _suggestions(['p2', 'p3']),
+    ];
+    final viewModel = _model(
+      FakeRecommendationRepository((_) async => responses.removeAt(0)),
+      products: _anotherCatalog(),
+    );
+    _answer(viewModel);
+    await viewModel.submit();
+
+    await viewModel.requestAnother();
+    expect(viewModel.phase, RecommendationPhase.fallback);
+    expect(viewModel.recommendedProducts.map((item) => item.product.id), ['p2']);
+    expect(viewModel.canRequestAnother, isFalse);
+
+    await viewModel.retry();
+    expect(viewModel.phase, RecommendationPhase.suggestions);
+    expect(viewModel.recommendedProducts.map((item) => item.product.id), ['p3']);
+  });
+
+  test('tentar de novo não dispara com inclusão pendente', () async {
+    final lookup = Completer<ProductDetail>();
+    final session = CartSession(_CartRepository());
+    addTearDown(session.dispose);
+    await session.restore();
+    final burger = _product('p1', name: 'Burger da casa');
+    final fake = FakeRecommendationRepository(
+      (_) async => _suggestions(['p1'], provider: RecommendationProvider.unavailable),
+    );
+    final viewModel = _model(
+      fake,
+      products: FakeProductRepository(
+        () async => ProductList.ready([burger]),
+        onFindById: (_) => lookup.future,
+      ),
+      cartSession: session,
+    );
+    _answer(viewModel);
+    await viewModel.submit();
+
+    final pending = viewModel.addRecommended('p1');
+    await viewModel.retry();
+    expect(fake.calls, 1);
+
+    lookup.complete(ProductDetail.ready(burger));
+    expect(await pending, isA<RecommendationCartAdded>());
+    expect(session.read().single.productId, 'p1');
+  });
 }
 
 RecommendationViewModel _model(

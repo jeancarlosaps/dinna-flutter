@@ -253,7 +253,7 @@ class _RecommendationViewState extends State<RecommendationView> with RouteAware
                         _viewModel.errorMessage ?? RecommendationViewModel.catalogFailureMessage,
                     onShowMenu: () => widget.onShowMenu(context),
                     actionLabel: 'Tentar de novo',
-                    onAction: () => unawaited(_viewModel.submit()),
+                    onAction: () => unawaited(_viewModel.retry()),
                   ),
                   RecommendationPhase.noOtherSuggestions => _OutcomeMessage(
                     icon: Icons.restaurant,
@@ -269,7 +269,7 @@ class _RecommendationViewState extends State<RecommendationView> with RouteAware
                     message: _viewModel.errorMessage ?? _failureMessage,
                     onShowMenu: () => widget.onShowMenu(context),
                     actionLabel: 'Tentar de novo',
-                    onAction: () => unawaited(_viewModel.submit()),
+                    onAction: () => unawaited(_viewModel.retry()),
                   ),
                 },
               ),
@@ -471,10 +471,12 @@ class _SuggestionResult extends StatelessWidget {
           ),
           const SizedBox(height: 12),
         ],
-        if (viewModel.canRequestAnother) ...[
+        if (!fallback) ...[
           const SizedBox(height: 4),
           OutlinedButton(
-            onPressed: () => unawaited(viewModel.requestAnother()),
+            onPressed: viewModel.canRequestAnother
+                ? () => unawaited(viewModel.requestAnother())
+                : null,
             child: const Text('Pedir outra sugestão', textAlign: TextAlign.center),
           ),
           const SizedBox(height: 12),
@@ -482,7 +484,7 @@ class _SuggestionResult extends StatelessWidget {
         if (fallback) ...[
           const SizedBox(height: 4),
           FilledButton(
-            onPressed: () => unawaited(viewModel.submit()),
+            onPressed: viewModel.hasPendingAddition ? null : () => unawaited(viewModel.retry()),
             child: const Text('Tentar a Dinna de novo'),
           ),
           const SizedBox(height: 12),
