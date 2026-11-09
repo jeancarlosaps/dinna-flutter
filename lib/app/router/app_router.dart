@@ -287,7 +287,10 @@ class AppRouter {
   }
 
   Future<void> _openTracking(BuildContext context, Order order) async {
-    await Navigator.of(context).pushNamed(AppRoutes.orderTracking, arguments: AppRouteId(order.id));
+    await Navigator.of(context).pushNamed(
+      AppRoutes.orderTracking,
+      arguments: OrderTrackingArgs(id: AppRouteId(order.id), orderNumber: order.orderNumber),
+    );
   }
 
   void _openOrder(BuildContext context, Order order) {

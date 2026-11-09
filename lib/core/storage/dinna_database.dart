@@ -5,7 +5,9 @@ import 'package:sqflite/sqflite.dart';
 ///
 /// A versão 1 tem `cart_items`. A versão 2, da SCRUM-93, acrescenta
 /// `cart_reconciliations` sem alterar as linhas do carrinho. A versão 3, da
-/// SCRUM-72, acrescenta `last_orders`.
+/// SCRUM-72, acrescenta `last_orders`. O número público fica dentro de
+/// `order_json`. Um registro anterior a esse campo continua válido e não
+/// pede outra versão do banco.
 ///
 /// A subida aceita um banco antigo e um banco que já passou pela versão 2 da
 /// `dev`. Também aceita a versão 2 que a branch da SCRUM-72 criou antes deste

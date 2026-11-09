@@ -83,7 +83,10 @@ class _DinnaAppState extends State<DinnaApp> {
     _cartLines = _cartSession == null ? widget.cartLines ?? ProcessCartLines() : null;
     final cartSession = _cartSession;
     if (cartSession != null) unawaited(_restoreCart(cartSession));
-    _lastOrderSession = LastOrderSession(widget.lastOrderStore ?? MemoryLastOrderStore());
+    _lastOrderSession = LastOrderSession(
+      widget.lastOrderStore ?? MemoryLastOrderStore(),
+      orderNumberLookup: _lookupOrderNumber,
+    );
     unawaited(_lastOrderSession.restore());
     _submission = OrderSubmissionViewModel(
       widget.orderRepository,
@@ -96,6 +99,15 @@ class _DinnaAppState extends State<DinnaApp> {
       lines: _cartLines,
     )..attach();
     unawaited(_submission.restore());
+  }
+
+  Future<int?> _lookupOrderNumber(String id) async {
+    final lookup = await widget.orderRepository.findById(id);
+    final order = lookup.order;
+    if (order == null || order.id != id) return null;
+    final number = order.orderNumber;
+    if (number == null || number < 1) return null;
+    return number;
   }
 
   Future<void> _restoreCart(CartSession session) async {

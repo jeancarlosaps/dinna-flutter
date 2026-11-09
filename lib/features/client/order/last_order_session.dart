@@ -5,11 +5,15 @@ import 'package:flutter/foundation.dart';
 import '../../../core/domain/order.dart';
 import 'last_order_store.dart';
 
+/// Lê o número público de um pedido já existente. Não cria outro pedido.
+typedef OrderNumberLookup = Future<int?> Function(String orderId);
+
 /// Estado compartilhado do último pedido entre a confirmação e a tela inicial.
 class LastOrderSession extends ChangeNotifier {
-  LastOrderSession(this._store);
+  LastOrderSession(this._store, {this.orderNumberLookup});
 
   final LastOrderStore _store;
+  final OrderNumberLookup? orderNumberLookup;
   Future<void>? _restoreTask;
   Future<void>? _retryTask;
   Future<void> _operationTail = Future<void>.value();
@@ -31,8 +35,15 @@ class LastOrderSession extends ChangeNotifier {
   bool get isSaving => _saving;
   bool get isLoading => _loading;
 
-  bool isPersisted(Order order) =>
-      _restored && _pendingSave == null && _errorMessage == null && _order == order;
+  bool isPersisted(Order order) {
+    if (!_restored || _pendingSave != null || _errorMessage != null) return false;
+    final current = _order;
+    if (current == null) return false;
+    if (current == order) return true;
+    final number = current.orderNumber;
+    if (order.orderNumber != null || number == null || current.id != order.id) return false;
+    return current == order.withOrderNumber(number);
+  }
 
   Future<void> restore() => _restoreTask ??= _enqueue(_load);
 
@@ -42,8 +53,9 @@ class LastOrderSession extends ChangeNotifier {
     await restore();
     if (_disposed) return;
 
-    _pendingSave = order;
-    _order = order;
+    final snapshot = _preservingNumber(order);
+    _pendingSave = snapshot;
+    _order = snapshot;
     _errorMessage = null;
     final revision = ++_saveRevision;
     _saving = true;
@@ -87,13 +99,14 @@ class LastOrderSession extends ChangeNotifier {
     _notify();
     try {
       final loaded = await _store.load();
-      if (_disposed) return;
-      // A save may have been requested while the query was in flight. Keep
-      // its in-memory snapshot; the queued write will persist it next.
-      if (_pendingSave == null) {
-        _order = loaded;
-        _errorMessage = null;
-      }
+      if (_disposed || _pendingSave != null) return;
+      final enriched = await _enrich(loaded);
+      if (_disposed || _pendingSave != null) return;
+      // Uma gravação iniciada durante a consulta já voltou acima e manteve
+      // a fotografia nova. Aqui só entra o registro lido, com o número se veio.
+      _order = enriched;
+      _errorMessage = null;
+      await _persistRecoveredNumber(loaded, enriched);
     } on Object {
       if (_disposed) return;
       if (_pendingSave == null) _errorMessage = readFailureMessage;
@@ -104,6 +117,42 @@ class LastOrderSession extends ChangeNotifier {
         _notify();
       }
     }
+  }
+
+  /// Um registro anterior a esta versão não tem número. A consulta só acontece
+  /// nesse caso. Falha de leitura devolve a fotografia como estava.
+  Future<Order?> _enrich(Order? loaded) async {
+    if (loaded == null || loaded.orderNumber != null) return loaded;
+    final lookup = orderNumberLookup;
+    if (lookup == null) return loaded;
+    try {
+      final number = await lookup(loaded.id);
+      if (number == null || number < 1) return loaded;
+      return loaded.withOrderNumber(number);
+    } on Object {
+      return loaded;
+    }
+  }
+
+  /// Grava o número uma vez. Não regrava quando ele já estava no JSON e não
+  /// apaga a fotografia se o disco recusar a atualização.
+  Future<void> _persistRecoveredNumber(Order? loaded, Order? enriched) async {
+    if (loaded == null || enriched == null) return;
+    if (loaded.orderNumber != null || enriched.orderNumber == null) return;
+    if (_pendingSave != null) return;
+    try {
+      await _store.save(enriched);
+    } on Object {
+      // A linha antiga continua válida. O número fica disponível nesta execução.
+    }
+  }
+
+  Order _preservingNumber(Order incoming) {
+    if (incoming.orderNumber != null) return incoming;
+    final current = _pendingSave ?? _order;
+    final number = current?.orderNumber;
+    if (current == null || number == null || current.id != incoming.id) return incoming;
+    return incoming.withOrderNumber(number);
   }
 
   Future<void> _savePending(int revision) async {

@@ -6,9 +6,12 @@ import 'order_status.dart';
 ///
 /// O body de `POST /orders` é só `table` e `items`. `id`, `status`,
 /// `totalCents` e `createdAt` nascem na API e são obrigatórios neste model.
+/// [orderNumber] é o número público. Pode faltar num replay idempotente
+/// gravado antes da publicação desse campo.
 final class Order {
   Order({
     required this.id,
+    this.orderNumber,
     required this.table,
     required this.status,
     required List<OrderItem> items,
@@ -17,6 +20,10 @@ final class Order {
   }) : items = List<OrderItem>.unmodifiable(items) {
     if (id.isEmpty) {
       throw ArgumentError.value(id, 'id', 'id deve ter ao menos 1 caractere');
+    }
+    final number = orderNumber;
+    if (number != null && number < 1) {
+      throw ArgumentError.value(number, 'orderNumber', 'orderNumber deve ser >= 1');
     }
     if (table.isEmpty) {
       throw ArgumentError.value(table, 'table', 'table deve ter ao menos 1 caractere');
@@ -37,6 +44,7 @@ final class Order {
       final map = readJsonObject(json, 'Order');
       return Order(
         id: readRequiredString(map, 'id'),
+        orderNumber: readOptionalInt(map, 'orderNumber', min: 1),
         table: readRequiredString(map, 'table'),
         status: OrderStatus.parse(readRequiredString(map, 'status')),
         items: readRequiredList(map, 'items', OrderItem.fromJson),
@@ -46,7 +54,25 @@ final class Order {
     });
   }
 
+  /// Identificador técnico. Rotas, consultas e idempotência continuam nele.
   final String id;
+
+  /// Número público estável. Nulo quando a resposta antiga não o trouxe.
+  final int? orderNumber;
+
+  /// A mesma fotografia, com o número público recuperado por leitura.
+  Order withOrderNumber(int orderNumber) {
+    if (this.orderNumber == orderNumber) return this;
+    return Order(
+      id: id,
+      orderNumber: orderNumber,
+      table: table,
+      status: status,
+      items: items,
+      totalCents: totalCents,
+      createdAt: createdAt,
+    );
+  }
 
   /// Identificador da mesa, texto. Exemplo do contrato: `"12"`.
   final String table;
@@ -64,6 +90,7 @@ final class Order {
 
   Map<String, Object?> toJson() => {
     'id': id,
+    if (orderNumber != null) 'orderNumber': orderNumber,
     'table': table,
     'status': status.value,
     'items': [for (final item in items) item.toJson()],
@@ -76,6 +103,7 @@ final class Order {
     if (identical(this, other)) return true;
     return other is Order &&
         other.id == id &&
+        other.orderNumber == orderNumber &&
         other.table == table &&
         other.status == status &&
         _sameItems(other.items, items) &&
@@ -84,10 +112,12 @@ final class Order {
   }
 
   @override
-  int get hashCode => Object.hash(id, table, status, totalCents, createdAt, Object.hashAll(items));
+  int get hashCode =>
+      Object.hash(id, orderNumber, table, status, totalCents, createdAt, Object.hashAll(items));
 
   @override
-  String toString() => 'Order(id: $id, status: ${status.value}, totalCents: $totalCents)';
+  String toString() =>
+      'Order(id: $id, orderNumber: $orderNumber, status: ${status.value}, totalCents: $totalCents)';
 }
 
 bool _sameItems(List<OrderItem> a, List<OrderItem> b) {

@@ -47,6 +47,22 @@ void main() {
       expect(order.totalCents, isA<int>());
       expect(order.createdAt, DateTime.utc(2026, 10, 16, 18));
       expect(order.createdAt.isUtc, isTrue);
+      expect(order.orderNumber, isNull);
+    });
+
+    test('lê orderNumber e o omite quando está ausente', () {
+      final numbered = Order.fromJson(_orderMap()..['orderNumber'] = 5);
+      final absent = Order.fromJson(_orderMap());
+      final explicitNull = Order.fromJson(_orderMap()..['orderNumber'] = null);
+
+      expect(numbered.orderNumber, 5);
+      expect(numbered.toJson()['orderNumber'], 5);
+      expect(absent.orderNumber, isNull);
+      expect(absent.toJson().containsKey('orderNumber'), isFalse);
+      expect(explicitNull.orderNumber, isNull);
+      expect(explicitNull.toJson(), absent.toJson());
+      expect(numbered.withOrderNumber(5), same(numbered));
+      expect(absent.withOrderNumber(5), numbered);
     });
 
     test('grava o JSON do contrato', () {
@@ -132,6 +148,10 @@ void main() {
         'createdAt sem fuso': _orderMap()..['createdAt'] = '2026-10-16T18:00:00',
         'createdAt com offset': _orderMap()..['createdAt'] = '2026-10-16T15:00:00-03:00',
         'createdAt com z minúsculo': _orderMap()..['createdAt'] = '2026-10-16T18:00:00z',
+        'orderNumber zero': _orderMap()..['orderNumber'] = 0,
+        'orderNumber negativo': _orderMap()..['orderNumber'] = -1,
+        'orderNumber fracionário': _orderMap()..['orderNumber'] = 1.5,
+        'orderNumber texto': _orderMap()..['orderNumber'] = '0005',
       };
 
       for (final entry in cases.entries) {

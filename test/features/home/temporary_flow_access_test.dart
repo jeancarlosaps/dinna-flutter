@@ -81,6 +81,43 @@ void main() {
     expect(find.text('dinna'), findsOneWidget);
   });
 
+  testWidgets('a home reabre o último pedido pelo número público sem novo POST', (tester) async {
+    const id = 'o_56fd0ea0-1111-4111-8111-111111111111';
+    final stored = sampleOrder(id: id, table: '9');
+    final store = MemoryLastOrderStore();
+    await store.save(stored);
+    final orders = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      onCreate: ({required table, required items}) async =>
+          OrderSubmission.created(sampleOrder(id: 'nao-deve')),
+      onFind: (foundId) async {
+        expect(foundId, id);
+        return OrderLookup.ready(stored.withOrderNumber(5));
+      },
+    );
+
+    await _pumpApp(tester, orders: orders, lastOrders: store);
+    await tester.pumpAndSettle();
+
+    expect(orders.createCalls, 0);
+    expect(orders.findCalls, 1);
+    expect(orders.calls, 0);
+    expect(find.text('Mesa 9 · Pedido #0005'), findsOneWidget);
+    expect(find.textContaining(id), findsNothing);
+    expect((await store.load())!.orderNumber, 5);
+
+    final button = find.text('Ver último pedido');
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(OrderConfirmationView), findsOneWidget);
+    expect(find.text('Pedido #0005'), findsOneWidget);
+    expect(find.textContaining(id), findsNothing);
+    expect(orders.createCalls, 0);
+    expect(orders.findCalls, 1);
+  });
+
   testWidgets('abre a mesa e volta para a home', (tester) async {
     await _pumpApp(tester);
     await _open(tester, 'Mesa');

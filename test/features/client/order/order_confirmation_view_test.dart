@@ -11,6 +11,7 @@ import 'package:dinna/features/client/order/order_tracking_view.dart';
 import 'package:dinna/features/restaurant/order_format.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../restaurant/fake_order_repository.dart';
@@ -21,6 +22,7 @@ void main() {
 
   Order confirmed({
     String id = 'order-1',
+    int? orderNumber,
     String table = '12',
     OrderStatus status = OrderStatus.received,
     List<OrderItem>? items,
@@ -28,6 +30,7 @@ void main() {
   }) {
     return sampleOrder(
       id: id,
+      orderNumber: orderNumber,
       table: table,
       status: status,
       createdAt: createdAt,
@@ -91,7 +94,8 @@ void main() {
     expect(find.text('Mesa 12'), findsOneWidget);
     expect(find.text('Recebido'), findsOneWidget);
     expect(find.text(formatOrderTimestamp(order.createdAt)), findsOneWidget);
-    expect(find.text('order-1'), findsOneWidget);
+    expect(find.text('Pedido confirmado'), findsOneWidget);
+    expect(find.text('order-1'), findsNothing);
     expect(find.text('2×'), findsOneWidget);
     expect(find.text('1×'), findsOneWidget);
     expect(find.text('p1'), findsOneWidget);
@@ -165,7 +169,8 @@ void main() {
     final route = ModalRoute.of(tracking)!;
     expect(route.settings.name, AppRoutes.orderTracking);
     expect(route.settings.arguments, const AppRouteId('order-1'));
-    expect(find.text('order-1'), findsWidgets);
+    expect(find.text('Pedido confirmado'), findsWidgets);
+    expect(find.text('order-1'), findsNothing);
     expect(find.text('Status ao vivo indisponível'), findsOneWidget);
     expect(find.text('Preparando'), findsNothing);
     expect(find.text('Tela ainda não implementada.'), findsNothing);
@@ -198,6 +203,87 @@ void main() {
       expect(find.text('Acompanhamento indisponível'), findsOneWidget, reason: '$arguments');
       expect(find.text('Status ao vivo indisponível'), findsNothing, reason: '$arguments');
     }
+  });
+
+  testWidgets('mostra Pedido #0005 e não o UUID', (tester) async {
+    const id = 'o_6dbadd42-c7e1-4790-8f96-4d60620ad1fa';
+    final order = confirmed(id: id, orderNumber: 5);
+    final handle = tester.ensureSemantics();
+    try {
+      await pumpConfirmation(tester, arguments: OrderConfirmationArgs(order: order));
+
+      expect(find.text('Pedido #0005'), findsOneWidget);
+      expect(find.text('#0005'), findsNothing);
+      expect(find.textContaining(id), findsNothing);
+      expect(find.text('Pedido confirmado'), findsNothing);
+      final labels = _semanticsLabels(tester);
+      expect(labels.where((label) => label.contains('Pedido #0005')), isNotEmpty);
+      expect(labels.where((label) => label.contains(id)), isEmpty);
+      expect(tester.takeException(), isNull);
+    } finally {
+      handle.dispose();
+    }
+  });
+
+  testWidgets('o número com cinco dígitos cabe em tela baixa e texto ampliado', (tester) async {
+    tester.view.physicalSize = const Size(320, 480);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    const id = 'o_56fd0ea0-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(2)),
+          child: child ?? const SizedBox.shrink(),
+        ),
+        home: const Scaffold(body: SizedBox.shrink()),
+      ),
+    );
+    Navigator.of(tester.element(find.byType(Scaffold))).push(
+      MaterialPageRoute<void>(
+        settings: RouteSettings(
+          name: AppRoutes.order,
+          arguments: OrderConfirmationArgs(order: confirmed(id: id, orderNumber: 10000)),
+        ),
+        builder: (_) => OrderConfirmationView(
+          onTrack: (context, order) async {
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                settings: RouteSettings(
+                  name: AppRoutes.orderTracking,
+                  arguments: OrderTrackingArgs(
+                    id: AppRouteId(order.id),
+                    orderNumber: order.orderNumber,
+                  ),
+                ),
+                builder: (_) => const OrderTrackingView(),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final label = find.text('Pedido #10000');
+    await tester.scrollUntilVisible(label, 80);
+    expect(label, findsOneWidget);
+    expect(find.text('Pedido #1000'), findsNothing);
+    expect(find.textContaining(id), findsNothing);
+
+    final action = find.widgetWithText(FilledButton, 'Acompanhar pedido');
+    await tester.scrollUntilVisible(action, 80);
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Pedido #10000'), findsWidgets);
+    expect(find.textContaining(id), findsNothing);
+    expect(find.byType(OrderTrackingView), findsOneWidget);
   });
 
   testWidgets('a confirmação cabe numa tela baixa', (tester) async {
@@ -308,4 +394,23 @@ void main() {
     expect(submission.canRequestSubmit, isFalse);
     expect(submission.canViewPersistedConfirmation, isTrue);
   });
+}
+
+List<String> _semanticsLabels(WidgetTester tester) {
+  final renderView = tester.binding.renderViews.firstWhere(
+    (view) => view.flutterView == tester.view,
+  );
+  final root = renderView.owner!.semanticsOwner!.rootSemanticsNode!;
+  final labels = <String>[];
+  void visit(SemanticsNode node) {
+    final label = node.getSemanticsData().label.trim();
+    if (label.isNotEmpty) labels.add(label);
+    node.visitChildren((child) {
+      visit(child);
+      return true;
+    });
+  }
+
+  visit(root);
+  return labels;
 }

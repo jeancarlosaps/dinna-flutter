@@ -45,6 +45,7 @@ void main() {
   Order confirmedOrder() {
     return sampleOrder(
       id: 'order-real',
+      orderNumber: 5,
       table: '4',
       totalCents: 2500,
       items: [OrderItem(productId: 'p9', quantity: 1, note: 'sem sal')],
@@ -111,7 +112,8 @@ void main() {
     expect(find.byType(OrderConfirmationView), findsOneWidget);
     expect(find.text('Mesa 4'), findsOneWidget);
     expect(find.text('Mesa 12'), findsNothing);
-    expect(find.text('order-real'), findsOneWidget);
+    expect(find.text('Pedido #0005'), findsOneWidget);
+    expect(find.text('order-real'), findsNothing);
     expect(find.text('1×'), findsOneWidget);
     expect(find.text('p9'), findsOneWidget);
     expect(find.text('sem sal'), findsOneWidget);
@@ -130,7 +132,8 @@ void main() {
     expect(lines.read(), isEmpty);
 
     final action = find.text('Acompanhar pedido');
-    await tester.scrollUntilVisible(action, 200);
+    await tester.ensureVisible(action);
+    await tester.pump();
     await tester.tap(action);
     await tester.pumpAndSettle();
 
@@ -139,7 +142,12 @@ void main() {
     expect(products.calls, 1);
     final tracking = ModalRoute.of(tester.element(find.byType(OrderTrackingView)))!;
     expect(tracking.settings.name, AppRoutes.orderTracking);
-    expect(tracking.settings.arguments, const AppRouteId('order-real'));
+    expect(
+      tracking.settings.arguments,
+      const OrderTrackingArgs(id: AppRouteId('order-real'), orderNumber: 5),
+    );
+    expect(find.text('Pedido #0005'), findsWidgets);
+    expect(find.textContaining('order-real'), findsNothing);
     expect(find.text('Status ao vivo indisponível'), findsOneWidget);
 
     Navigator.of(tester.element(find.byType(OrderTrackingView))).pop();
@@ -297,7 +305,8 @@ void main() {
     expect(calls, 0);
     expect(orders.createCalls, 0);
     expect(find.byType(OrderConfirmationView), findsOneWidget);
-    expect(find.text('order-real'), findsOneWidget);
+    expect(find.text('Pedido #0005'), findsOneWidget);
+    expect(find.text('order-real'), findsNothing);
     expect(find.text('Mesa 4'), findsOneWidget);
     expect(find.text('1×'), findsOneWidget);
     expect(lines.read(), isEmpty);
@@ -424,7 +433,8 @@ void main() {
 
     expect(calls, 1);
     expect(find.byType(OrderConfirmationView), findsOneWidget);
-    expect(find.text('order-real'), findsOneWidget);
+    expect(find.text('Pedido #0005'), findsOneWidget);
+    expect(find.text('order-real'), findsNothing);
     expect(lines.read(), isEmpty);
   });
 
@@ -515,7 +525,8 @@ void main() {
 
     expect(opened, 2);
     expect(shown!.id, 'order-real');
-    expect(find.text('order-real'), findsOneWidget);
+    expect(find.text('Pedido #0005'), findsOneWidget);
+    expect(find.text('order-real'), findsNothing);
     expect(find.byType(OrderConfirmationView), findsOneWidget);
 
     await submission.submit(table: '7', items: lines.read());

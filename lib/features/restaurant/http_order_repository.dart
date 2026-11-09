@@ -57,6 +57,25 @@ class HttpOrderRepository implements OrderRepository {
   }
 
   @override
+  Future<OrderLookup> findById(String id) async {
+    if (id.trim().isEmpty) {
+      return const OrderLookup.unavailable(
+        'Identificador do pedido inválido',
+        failure: DataFailure.validation,
+      );
+    }
+
+    try {
+      final body = await _apiClient.getJson('/orders/${Uri.encodeComponent(id)}');
+      return OrderLookup.ready(Order.fromJson(body));
+    } on ApiException catch (error) {
+      return OrderLookup.unavailable(error.message, failure: error.failure, detail: error.detail);
+    } on FormatException {
+      return const OrderLookup.unavailable(unexpectedResponseMessage);
+    }
+  }
+
+  @override
   Future<OrderSubmission> create({
     required String table,
     required List<CartItem> items,
@@ -72,7 +91,8 @@ class HttpOrderRepository implements OrderRepository {
 
     try {
       final response = await _apiClient.postJson('/orders', payload, headers: headers);
-      return OrderSubmission.created(Order.fromJson(response));
+      final created = Order.fromJson(response);
+      return OrderSubmission.created(await _withPublicNumber(created));
     } on ApiException catch (error) {
       return _fromApi(error, sentKey: headers != null);
     } on FormatException catch (error) {
@@ -82,6 +102,26 @@ class HttpOrderRepository implements OrderRepository {
         detail: error.message,
         outcomeUncertain: true,
       );
+    }
+  }
+
+  /// Completa um 201 antigo que trouxe `id` e não trouxe `orderNumber`.
+  ///
+  /// A consulta é `GET /orders/:id`, com o mesmo cliente autenticado. O
+  /// número entra na fotografia já confirmada. Outro status ou outros itens
+  /// lidos agora não substituem essa fotografia. Falha, corpo sem número ou
+  /// pedido diferente não alteram o sucesso do POST e não disparam outro POST.
+  Future<Order> _withPublicNumber(Order order) async {
+    if (order.orderNumber != null) return order;
+    try {
+      final lookup = await findById(order.id);
+      final recovered = lookup.order;
+      if (recovered == null || recovered.id != order.id) return order;
+      final number = recovered.orderNumber;
+      if (number == null) return order;
+      return order.withOrderNumber(number);
+    } on Object {
+      return order;
     }
   }
 
