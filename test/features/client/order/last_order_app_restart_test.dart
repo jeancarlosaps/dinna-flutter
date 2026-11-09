@@ -92,7 +92,8 @@ void main() {
     await _until(tester, find.byType(OrderConfirmationView));
 
     expect(find.byType(OrderConfirmationView), findsOneWidget);
-    expect(find.text('restart-order'), findsOneWidget);
+    expect(find.text('Pedido confirmado'), findsOneWidget);
+    expect(find.textContaining('restart-order'), findsNothing);
     expect(firstOrders.createCalls, 1);
     await tester.runAsync(() async {
       final database = await firstDatabase.database;
@@ -135,7 +136,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 300));
     });
     await tester.pump();
-    await _until(tester, find.text('Mesa 4 · restart-order'));
+    await _until(tester, find.text('Mesa 4 · Pedido confirmado'));
     expect(secondOrders.createCalls, 0);
 
     await tester.ensureVisible(find.text('Ver último pedido'));
@@ -143,7 +144,8 @@ void main() {
     await _until(tester, find.byType(OrderConfirmationView));
 
     expect(find.text('Mesa 4'), findsOneWidget);
-    expect(find.text('restart-order'), findsOneWidget);
+    expect(find.text('Pedido confirmado'), findsOneWidget);
+    expect(find.textContaining('restart-order'), findsNothing);
     expect(secondOrders.createCalls, 0);
     expect(firstOrders.createCalls, 1);
     final confirmation = ModalRoute.of(tester.element(find.byType(OrderConfirmationView)))!;

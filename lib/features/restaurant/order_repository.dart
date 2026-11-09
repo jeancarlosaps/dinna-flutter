@@ -179,13 +179,42 @@ abstract final class OrderRequest {
   };
 }
 
+/// Pedido consultado, ou a falha já traduzida. Não carrega status HTTP.
+class OrderLookup {
+  OrderLookup.ready(Order order) : this._(order: order);
+
+  const OrderLookup.unavailable(
+    String message, {
+    DataFailure failure = DataFailure.unavailable,
+    String? detail,
+  }) : this._(message: message, failure: failure, detail: detail);
+
+  const OrderLookup._({this.order, this.message, this.failure, this.detail});
+
+  /// `null` quando a consulta falhou.
+  final Order? order;
+
+  /// Preenchida só quando a consulta falha.
+  final String? message;
+
+  /// Nula quando o pedido foi lido.
+  final DataFailure? failure;
+
+  /// Causa técnica. Quem consulta o número não transforma isso em falha de envio.
+  final String? detail;
+}
+
 /// Fonte dos pedidos.
 ///
 /// [list] traduz `GET /orders` na ordem recebida; o ViewModel da fila ordena.
+/// [findById] traduz `GET /orders/:id` e não cria pedido.
 /// [create] traduz `POST /orders`. O body é mesa e itens. O total não é
 /// calculado aqui.
 abstract interface class OrderRepository {
   Future<OrderList> list();
+
+  /// Lê um pedido existente. Identificador vazio não chama a API.
+  Future<OrderLookup> findById(String id);
 
   /// Cria o pedido da mesa.
   ///

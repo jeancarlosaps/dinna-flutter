@@ -308,6 +308,7 @@ void main() {
             ],
             'totalCents': 2000,
             'createdAt': '2026-11-08T12:00:00.000Z',
+            'orderNumber': 5,
           }),
           201,
           headers: const {'content-type': 'application/json; charset=utf-8'},

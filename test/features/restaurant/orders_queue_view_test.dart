@@ -4,6 +4,7 @@ import 'package:dinna/app/router/app_router.dart';
 import 'package:dinna/app/theme/dinna_theme.dart';
 import 'package:dinna/core/domain/order.dart';
 import 'package:dinna/core/domain/order_status.dart';
+import 'package:dinna/features/restaurant/order_format.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:dinna/features/restaurant/orders_queue_view.dart';
 import 'package:dinna/features/restaurant/orders_queue_view_model.dart';
@@ -40,6 +41,23 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     expect(find.text('Nenhum pedido na fila'), findsNothing);
     expect(find.text('Tentar novamente'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('mostra o número público e não o identificador técnico', (tester) async {
+    const id = 'o_6dbadd42-c7e1-4790-8f96-4d60620ad1fa';
+    final order = sampleOrder(id: id, table: '12', orderNumber: 5);
+    await pumpQueue(
+      tester,
+      () => OrdersQueueViewModel(
+        FakeOrderRepository(() async => OrderList.ready([order])),
+        delay: pendingPollDelay,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(publicOrderLabel(5)), findsOneWidget);
+    expect(find.textContaining(id), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

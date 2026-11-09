@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/domain/order.dart';
 import '../client/order/last_order_session.dart';
+import '../restaurant/order_format.dart';
 import 'home_view_model.dart';
 import 'temporary_flow_access.dart';
 
@@ -153,7 +154,7 @@ class _LastOrderCard extends StatelessWidget {
                 Text('Último pedido', style: Theme.of(context).textTheme.titleMedium),
                 if (order != null) ...[
                   const SizedBox(height: 4),
-                  Text('Mesa ${order.table} · ${order.id}'),
+                  Text('Mesa ${order.table} · ${publicOrderLabel(order.orderNumber)}'),
                   if (onOpen != null) ...[
                     const SizedBox(height: 8),
                     OutlinedButton(

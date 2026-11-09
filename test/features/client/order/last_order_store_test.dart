@@ -458,6 +458,90 @@ void main() {
     expect(session.errorMessage, isNull);
     expect(session.order, isNull);
   });
+
+  test('persiste o número e completa um pedido antigo sem outra compra', () async {
+    final database = await openDatabase();
+    final handle = openedDatabases.last;
+    final cart = SqfliteCartRepository(database: database);
+    await cart.add(productId: 'p1', quantity: 2, note: null);
+    final legacy = sampleOrder(id: 'o_antigo', table: '4');
+    await handle.insert(DinnaDatabase.lastOrdersTable, {
+      'id': 1,
+      'order_json': jsonEncode(legacy.toJson()),
+    });
+    expect(await handle.getVersion(), DinnaDatabase.schemaVersion);
+    expect(legacy.toJson().containsKey('orderNumber'), isFalse);
+
+    var lookups = 0;
+    final session = LastOrderSession(
+      SqfliteLastOrderStore(database: database),
+      orderNumberLookup: (id) async {
+        lookups++;
+        expect(id, legacy.id);
+        return 5;
+      },
+    );
+    addTearDown(session.dispose);
+    await session.restore();
+
+    expect(lookups, 1);
+    expect(session.order, legacy.withOrderNumber(5));
+    expect(session.errorMessage, isNull);
+    expect(session.isPersisted(legacy), isTrue);
+    expect(session.isPersisted(legacy.withOrderNumber(4)), isFalse);
+    expect(await SqfliteLastOrderStore(database: database).load(), legacy.withOrderNumber(5));
+    expect((await cart.load()).single.productId, 'p1');
+    expect((await cart.load()).single.quantity, 2);
+    expect(await handle.getVersion(), DinnaDatabase.schemaVersion);
+
+    final raw = (await handle.query(DinnaDatabase.lastOrdersTable)).single['order_json'];
+    final again = LastOrderSession(
+      SqfliteLastOrderStore(database: database),
+      orderNumberLookup: (_) async {
+        lookups++;
+        return 9;
+      },
+    );
+    addTearDown(again.dispose);
+    await again.restore();
+
+    expect(lookups, 1);
+    expect(again.order!.orderNumber, 5);
+    expect((await handle.query(DinnaDatabase.lastOrdersTable)).single['order_json'], raw);
+
+    await again.record(legacy);
+    expect(again.order, legacy.withOrderNumber(5));
+    expect((await SqfliteLastOrderStore(database: database).load())!.orderNumber, 5);
+  });
+
+  test('falha ao recuperar o número preserva a fotografia antiga', () async {
+    final database = await openDatabase();
+    final handle = openedDatabases.last;
+    final legacy = sampleOrder(id: 'o_antigo', table: '4');
+    final raw = jsonEncode(legacy.toJson());
+    await handle.insert(DinnaDatabase.lastOrdersTable, {'id': 1, 'order_json': raw});
+    final session = LastOrderSession(
+      SqfliteLastOrderStore(database: database),
+      orderNumberLookup: (_) async => throw StateError('sem rede'),
+    );
+    addTearDown(session.dispose);
+
+    await session.restore();
+
+    expect(session.order, legacy);
+    expect(session.errorMessage, isNull);
+    expect((await handle.query(DinnaDatabase.lastOrdersTable)).single['order_json'], raw);
+
+    final quiet = LastOrderSession(
+      SqfliteLastOrderStore(database: database),
+      orderNumberLookup: (_) async => null,
+    );
+    addTearDown(quiet.dispose);
+    await quiet.restore();
+
+    expect(quiet.order, legacy);
+    expect((await handle.query(DinnaDatabase.lastOrdersTable)).single['order_json'], raw);
+  });
 }
 
 final class _UnexpectedSaveFailureStore implements LastOrderStore {
