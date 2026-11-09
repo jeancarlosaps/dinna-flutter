@@ -1,6 +1,6 @@
 # Contrato da sessão do carrinho
 
-Integração entre a inclusão do produto (Gabriel, SCRUM-36, SCRUM-37 e SCRUM-39) e o carrinho persistido (João, SCRUM-69 e SCRUM-71). Jean aprova este contrato e revisa a integração. Este documento não altera comportamento: a `dev` continua com `ProcessCartLines` em `lib/main.dart`.
+Contrato da inclusão do produto (SCRUM-39) e do carrinho persistido (SCRUM-69/71). A implementação está integrada em `dev`: `main` injeta `CartSession(SqfliteCartRepository())`, `DinnaApp` inicia `restore()` na abertura e a sessão libera o carrinho depois de carregar o SQLite. A revisão consulta o catálogo atual ao criar o `CartViewModel`, identificando itens indisponíveis ou ausentes.
 
 Para o envio, a confirmação e a idempotência, vale [`docs/order-integration.md`](order-integration.md). Para a inclusão e a sessão, vale este arquivo. O trecho daquele handoff que manda acrescentar a linha com `CartLines.read` e `CartLines.replace` deixa de ser o caminho das stories acima.
 
@@ -8,15 +8,15 @@ Para o envio, a confirmação e a idempotência, vale [`docs/order-integration.m
 
 Há uma sessão por processo e um `CartRepository` dentro dela. O SQLite é a fonte persistida. A lista em memória é projeção desse banco e só muda depois que a operação confirma. `load` devolve as linhas e `add` devolve o `CartItem` gravado. `update` e `remove` devolvem `Future<bool>`, não uma linha nem uma lista; a sessão não trata esse booleano como se fosse o estado novo do carrinho.
 
-`CartLines` permanece como está. `ProcessCartLines.read` e `ProcessCartLines.replace` continuam servindo à revisão em memória e aos testes atuais. `replace` compara a sequência inteira, troca a lista e não gera `lineId`.
+`CartLines` permanece como caminho compatível em memória. `ProcessCartLines.read` e `ProcessCartLines.replace` servem a fluxos sem sessão e aos testes desse modo. Em produção, `CartViewModel.persisted` usa `CartSession`; a lista publicada pela sessão é sempre derivada de operações confirmadas pelo SQLite.
 
-`replace` não é a gravação da sessão. Ele é síncrono: não espera o SQLite, não entra na fila das operações assíncronas e não atribui `lineId`. Devolver `true` depois de mudar só a memória mostraria sucesso antes da persistência. Na implementação persistida, cumprir `CartLines.replace` durante a migração significa devolver `false` sem mexer no cache nem no banco. O `CartViewModel` então relê a lista anterior: quantidade e remoção não têm efeito até passarem a chamar `updateLine` e `removeLine`. Essa troca faz parte da SCRUM-69, no mesmo passo em que `main` deixa de injetar `ProcessCartLines`.
+`replace` não grava na sessão: é síncrono, não espera o SQLite, não entra na fila assíncrona e não atribui `lineId`. Por isso, a revisão persistida usa `updateLine` e `removeLine`; a implementação de `CartLines` fica restrita ao modo em memória.
 
 A sessão não é um segundo carrinho ao lado de `ProcessCartLines`. Em produção existe um objeto só.
 
 ## API mínima
 
-Assinatura ilustrativa. Não é código do app e não deve ser copiada para `lib/` neste PR.
+Resumo da API implementada em `lib/features/client/cart/cart_session.dart`.
 
 ```dart
 abstract class CartSession extends ChangeNotifier {
@@ -89,26 +89,26 @@ Não há escrita otimista. Uma operação espera a anterior. `read` no meio da e
 
 | Quem | Faz | Não faz |
 | --- | --- | --- |
-| Gabriel | Detalhe do produto, quantidade e observação locais, `addLine` na SCRUM-39. | Gerar `lineId`, abrir SQLite, chamar `replace` para incluir, enviar pedido. |
-| João | Implementar a sessão, ligá-la no app, restaurar na abertura, notificar, migrar quantidade e remoção para `updateLine` e `removeLine`, distinguir falha de carrinho vazio. | Tela de detalhe, `lineId` fora de `CartRepository.add`. |
-| Jean | Este contrato, revisão dos conflitos e compatibilidade com a intenção. A reconciliação após o 201 fica para depois. | Implementar a sessão neste PR. |
+| Gabriel | Detalhe do produto, quantidade local e chamada de `addLine` na SCRUM-39. | Gerar `lineId`, abrir SQLite, chamar `replace` para incluir, enviar pedido. |
+| João | Sessão persistida, restauração na abertura, publicação após confirmação do repositório e revisão por `updateLine`/`removeLine`. | Tela de detalhe, `lineId` fora de `CartRepository.add`. |
+| Jean | Contrato, revisão dos conflitos e compatibilidade com a intenção. A reconciliação após o 201 fica para depois. | Alterar o body idempotente nesta integração. |
 
-Arquivos previstos quando as stories forem implementadas:
+Arquivos envolvidos na integração:
 
 | Arquivo | Dono |
 | --- | --- |
-| `lib/features/menu/product_detail_view.dart` (novo) | Gabriel |
-| `lib/features/menu/menu_view.dart` | Gabriel, no toque que abre `/product` |
+| `lib/features/menu/product_detail_view.dart` | Gabriel, detalhe em bottom sheet |
+| `lib/features/menu/menu_view.dart` | Gabriel, cardápio e chamada de `CartSession.addLine` |
 | `lib/features/menu/product_detail_view_model.dart` | Ninguém. Já carrega o produto e não conhece o carrinho. |
-| `lib/features/client/cart/cart_session.dart` (novo) | João |
-| `lib/main.dart`, `lib/app/app.dart` | João |
-| `lib/features/client/cart/cart_view_model.dart` | João, na troca de `replace` por `updateLine` e `removeLine` |
-| `lib/features/client/cart/cart_view.dart` | João, para espera da restauração e falha visível |
-| `lib/app/router/app_router.dart` | João no construtor e no `/cart`; Gabriel só no case `/product` |
-| `lib/core/domain/cart_item.dart`, `cart_repository.dart`, `sqflite_cart_repository.dart`, `cart_lines.dart` | Ninguém nestas stories |
+| `lib/features/client/cart/cart_session.dart` | João, sessão e fila de persistência |
+| `lib/main.dart`, `lib/app/app.dart` | João, composição e restauração no arranque |
+| `lib/features/client/cart/cart_view_model.dart` | João, revisão persistida e compatibilidade em memória |
+| `lib/features/client/cart/cart_view.dart` | João, espera da restauração e falha visível |
+| `lib/app/router/app_router.dart` | João, injeta a sessão no cardápio e no carrinho |
+| `lib/core/domain/cart_item.dart`, `cart_repository.dart`, `sqflite_cart_repository.dart`, `cart_lines.dart` | Contratos e armazenamento usados pela sessão ou pelo fluxo compatível |
 | `order_submission_view_model.dart`, `order_intent_store.dart` | Ninguém agora. Jean coordena a reconciliação futura. |
 
-`/product` hoje cai no `RoutePlaceholder`. O cardápio ainda não navega para o detalhe. Os dois podem editar `app_router.dart` em regiões diferentes; Jean resolve o conflito se os PRs se cruzarem. João entra primeiro com a sessão e o placeholder de `/product` intacto.
+O detalhe abre como bottom sheet sobre o cardápio; `/product` continua sendo uma rota placeholder separada. `AppRouter` passa a sessão tanto ao cardápio quanto à revisão do carrinho.
 
 ## Invariantes
 
@@ -149,11 +149,11 @@ Quando a reconciliação for feita, ela precisa de:
 - nenhuma exclusão automática quando a quantidade foi reduzida durante o envio, enquanto essa regra não for aprovada por Jean;
 - falha de SQLite sem apagar a intenção e sem liberar outro POST.
 
-O `removeConfirmed` atual subtrai a quantidade enviada e apaga a linha se o restante fica abaixo de 1. Essa regra não está aprovada para o caso de redução durante o POST. Até a reconciliação existir, o 201 não altera o carrinho. O `OrderSubmissionViewModel` e o arquivo da intenção permanecem a fonte do envio.
+O `removeConfirmed` atual subtrai a quantidade enviada e apaga a linha se o restante fica abaixo de 1. A SCRUM-93 aplica essa subtração em `reconcileConfirmed`, na mesma transação que grava `cart_reconciliations`. O 201 gravado altera o carrinho só por essa conciliação. Falha dela não apaga a intenção nem libera outro POST. O `OrderSubmissionViewModel` e o arquivo da intenção permanecem a fonte do envio. A SCRUM-72 grava a fotografia confirmada em `last_orders`, no mesmo banco, sem criar outro carrinho.
 
-## Testes contratuais esperados
+## Verificação do contrato
 
-Na implementação, não neste PR:
+Estes comportamentos descrevem os invariantes que os testes da sessão devem preservar:
 
 - `addLine` devolve `lineId` e um `load` novo vê a mesma linha.
 - Duas inclusões iguais recebem ids diferentes.
@@ -167,8 +167,8 @@ Na implementação, não neste PR:
 - `toOrderItem` e o body da intenção não contêm `lineId`.
 - Uma operação da sessão não modifica o arquivo da intenção.
 
-Os testes atuais de `ProcessCartLines` e do `CartViewModel` em memória continuam válidos até a migração da revisão.
+Os testes de `ProcessCartLines` e do `CartViewModel` em memória cobrem o caminho compatível. O estado persistido e as operações serializadas são cobertos em `test/features/client/cart/cart_session_test.dart` e nos testes de carrinho relacionados.
 
 ## Fora do escopo
 
-Implementação da sessão, tela de detalhe, mudança de `CartRepository`, reconciliação após HTTP 201, alteração do body idempotente e qualquer dependência nova.
+Alteração do body idempotente e dependências novas. A reconciliação após o HTTP 201 entrou na SCRUM-93. A fotografia do último pedido entrou na SCRUM-72.
