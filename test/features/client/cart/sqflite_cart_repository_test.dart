@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dinna/core/domain/cart_item.dart';
+import 'package:dinna/features/client/cart/cart_repository.dart';
 import 'package:dinna/features/client/cart/sqflite_cart_repository.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -225,6 +226,140 @@ void main() {
     await expectLater(repository.load(), throwsStateError);
     await expectLater(repository.add(productId: 'p1', quantity: 1, note: null), throwsStateError);
     expect(await open().load(), isEmpty);
+  });
+
+  test('passos separados apagam a quantidade que não foi enviada', () async {
+    final repository = open();
+    final sent = await repository.add(productId: 'p1', quantity: 3, note: null);
+    final confirmed = CartItem(lineId: sent.lineId, productId: 'p1', quantity: 2, note: null);
+
+    expect((await repository.removeConfirmed([confirmed])).single.quantity, 1);
+    expect(await repository.removeConfirmed([confirmed]), isEmpty);
+  });
+
+  test('a conciliação grava o marcador na mesma transação e não subtrai de novo', () async {
+    final repository = open();
+    final sent = await repository.add(productId: 'p1', quantity: 3, note: null);
+    final confirmed = CartItem(lineId: sent.lineId, productId: 'p1', quantity: 2, note: null);
+    final later = await repository.add(productId: 'p9', quantity: 1, note: 'depois');
+
+    final applied = await repository.reconcileConfirmed(
+      intentId: 'intent-1',
+      confirmedItems: [confirmed],
+    );
+    expect(applied.outcome, CartReconciliation.applied);
+    expect(applied.items, [
+      CartItem(lineId: sent.lineId, productId: 'p1', quantity: 1, note: null),
+      later,
+    ]);
+
+    final repeated = await repository.reconcileConfirmed(
+      intentId: 'intent-1',
+      confirmedItems: [confirmed],
+    );
+    expect(repeated.outcome, CartReconciliation.alreadyApplied);
+    expect(repeated.items, applied.items);
+
+    final reopened = await open(lineIdGenerator: () => 'nao-usado')
+        .reconcileConfirmed(intentId: 'intent-1', confirmedItems: [confirmed]);
+    expect(reopened.outcome, CartReconciliation.alreadyApplied);
+    expect(reopened.items, applied.items);
+  });
+
+  test('intenção sem lineId não altera o carrinho nem grava o marcador', () async {
+    final repository = open();
+    final stored = await repository.add(productId: 'p1', quantity: 2, note: 'sem cebola');
+
+    final result = await repository.reconcileConfirmed(
+      intentId: 'intent-antiga',
+      confirmedItems: [CartItem(productId: 'p1', quantity: 2, note: 'sem cebola')],
+    );
+    expect(await repository.load(), [stored]);
+    final database = await factory.openDatabase(path.join(directory.path, 'dinna.db'));
+    final markers = await database.query('cart_reconciliations');
+
+    expect(result.outcome, CartReconciliation.unresolved);
+    expect(result.items, [stored]);
+    expect(markers, isEmpty);
+  });
+
+  test('falha ao gravar o marcador desfaz a alteração do carrinho', () async {
+    final repository = open();
+    final sent = await repository.add(productId: 'p1', quantity: 3, note: null);
+    final database = await factory.openDatabase(path.join(directory.path, 'dinna.db'));
+    await database.execute('''
+      CREATE TRIGGER cart_reconciliations_fail_insert
+      BEFORE INSERT ON cart_reconciliations
+      BEGIN
+        SELECT RAISE(ROLLBACK, 'falha forçada');
+      END
+    ''');
+
+    await expectLater(
+      repository.reconcileConfirmed(
+        intentId: 'intent-1',
+        confirmedItems: [CartItem(lineId: sent.lineId, productId: 'p1', quantity: 2, note: null)],
+      ),
+      throwsA(isA<DatabaseException>()),
+    );
+    await database.execute('DROP TRIGGER cart_reconciliations_fail_insert');
+    final markers = await database.query('cart_reconciliations');
+
+    expect(await repository.load(), [sent]);
+    expect(markers, isEmpty);
+
+    final applied = await repository.reconcileConfirmed(
+      intentId: 'intent-1',
+      confirmedItems: [CartItem(lineId: sent.lineId, productId: 'p1', quantity: 2, note: null)],
+    );
+    expect(applied.outcome, CartReconciliation.applied);
+    expect(applied.items.single.quantity, 1);
+    expect(
+      (await open(lineIdGenerator: () => 'nao-usado').reconcileConfirmed(
+        intentId: 'intent-1',
+        confirmedItems: [CartItem(lineId: sent.lineId, productId: 'p1', quantity: 2, note: null)],
+      )).items.single.quantity,
+      1,
+    );
+  });
+
+  test('banco antigo ganha a tabela de conciliação e conserva as linhas', () async {
+    final database = await factory.openDatabase(
+      path.join(directory.path, 'dinna.db'),
+      options: OpenDatabaseOptions(
+        version: 1,
+        onCreate: (db, version) async {
+          await db.execute('''
+            CREATE TABLE cart_items (
+              position INTEGER PRIMARY KEY AUTOINCREMENT,
+              line_id TEXT NOT NULL UNIQUE,
+              product_id TEXT NOT NULL,
+              quantity INTEGER NOT NULL CHECK (quantity >= 1),
+              note TEXT
+            )
+          ''');
+          await db.insert('cart_items', {
+            'line_id': 'line-antiga',
+            'product_id': 'p1',
+            'quantity': 4,
+            'note': null,
+          });
+        },
+      ),
+    );
+    await database.close();
+
+    final repository = open(lineIdGenerator: () => 'nao-usado');
+    final loaded = await repository.load();
+    expect(loaded.single.lineId, 'line-antiga');
+    expect(loaded.single.quantity, 4);
+
+    final applied = await repository.reconcileConfirmed(
+      intentId: 'intent-1',
+      confirmedItems: [CartItem(lineId: 'line-antiga', productId: 'p1', quantity: 1, note: null)],
+    );
+    expect(applied.outcome, CartReconciliation.applied);
+    expect(applied.items.single.quantity, 3);
   });
 
   test('chave repetida não apaga a linha já gravada', () async {

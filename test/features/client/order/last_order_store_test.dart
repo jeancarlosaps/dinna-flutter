@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dinna/core/domain/cart_item.dart';
 import 'package:dinna/core/domain/order.dart';
 import 'package:dinna/core/storage/dinna_database.dart';
+import 'package:dinna/features/client/cart/cart_repository.dart';
 import 'package:dinna/features/client/cart/sqflite_cart_repository.dart';
 import 'package:dinna/features/client/order/last_order_session.dart';
 import 'package:dinna/features/client/order/last_order_store.dart';
@@ -21,11 +23,13 @@ void main() {
   late DatabaseFactory factory;
   final openedDatabases = <Database>[];
 
-  setUpAll(sqfliteFfiInit);
+  setUpAll(() {
+    sqfliteFfiInit();
+    factory = createDatabaseFactoryFfi(noIsolate: true);
+  });
 
   setUp(() async {
     directory = await Directory.systemTemp.createTemp('dinna-last-order-');
-    factory = databaseFactoryFfi;
     await factory.setDatabasesPath(directory.path);
     openedDatabases.clear();
   });
@@ -42,10 +46,63 @@ void main() {
     if (await directory.exists()) await directory.delete(recursive: true);
   });
 
+  const expectedTables = [
+    DinnaDatabase.cartItemsTable,
+    DinnaDatabase.reconciliationsTable,
+    DinnaDatabase.lastOrdersTable,
+  ];
+
   Future<DinnaDatabase> openDatabase() async {
     final database = DinnaDatabase(factory: factory);
     openedDatabases.add(await database.database);
     return database;
+  }
+
+  Future<void> createLegacy({
+    required int version,
+    required Future<void> Function(Database database, int version) onCreate,
+  }) async {
+    final legacy = await factory.openDatabase(
+      path.join(directory.path, DinnaDatabase.databaseName),
+      options: OpenDatabaseOptions(version: version, onCreate: onCreate),
+    );
+    await legacy.close();
+  }
+
+  Future<void> createCartItems(DatabaseExecutor database) {
+    return database.execute('''
+      CREATE TABLE ${DinnaDatabase.cartItemsTable} (
+        position INTEGER PRIMARY KEY AUTOINCREMENT,
+        line_id TEXT NOT NULL UNIQUE,
+        product_id TEXT NOT NULL,
+        quantity INTEGER NOT NULL CHECK (quantity >= 1),
+        note TEXT
+      )
+    ''');
+  }
+
+  Future<void> createReconciliations(DatabaseExecutor database) {
+    return database.execute('''
+      CREATE TABLE ${DinnaDatabase.reconciliationsTable} (
+        intent_id TEXT PRIMARY KEY
+      )
+    ''');
+  }
+
+  Future<void> createLastOrders(DatabaseExecutor database) {
+    return database.execute('''
+      CREATE TABLE ${DinnaDatabase.lastOrdersTable} (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        order_json TEXT NOT NULL
+      )
+    ''');
+  }
+
+  Future<List<String>> tableNames(Database database) async {
+    final rows = await database.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+    );
+    return rows.map((row) => row['name']! as String).toList();
   }
 
   test('SQLite vazio não tem último pedido e uma gravação substitui o anterior', () async {
@@ -119,31 +176,19 @@ void main() {
     expect(restartedSession.isPersisted(order), isTrue);
   });
 
-  test('migra banco v1 sem perder linhas do carrinho e cria a tabela de pedidos', () async {
-    final legacy = await factory.openDatabase(
-      path.join(directory.path, DinnaDatabase.databaseName),
-      options: OpenDatabaseOptions(
-        version: 1,
-        onCreate: (database, _) async {
-          await database.execute('''
-            CREATE TABLE cart_items (
-              position INTEGER PRIMARY KEY AUTOINCREMENT,
-              line_id TEXT NOT NULL UNIQUE,
-              product_id TEXT NOT NULL,
-              quantity INTEGER NOT NULL CHECK (quantity >= 1),
-              note TEXT
-            )
-          ''');
-          await database.insert('cart_items', {
-            'line_id': 'legacy-line',
-            'product_id': 'p1',
-            'quantity': 3,
-            'note': 'sem pimenta',
-          });
-        },
-      ),
+  test('migra banco v1 sem perder linhas e cria conciliação e último pedido', () async {
+    await createLegacy(
+      version: 1,
+      onCreate: (database, _) async {
+        await createCartItems(database);
+        await database.insert(DinnaDatabase.cartItemsTable, {
+          'line_id': 'legacy-line',
+          'product_id': 'p1',
+          'quantity': 3,
+          'note': 'sem pimenta',
+        });
+      },
     );
-    await legacy.close();
 
     final database = await openDatabase();
     final cart = SqfliteCartRepository(database: database);
@@ -158,7 +203,158 @@ void main() {
     expect(await cart.load(), [existing]);
     await lastOrder.save(sampleOrder(id: 'after-migration'));
     expect(await lastOrder.load(), sampleOrder(id: 'after-migration'));
-    expect(await openedDatabases.single.getVersion(), 2);
+    final handle = openedDatabases.single;
+    expect(await handle.getVersion(), DinnaDatabase.schemaVersion);
+    expect(await tableNames(handle), containsAll(expectedTables));
+
+    final applied = await cart.reconcileConfirmed(
+      intentId: 'intent-v1',
+      confirmedItems: [
+        CartItem(lineId: 'legacy-line', productId: 'p1', quantity: 1, note: 'sem pimenta'),
+      ],
+    );
+    expect(applied.outcome, CartReconciliation.applied);
+    expect(applied.items.single.quantity, 2);
+  });
+
+  test('banco v2 da dev ganha último pedido e conserva a conciliação', () async {
+    await createLegacy(
+      version: 2,
+      onCreate: (database, _) async {
+        await createCartItems(database);
+        await createReconciliations(database);
+        await database.insert(DinnaDatabase.cartItemsTable, {
+          'line_id': 'line-dev',
+          'product_id': 'p1',
+          'quantity': 4,
+          'note': null,
+        });
+        await database.insert(DinnaDatabase.reconciliationsTable, {'intent_id': 'intent-antiga'});
+      },
+    );
+
+    final database = await openDatabase();
+    final cart = SqfliteCartRepository(database: database);
+    final handle = openedDatabases.single;
+
+    expect(await handle.getVersion(), DinnaDatabase.schemaVersion);
+    expect((await cart.load()).single.quantity, 4);
+    expect(await handle.query(DinnaDatabase.reconciliationsTable), [
+      {'intent_id': 'intent-antiga'},
+    ]);
+    expect(await handle.query(DinnaDatabase.lastOrdersTable), isEmpty);
+
+    final repeated = await cart.reconcileConfirmed(
+      intentId: 'intent-antiga',
+      confirmedItems: [CartItem(lineId: 'line-dev', productId: 'p1', quantity: 4, note: null)],
+    );
+    expect(repeated.outcome, CartReconciliation.alreadyApplied);
+    expect(repeated.items.single.quantity, 4);
+    await SqfliteLastOrderStore(database: database).save(sampleOrder(id: 'depois-da-v2'));
+    expect(await SqfliteLastOrderStore(database: database).load(), sampleOrder(id: 'depois-da-v2'));
+  });
+
+  test('banco v2 da SCRUM-72 ganha a conciliação e conserva o último pedido', () async {
+    final order = sampleOrder(id: 'pedido-v2');
+    await createLegacy(
+      version: 2,
+      onCreate: (database, _) async {
+        await createCartItems(database);
+        await createLastOrders(database);
+        await database.insert(DinnaDatabase.cartItemsTable, {
+          'line_id': 'line-72',
+          'product_id': 'p9',
+          'quantity': 2,
+          'note': 'gelo',
+        });
+        await database.insert(DinnaDatabase.lastOrdersTable, {
+          'id': 1,
+          'order_json': jsonEncode(order.toJson()),
+        });
+      },
+    );
+
+    final database = await openDatabase();
+    final cart = SqfliteCartRepository(database: database);
+    expect(await SqfliteLastOrderStore(database: database).load(), order);
+    expect((await cart.load()).single.lineId, 'line-72');
+    final applied = await cart.reconcileConfirmed(
+      intentId: 'intent-72',
+      confirmedItems: [CartItem(lineId: 'line-72', productId: 'p9', quantity: 1, note: 'gelo')],
+    );
+    expect(applied.outcome, CartReconciliation.applied);
+    expect(applied.items.single.quantity, 1);
+    expect(await SqfliteLastOrderStore(database: database).load(), order);
+  });
+
+  test('tabela de último pedido já criada na v2 não impede a migração', () async {
+    await createLegacy(
+      version: 2,
+      onCreate: (database, _) async {
+        await createCartItems(database);
+        await createReconciliations(database);
+        await createLastOrders(database);
+        await database.insert(DinnaDatabase.cartItemsTable, {
+          'line_id': 'line-parcial',
+          'product_id': 'p1',
+          'quantity': 5,
+          'note': null,
+        });
+        await database.insert(DinnaDatabase.reconciliationsTable, {'intent_id': 'intent-parcial'});
+      },
+    );
+
+    final database = await openDatabase();
+    final handle = openedDatabases.single;
+    expect(await handle.getVersion(), DinnaDatabase.schemaVersion);
+    expect((await SqfliteCartRepository(database: database).load()).single.quantity, 5);
+    expect(await handle.query(DinnaDatabase.reconciliationsTable), [
+      {'intent_id': 'intent-parcial'},
+    ]);
+    expect(await handle.query(DinnaDatabase.lastOrdersTable), isEmpty);
+  });
+
+  test('falha de migração conserva o banco e a abertura seguinte conclui', () async {
+    await createLegacy(
+      version: 1,
+      onCreate: (database, _) async {
+        await createCartItems(database);
+        await database.insert(DinnaDatabase.cartItemsTable, {
+          'line_id': 'line-falha',
+          'product_id': 'p1',
+          'quantity': 6,
+          'note': null,
+        });
+      },
+    );
+
+    await expectLater(
+      factory.openDatabase(
+        path.join(directory.path, DinnaDatabase.databaseName),
+        options: OpenDatabaseOptions(
+          version: DinnaDatabase.schemaVersion,
+          onUpgrade: (database, oldVersion, newVersion) async {
+            throw StateError('migração interrompida');
+          },
+        ),
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    final probe = await factory.openDatabase(
+      path.join(directory.path, DinnaDatabase.databaseName),
+      options: OpenDatabaseOptions(version: 1),
+    );
+    openedDatabases.add(probe);
+    expect(await probe.getVersion(), 1);
+    expect((await probe.query(DinnaDatabase.cartItemsTable)).single['quantity'], 6);
+    await probe.close();
+
+    final database = await openDatabase();
+    final handle = openedDatabases.last;
+    expect(await handle.getVersion(), DinnaDatabase.schemaVersion);
+    expect((await SqfliteCartRepository(database: database).load()).single.quantity, 6);
+    expect(await tableNames(handle), containsAll(expectedTables));
   });
 
   test('falha inesperada de armazenamento não invalida o sucesso confirmado pela API', () async {

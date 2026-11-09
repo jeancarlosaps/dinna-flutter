@@ -108,19 +108,34 @@ class CartViewModel extends ChangeNotifier {
     return total;
   }
 
+  /// Soma estimada de uma fotografia, com os preços já resolvidos.
+  ///
+  /// Nula enquanto o cardápio não confirmou o preço de cada item.
+  int? estimateFor(List<CartItem> items) {
+    if (!_settled || _failed || items.isEmpty) return null;
+    var total = 0;
+    for (final item in items) {
+      final price = _prices[item.productId];
+      if (price == null) return null;
+      total += price * item.quantity;
+    }
+    return total;
+  }
+
   List<CartRow> get rows => [for (final item in _items) _present(item)];
 
   /// Linhas atuais. O envio fotografa esta lista no momento do toque.
   List<CartItem> get items => List<CartItem>.unmodifiable(_items);
 
-  /// Uma consulta por instância. Carrinho vazio não chama o cardápio.
-  Future<void> resolveProducts() async {
+  /// Uma consulta por instância. Carrinho vazio não chama o cardápio,
+  /// salvo quando [also] traz os itens de uma intenção que precisa de preço.
+  Future<void> resolveProducts({List<CartItem> also = const []}) async {
     if (_disposed || _requested) return;
-    _requested = true;
-    if (_items.isEmpty) {
+    if (_items.isEmpty && also.isEmpty) {
       _settled = true;
       return;
     }
+    _requested = true;
     _resolving = true;
     _notify();
 

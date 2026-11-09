@@ -16,7 +16,8 @@ class SqfliteCartRepository implements CartRepository {
        _database = database ?? DinnaDatabase(factory: factory),
        _lineIdGenerator = lineIdGenerator ?? _newLineId;
 
-  static const _table = 'cart_items';
+  static const _table = DinnaDatabase.cartItemsTable;
+  static const _reconciliations = DinnaDatabase.reconciliationsTable;
 
   final DinnaDatabase _database;
   final String Function() _lineIdGenerator;
@@ -74,38 +75,81 @@ class SqfliteCartRepository implements CartRepository {
     final database = await _db;
 
     return database.transaction((transaction) async {
-      final processedLineIds = <String>{};
-
-      for (final sent in confirmed) {
-        final lineId = sent.lineId;
-        if (lineId == null || !processedLineIds.add(lineId)) continue;
-
-        final rows = await transaction.query(
-          _table,
-          where: 'line_id = ?',
-          whereArgs: [lineId],
-          limit: 1,
-        );
-        if (rows.isEmpty) continue;
-
-        final current = _fromRow(rows.single);
-        if (current.note != sent.note) continue;
-
-        final remainingQuantity = current.quantity - sent.quantity;
-        if (remainingQuantity < 1) {
-          await transaction.delete(_table, where: 'line_id = ?', whereArgs: [lineId]);
-        } else {
-          await transaction.update(
-            _table,
-            {'quantity': remainingQuantity},
-            where: 'line_id = ?',
-            whereArgs: [lineId],
-          );
-        }
-      }
-
+      await _subtract(transaction, confirmed);
       return _readCart(transaction);
     });
+  }
+
+  @override
+  Future<CartReconciliationResult> reconcileConfirmed({
+    required String intentId,
+    required List<CartItem> confirmedItems,
+  }) async {
+    if (intentId.isEmpty) {
+      throw ArgumentError.value(intentId, 'intentId', 'intentId não pode ser vazio');
+    }
+    final confirmed = List<CartItem>.unmodifiable(confirmedItems);
+    final database = await _db;
+
+    return database.transaction((transaction) async {
+      final marked = await transaction.query(
+        _reconciliations,
+        columns: ['intent_id'],
+        where: 'intent_id = ?',
+        whereArgs: [intentId],
+        limit: 1,
+      );
+      if (marked.isNotEmpty) {
+        return CartReconciliationResult(
+          items: await _readCart(transaction),
+          outcome: CartReconciliation.alreadyApplied,
+        );
+      }
+      if (confirmed.any((item) => item.lineId == null)) {
+        return CartReconciliationResult(
+          items: await _readCart(transaction),
+          outcome: CartReconciliation.unresolved,
+        );
+      }
+      await _subtract(transaction, confirmed);
+      await transaction.insert(_reconciliations, {'intent_id': intentId});
+      return CartReconciliationResult(
+        items: await _readCart(transaction),
+        outcome: CartReconciliation.applied,
+      );
+    });
+  }
+
+  Future<void> _subtract(DatabaseExecutor transaction, List<CartItem> confirmed) async {
+    final processedLineIds = <String>{};
+
+    for (final sent in confirmed) {
+      final lineId = sent.lineId;
+      if (lineId == null || !processedLineIds.add(lineId)) continue;
+
+      final rows = await transaction.query(
+        _table,
+        where: 'line_id = ?',
+        whereArgs: [lineId],
+        limit: 1,
+      );
+      if (rows.isEmpty) continue;
+
+      final current = _fromRow(rows.single);
+      if (current.note != sent.note) continue;
+
+      final remainingQuantity = current.quantity - sent.quantity;
+      if (remainingQuantity < 1) {
+        await transaction.delete(_table, where: 'line_id = ?', whereArgs: [lineId]);
+      } else {
+        await transaction.update(
+          _table,
+          {'quantity': remainingQuantity},
+          where: 'line_id = ?',
+          whereArgs: [lineId],
+        );
+      }
+    }
   }
 
   Future<List<CartItem>> _readCart(DatabaseExecutor executor) async {

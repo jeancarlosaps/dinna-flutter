@@ -548,7 +548,7 @@ void main() {
   });
 }
 
-class _DeferredCartRepository implements CartRepository {
+class _DeferredCartRepository extends CartRepository {
   final Completer<List<CartItem>> loadCompleter = Completer<List<CartItem>>();
 
   @override
@@ -569,7 +569,7 @@ class _DeferredCartRepository implements CartRepository {
   Future<List<CartItem>> removeConfirmed(List<CartItem> confirmedItems) async => const [];
 }
 
-class _RecordingCartRepository implements CartRepository {
+class _RecordingCartRepository extends CartRepository {
   final added = <(String, int)>[];
 
   @override

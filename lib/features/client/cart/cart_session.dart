@@ -124,6 +124,37 @@ final class CartSession extends ChangeNotifier {
     });
   }
 
+  /// Tira da sessão a fotografia que a API já confirmou.
+  ///
+  /// O repositório compara a linha atual e preserva quantidade extra, observação
+  /// nova ou linha criada durante o envio. Uma falha não publica lista vazia.
+  Future<List<CartItem>> removeConfirmed(List<CartItem> confirmedItems) {
+    return _enqueue(() async {
+      _ensureReady();
+      final left = await _repository.removeConfirmed(confirmedItems);
+      _items = List<CartItem>.unmodifiable(left);
+      _notify();
+      return _items;
+    });
+  }
+
+  /// Aplica a conciliação durável e publica o carrinho que o banco devolveu.
+  Future<CartReconciliationResult> reconcileConfirmed({
+    required String intentId,
+    required List<CartItem> confirmedItems,
+  }) {
+    return _enqueue(() async {
+      _ensureReady();
+      final result = await _repository.reconcileConfirmed(
+        intentId: intentId,
+        confirmedItems: confirmedItems,
+      );
+      _items = List<CartItem>.unmodifiable(result.items);
+      _notify();
+      return result;
+    });
+  }
+
   /// Remove a linha apenas depois da confirmação do repositório.
   Future<void> removeLine(String lineId) => _enqueue(() async {
     _ensureReady();

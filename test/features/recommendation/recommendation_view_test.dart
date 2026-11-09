@@ -1016,7 +1016,7 @@ RecommendationAttempt _answered({String reason = 'Carne, Salgado'}) {
   );
 }
 
-class _ViewCartRepository implements CartRepository {
+class _ViewCartRepository extends CartRepository {
   _ViewCartRepository({this.addGate});
 
   final Future<void>? addGate;

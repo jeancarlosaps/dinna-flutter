@@ -92,11 +92,11 @@ Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas d
 | Tema Dinna (Material 3) | ✅ Paleta, tipografia (Inter e Source Serif 4) e botões e raios do Figma | `lib/app/theme/`, `assets/fonts/` |
 | URL e token da API | ✅ `API_BASE_URL` com padrão por plataforma; `API_TOKEN` opcional | `lib/core/config/` |
 | Cliente HTTP + erro uniforme | ✅ `ApiClient` + `ApiException` | `lib/core/network/` |
-| Testes, lint, format, CI | ✅ 502 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
+| Testes, lint, format, CI | ✅ 550 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
 | Models (`Product`, `CartItem`, `Order`, `OrderItem`, `OrderStatus`, `Preference`) | ✅ Implementados em `lib/core/domain/` (SCRUM-22, PR #5 na `dev`) | [`lib/core/domain/`](lib/core/domain/) |
 | Rotas do cliente e do restaurante | ✅ SCRUM-23 concluída e mergeada pelo PR #6. Mapa em `AppRoutes`. Rota inicial `/`. `/table` abre `TableView`, `/menu` abre `MenuView`, `/order` abre a confirmação, `/order/tracking` identifica o pedido, `/restaurant` abre a fila e `/restaurant/order` o detalhe. `/product` e `/restaurant/menu` são placeholder | [`lib/app/router/`](lib/app/router/), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Mesa (`/table`) | SCRUM-29. `TableViewModel` valida a mesa de 1 a 999; o campo aceita até 3 dígitos (vazia, zero, acima de 999 ou não numérica mostra erro abaixo do campo). “Ver cardápio” abre `AppRoutes.menu` com a mesa como `String` em `arguments`. “Acessar o painel” ainda usa `onPressed` vazio | [`lib/features/client/table/table_view.dart`](lib/features/client/table/table_view.dart) |
-| Cardápio (`/menu`) | SCRUM-30. `MenuViewModel` carrega `GET /products` e agrupa por categoria. Chips filtram a categoria; produto indisponível aparece em cinza com o selo “Esgotado”. O header mostra a mesa recebida da navegação. Estados de carregando, erro com “Tentar de novo” e cardápio vazio | [`lib/features/menu/menu_view.dart`](lib/features/menu/menu_view.dart) |
+| Cardápio (`/menu`) | SCRUM-30. `MenuViewModel` carrega `GET /products` e agrupa por categoria. Chips filtram a categoria e a busca filtra pelo nome, sem diferenciar maiúsculas nem acentos (SCRUM-33); sem resultado, a tela orienta e oferece “Limpar busca”. Produto indisponível aparece em cinza com o selo “Esgotado”. O header mostra a mesa recebida da navegação. Estados de carregando, erro com “Tentar de novo” e cardápio vazio | [`lib/features/menu/menu_view.dart`](lib/features/menu/menu_view.dart) |
 | Detalhe do produto | SCRUM-36. Bottom sheet sobre o cardápio, como no Figma: foto ou degradê, nome, descrição e a caixa “Ingredientes” na ordem da API. Sem ingredientes, a caixa orienta a consultar o restaurante. Seletor de quantidade de 1 a 99 e botão “Adicionar · R$ total” (SCRUM-37); o botão fica desabilitado até a inclusão no carrinho (SCRUM-39). Produto esgotado mostra aviso e desabilita quantidade e botão. Erro de rede com “Tentar de novo”; produto inexistente com “Voltar ao cardápio”. A mesa continua no cardápio; `/product` segue placeholder | [`lib/features/menu/product_detail_view.dart`](lib/features/menu/product_detail_view.dart) |
 | Dependências base (SCRUM-18) | Em andamento. HTTP pronto (`http` 1.6.0 e `ApiClient`); `sqflite` persiste carrinho e último pedido confirmado no banco local versionado; `path_provider` localiza o arquivo da intenção | `pubspec.yaml`, [`lib/core/network/`](lib/core/network/) |
 | Persistência local | SCRUM-70 implementa o repositório SQLite do carrinho; SCRUM-90 persiste a intenção do pedido em arquivo; SCRUM-72 guarda o último pedido confirmado em SQLite, no mesmo banco local versionado | [`lib/features/client/cart/`](lib/features/client/cart/), [`lib/features/client/order/`](lib/features/client/order/) |
@@ -212,7 +212,7 @@ lib/
 │       └── home_view_model.dart
 └── shared/
     └── widgets/                      # DinnaLogo, DinnaBanner, DinnaEmptyState
-test/                                 # espelha lib/ (490 testes)
+test/                                 # espelha lib/ (550 testes)
 docs/ARCHITECTURE.md                  # contrato das camadas MVVM
 docs/assets/readme/                   # ilustrações deste README
 ```
@@ -330,7 +330,7 @@ Na tela inicial, toque em **“Verificar conexão com a API”**: com a API no a
 | `dart format .` | Formata o código (largura 100) |
 | `dart format --output=none --set-exit-if-changed .` | Só verifica a formatação, como na CI |
 
-O que os 490 testes cobrem hoje (`flutter test` nesta branch):
+O que os 550 testes cobrem hoje (`flutter test` nesta branch):
 
 | Arquivo | Cobre |
 |---|---|
@@ -343,7 +343,7 @@ O que os 490 testes cobrem hoje (`flutter test` nesta branch):
 | `test/features/home/api_status_repository_test.dart` | Tradução de `/health`: ok, payload inesperado, rede e HTTP inválido |
 | `test/features/home/home_view_model_test.dart` | `checking` antes da resposta, success, error, exceção inesperada e `dispose` |
 | `test/features/client/table/` | Validação da mesa (vazia, zero, letras, normalização) e navegação para `/menu` com a mesa |
-| `test/features/menu/menu_view_model_test.dart`, `menu_view_test.dart` | Categorias sem repetir, filtro por categoria, falha e cardápio vazio; a tela mostra a mesa recebida, os produtos, o selo “Esgotado” e filtra pelo chip. Erro e vazio cabem em 360×220. Chips a 200% e o nome a 300% não são cortados. A marca, a mesa curta e a mesa longa cabem no header a 300%. O recorte lateral não cobre os chips. Uma carga antiga não substitui a mais nova |
+| `test/features/menu/menu_view_model_test.dart`, `menu_view_test.dart` | Categorias sem repetir, filtro por categoria, busca pelo nome sem maiúsculas nem acentos (mantida ao recarregar), categoria que some ao recarregar volta para “Todos”, `load` depois do `dispose` sem efeito, falha e cardápio vazio; a tela mostra a mesa recebida, os produtos, o selo “Esgotado”, filtra pelo chip e pela busca, com aviso sem resultado, “Limpar busca” e busca dentro da categoria escolhida; o aviso cabe a 200% numa tela pequena. Erro e vazio cabem em 360×220. Chips a 200% e o nome a 300% não são cortados. A marca, a mesa curta e a mesa longa cabem no header a 300%. O recorte lateral não cobre os chips. Uma carga antiga não substitui a mais nova |
 | `test/features/menu/product_detail_view_test.dart` | Detalhe com ingredientes na ordem da API e sem ingredientes (aviso para consultar o restaurante), produto esgotado, erro com nova tentativa, produto inexistente (volta ao cardápio, sem nova tentativa), quantidade entre 1 e 99 com o total no botão, quantidade mantida após nova tentativa, botão desabilitado sem `onAdd` ou com produto esgotado, texto a 200% sem corte, leitura conjunta dos ingredientes e da quantidade no leitor de tela, abertura do bottom sheet pelo card do cardápio e conteúdo acima da barra de navegação do sistema |
 | `test/features/client/cart/sqflite_cart_repository_test.dart` | Esquema do carrinho, `lineId`, reabertura, `removeConfirmed` e falha de SQLite sem tratar o carrinho como vazio |
 | `test/shared/widgets/` | `DinnaBanner` com e sem título; `DinnaEmptyState` com e sem ação |

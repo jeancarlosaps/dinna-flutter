@@ -695,7 +695,7 @@ RecommendationViewModel _model(
   );
 }
 
-class _CartRepository implements CartRepository {
+class _CartRepository extends CartRepository {
   _CartRepository({this.addGate});
 
   final Future<CartItem>? addGate;

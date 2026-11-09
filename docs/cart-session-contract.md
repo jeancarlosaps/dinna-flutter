@@ -149,7 +149,7 @@ Quando a reconciliação for feita, ela precisa de:
 - nenhuma exclusão automática quando a quantidade foi reduzida durante o envio, enquanto essa regra não for aprovada por Jean;
 - falha de SQLite sem apagar a intenção e sem liberar outro POST.
 
-O `removeConfirmed` atual subtrai a quantidade enviada e apaga a linha se o restante fica abaixo de 1. Essa regra não está aprovada para o caso de redução durante o POST. Até a reconciliação existir, o 201 não altera o carrinho. O `OrderSubmissionViewModel` e o arquivo da intenção permanecem a fonte do envio.
+O `removeConfirmed` atual subtrai a quantidade enviada e apaga a linha se o restante fica abaixo de 1. A SCRUM-93 aplica essa subtração em `reconcileConfirmed`, na mesma transação que grava `cart_reconciliations`. O 201 gravado altera o carrinho só por essa conciliação. Falha dela não apaga a intenção nem libera outro POST. O `OrderSubmissionViewModel` e o arquivo da intenção permanecem a fonte do envio. A SCRUM-72 grava a fotografia confirmada em `last_orders`, no mesmo banco, sem criar outro carrinho.
 
 ## Verificação do contrato
 
@@ -171,4 +171,4 @@ Os testes de `ProcessCartLines` e do `CartViewModel` em memória cobrem o caminh
 
 ## Fora do escopo
 
-Reconciliação do carrinho após HTTP 201, alteração do body idempotente e dependências novas.
+Alteração do body idempotente e dependências novas. A reconciliação após o HTTP 201 entrou na SCRUM-93. A fotografia do último pedido entrou na SCRUM-72.

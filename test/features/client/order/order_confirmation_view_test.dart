@@ -1,14 +1,19 @@
 import 'package:dinna/app/router/app_router.dart';
 import 'package:dinna/app/theme/dinna_theme.dart';
+import 'package:dinna/core/domain/cart_item.dart';
 import 'package:dinna/core/domain/order.dart';
 import 'package:dinna/core/domain/order_item.dart';
 import 'package:dinna/core/domain/order_status.dart';
 import 'package:dinna/features/client/order/order_confirmation_view.dart';
+import 'package:dinna/features/client/order/order_intent_store.dart';
+import 'package:dinna/features/client/order/order_submission_view_model.dart';
 import 'package:dinna/features/client/order/order_tracking_view.dart';
 import 'package:dinna/features/restaurant/order_format.dart';
+import 'package:dinna/features/restaurant/order_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../restaurant/fake_order_repository.dart';
 import '../../restaurant/sample_order.dart';
 
 void main() {
@@ -208,5 +213,99 @@ void main() {
     await tester.ensureVisible(action);
     expect(tester.takeException(), isNull);
     expect(action, findsOneWidget);
+  });
+
+  testWidgets('intenção antiga explica o carrinho e não volta para o envio', (tester) async {
+    final order = confirmed();
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async => OrderSubmission.created(order),
+      ),
+      intentStore: MemoryOrderIntentStore(),
+      newIntentId: () => '00000000-0000-4000-8000-0000000000aa',
+    );
+    addTearDown(submission.dispose);
+    await submission.submit(
+      table: '12',
+      items: [CartItem(productId: 'p1', quantity: 2, note: 'sem cebola')],
+    );
+    submission.noteLegacyCartRemaining(true);
+    var another = 0;
+
+    await tester.pumpWidget(MaterialApp(theme: DinnaTheme.light(), home: const SizedBox.shrink()));
+    Navigator.of(tester.element(find.byType(SizedBox))).push(
+      MaterialPageRoute<void>(
+        settings: RouteSettings(
+          name: AppRoutes.order,
+          arguments: OrderConfirmationArgs(order: order),
+        ),
+        builder: (_) => OrderConfirmationView(
+          onTrack: (_, _) async {},
+          onGoHome: (_) {},
+          onStartAnother: (_) async => another++,
+          submission: submission,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pedido recebido'), findsWidgets);
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(tester.widget<AppBar>(find.byType(AppBar)).automaticallyImplyLeading, isFalse);
+    await tester.scrollUntilVisible(find.text(OrderSubmissionViewModel.legacyCartMessage), 80);
+    expect(find.text(OrderSubmissionViewModel.legacyCartMessage), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Rever carrinho'), 80);
+    await tester.tap(find.text('Rever carrinho'));
+    await tester.pumpAndSettle();
+
+    expect(another, 1);
+    expect(find.byType(OrderConfirmationView), findsOneWidget);
+    expect(find.text('Enviar pedido'), findsNothing);
+  });
+
+  testWidgets('falha ao iniciar outro pedido aparece na confirmação', (tester) async {
+    final order = confirmed();
+    final store = MemoryOrderIntentStore();
+    final submission = OrderSubmissionViewModel(
+      FakeOrderRepository(
+        () async => OrderList.ready(const []),
+        onCreate: ({required table, required items}) async => OrderSubmission.created(order),
+      ),
+      intentStore: store,
+      newIntentId: () => '00000000-0000-4000-8000-0000000000aa',
+    );
+    addTearDown(submission.dispose);
+    await submission.submit(
+      table: '12',
+      items: [CartItem(productId: 'p1', quantity: 2, note: 'sem cebola')],
+    );
+
+    await tester.pumpWidget(MaterialApp(theme: DinnaTheme.light(), home: const SizedBox.shrink()));
+    Navigator.of(tester.element(find.byType(SizedBox))).push(
+      MaterialPageRoute<void>(
+        settings: RouteSettings(
+          name: AppRoutes.order,
+          arguments: OrderConfirmationArgs(order: order),
+        ),
+        builder: (_) => OrderConfirmationView(
+          onTrack: (_, _) async {},
+          onGoHome: (_) {},
+          onStartAnother: (_) => submission.beginAnotherOrder(),
+          submission: submission,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    store.failNextSave();
+    await tester.scrollUntilVisible(find.text('Fazer outro pedido'), 80);
+    await tester.tap(find.text('Fazer outro pedido'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pedido recebido'), findsWidgets);
+    expect(find.text(OrderSubmissionViewModel.unreadableIntentMessage), findsOneWidget);
+    expect(find.text('Enviar pedido'), findsNothing);
+    expect(submission.canRequestSubmit, isFalse);
+    expect(submission.canViewPersistedConfirmation, isTrue);
   });
 }
