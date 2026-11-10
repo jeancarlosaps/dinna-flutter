@@ -3,16 +3,25 @@ import 'package:flutter/material.dart';
 import '../../../app/router/app_route_args.dart';
 import '../../../shared/widgets/dinna_empty_state.dart';
 import '../../restaurant/order_format.dart';
+import 'order_status_tracker.dart';
+import 'order_tracking_view_model.dart';
 
 /// Identificação do pedido na rota `/order/tracking`.
 ///
-/// Lê [OrderTrackingArgs] ou, ainda, [AppRouteId]. Não consulta a API, não
-/// observa status e não cria outro pedido. Mostra o número público quando ele
-/// veio no argumento. Sem o número, explica o pedido de forma neutra e não
-/// exibe o UUID. A atualização do andamento fica fora desta tela. Sem id,
-/// explica a ausência.
+/// Lê [OrderTrackingArgs] ou, ainda, [AppRouteId]. Não cria outro pedido.
+/// Mostra o número público quando ele veio no argumento. Sem o número, explica
+/// o pedido de forma neutra e não exibe o UUID, que só segue para a consulta.
+/// Com [createViewModel], o status é consultado e atualizado sozinho pelo
+/// [OrderStatusTracker]. Sem id, explica a ausência.
 class OrderTrackingView extends StatelessWidget {
-  const OrderTrackingView({super.key});
+  const OrderTrackingView({super.key, this.createViewModel, this.routeObserver});
+
+  /// Cria o ViewModel do status para o id da rota. Nulo: a tela não consulta
+  /// o andamento.
+  final OrderTrackingViewModel Function(String orderId)? createViewModel;
+
+  /// A mesma instância do `MaterialApp`. Pausa a consulta com outra tela por cima.
+  final RouteObserver<PageRoute<dynamic>>? routeObserver;
 
   @override
   Widget build(BuildContext context) {
@@ -21,7 +30,12 @@ class OrderTrackingView extends StatelessWidget {
       appBar: AppBar(title: const Text('Acompanhamento')),
       body: tracked == null
           ? const _MissingTracking()
-          : _KnownOrder(orderNumber: tracked.orderNumber),
+          : _KnownOrder(
+              orderId: tracked.id,
+              orderNumber: tracked.orderNumber,
+              createViewModel: createViewModel,
+              routeObserver: routeObserver,
+            ),
     );
   }
 
@@ -29,14 +43,15 @@ class OrderTrackingView extends StatelessWidget {
   /// faltar num pedido válido.
   _TrackedOrder? _trackedOrder(Object? arguments) {
     if (arguments is OrderTrackingArgs) {
-      if (arguments.id.value.trim().isEmpty) return null;
+      final id = arguments.id.value;
+      if (id.trim().isEmpty) return null;
       final number = arguments.orderNumber;
-      if (number != null && number < 1) return const _TrackedOrder(null);
-      return _TrackedOrder(number);
+      if (number != null && number < 1) return _TrackedOrder(id, null);
+      return _TrackedOrder(id, number);
     }
     if (arguments is AppRouteId) {
       if (arguments.value.trim().isEmpty) return null;
-      return const _TrackedOrder(null);
+      return _TrackedOrder(arguments.value, null);
     }
     return null;
   }
@@ -44,8 +59,9 @@ class OrderTrackingView extends StatelessWidget {
 
 /// Pedido já identificado. [orderNumber] nulo não é uma rota inválida.
 final class _TrackedOrder {
-  const _TrackedOrder(this.orderNumber);
+  const _TrackedOrder(this.id, this.orderNumber);
 
+  final String id;
   final int? orderNumber;
 }
 
@@ -63,13 +79,22 @@ class _MissingTracking extends StatelessWidget {
 }
 
 class _KnownOrder extends StatelessWidget {
-  const _KnownOrder({required this.orderNumber});
+  const _KnownOrder({
+    required this.orderId,
+    required this.orderNumber,
+    required this.createViewModel,
+    required this.routeObserver,
+  });
 
+  final String orderId;
   final int? orderNumber;
+  final OrderTrackingViewModel Function(String orderId)? createViewModel;
+  final RouteObserver<PageRoute<dynamic>>? routeObserver;
 
   @override
   Widget build(BuildContext context) {
     final label = publicOrderLabel(orderNumber);
+    final create = createViewModel;
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth > 720 ? 720.0 : constraints.maxWidth;
@@ -82,12 +107,18 @@ class _KnownOrder extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
                 Text(label, style: Theme.of(context).textTheme.titleMedium),
-                const DinnaEmptyState(
-                  icon: Icons.receipt_long_outlined,
-                  title: 'Status ao vivo indisponível',
-                  message: 'Este aplicativo ainda não atualiza o andamento do pedido.',
-                  centered: false,
-                ),
+                if (create == null)
+                  const DinnaEmptyState(
+                    icon: Icons.receipt_long_outlined,
+                    title: 'Status ao vivo indisponível',
+                    message: 'Este aplicativo ainda não atualiza o andamento do pedido.',
+                    centered: false,
+                  )
+                else
+                  OrderStatusTracker(
+                    createViewModel: () => create(orderId),
+                    routeObserver: routeObserver,
+                  ),
               ],
             ),
           ),

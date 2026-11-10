@@ -11,6 +11,7 @@ import '../../features/client/order/last_order_session.dart';
 import '../../features/client/order/order_confirmation_view.dart';
 import '../../features/client/order/order_submission_view_model.dart';
 import '../../features/client/order/order_tracking_view.dart';
+import '../../features/client/order/order_tracking_view_model.dart';
 import '../../features/client/table/table_view.dart';
 import '../../features/home/api_status_repository.dart';
 import '../../features/home/home_view.dart';
@@ -195,7 +196,10 @@ class AppRouter {
         onStartAnother: _startAnotherOrder,
         submission: orderSubmission,
       ),
-      AppRoutes.orderTracking => const OrderTrackingView(),
+      AppRoutes.orderTracking => OrderTrackingView(
+        createViewModel: (orderId) => OrderTrackingViewModel(orderRepository, orderId: orderId),
+        routeObserver: routeObserver,
+      ),
       AppRoutes.restaurant => OrdersQueueView(
         createViewModel: () => OrdersQueueViewModel(orderRepository, delay: pollDelay),
         routeObserver: routeObserver,
