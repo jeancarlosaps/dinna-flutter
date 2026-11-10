@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dinna/core/domain/data_failure.dart';
 import 'package:dinna/core/domain/order_status.dart';
 import 'package:dinna/features/client/order/order_tracking_view_model.dart';
@@ -179,5 +181,45 @@ void main() {
     await flushAsync();
 
     expect(viewModel.errorMessage, OrderTrackingViewModel.unexpectedFailureMessage);
+  });
+
+  test('retomar durante uma consulta em voo consulta de novo assim que ela termina', () async {
+    final pending = Completer<OrderLookup>();
+    var calls = 0;
+    final repository = repositoryWith((id) {
+      calls++;
+      if (calls == 1) return pending.future;
+      return Future.value(OrderLookup.ready(sampleOrder(id: id, status: OrderStatus.ready)));
+    });
+    final delay = ControllableDelay();
+    final viewModel = OrderTrackingViewModel(repository, orderId: 'o1', delay: delay.call);
+    addTearDown(viewModel.dispose);
+
+    viewModel.resume();
+    await flushAsync();
+    viewModel.pause();
+    viewModel.resume();
+    pending.complete(OrderLookup.ready(sampleOrder(id: 'o1')));
+    await flushAsync();
+
+    expect(repository.findCalls, 2);
+    expect(viewModel.order?.status, OrderStatus.ready);
+  });
+
+  test('pausar durante a consulta em voo não antecipa a próxima', () async {
+    final pending = Completer<OrderLookup>();
+    final repository = repositoryWith((_) => pending.future);
+    final delay = ControllableDelay();
+    final viewModel = OrderTrackingViewModel(repository, orderId: 'o1', delay: delay.call);
+    addTearDown(viewModel.dispose);
+
+    viewModel.resume();
+    await flushAsync();
+    viewModel.pause();
+    pending.complete(OrderLookup.ready(sampleOrder(id: 'o1')));
+    await flushAsync();
+
+    expect(repository.findCalls, 1);
+    expect(delay.durations, [OrderTrackingViewModel.defaultPollInterval]);
   });
 }

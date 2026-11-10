@@ -44,6 +44,7 @@ class OrderTrackingViewModel extends ChangeNotifier {
   bool _active = false;
   bool _started = false;
   bool _inFlight = false;
+  bool _refreshSoon = false;
   bool _disposed = false;
   Completer<void>? _signal;
   Timer? _timer;
@@ -69,10 +70,12 @@ class OrderTrackingViewModel extends ChangeNotifier {
   /// Não há mais o que acompanhar: pedido finalizado ou inexistente.
   bool get isDone => _notFound || _order?.status == OrderStatus.finished;
 
-  /// Liga as consultas. Se estavam pausadas, consulta na hora.
+  /// Liga as consultas. Se estavam pausadas, consulta na hora; se uma
+  /// consulta ainda está em voo, a seguinte começa assim que ela terminar.
   void resume() {
     if (_disposed || _active) return;
     _active = true;
+    if (_inFlight) _refreshSoon = true;
     _wake();
     if (_started) return;
     _started = true;
@@ -82,6 +85,7 @@ class OrderTrackingViewModel extends ChangeNotifier {
   /// Segura a próxima consulta. A que já está em voo pode concluir.
   void pause() {
     _active = false;
+    _refreshSoon = false;
   }
 
   /// Consulta de novo, por exemplo depois de uma falha. Não inicia outra se
@@ -92,6 +96,10 @@ class OrderTrackingViewModel extends ChangeNotifier {
     while (!_disposed && !isDone) {
       if (_active) await _fetch();
       if (_disposed || isDone) return;
+      if (_refreshSoon && _active) {
+        _refreshSoon = false;
+        continue;
+      }
       final signal = Completer<void>();
       _signal = signal;
       await Future.any([_waitInterval(), signal.future]);
