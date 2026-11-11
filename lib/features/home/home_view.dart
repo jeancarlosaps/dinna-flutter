@@ -2,17 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../app/router/app_router.dart';
 import '../../core/domain/order.dart';
 import '../client/order/last_order_session.dart';
 import '../restaurant/order_format.dart';
 import 'home_view_model.dart';
-import 'temporary_flow_access.dart';
 
-/// Tela inicial provisória da fundação (R0). As telas reais do cliente e do
-/// restaurante são implementadas nas Stories correspondentes.
+/// Tela inicial do app: marca, entradas do cliente e do restaurante, último
+/// pedido e estado da API.
 ///
-/// [TemporaryFlowAccess] é o atalho de desenvolvimento. Apague o widget e o
-/// arquivo antes da entrega; a marca e o cartão da API ficam.
+/// "Sou cliente" abre a mesa ([AppRoutes.table]) e "Restaurante" abre a fila
+/// ([AppRoutes.restaurant]). A Home só navega; cada rota cria a própria tela.
 class HomeView extends StatefulWidget {
   const HomeView({
     super.key,
@@ -87,7 +87,7 @@ class _HomeViewState extends State<HomeView> {
                               ),
                             ],
                             const SizedBox(height: 32),
-                            const TemporaryFlowAccess(),
+                            const _Entries(),
                           ],
                         ),
                       ),
@@ -126,6 +126,34 @@ class _HomeViewState extends State<HomeView> {
     } finally {
       if (mounted) setState(() => _openingLastOrder = false);
     }
+  }
+}
+
+/// Entradas da jornada. Os botões ocupam a largura e quebram o texto em
+/// fonte ampliada em vez de cortar.
+class _Entries extends StatelessWidget {
+  const _Entries();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FilledButton.icon(
+          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56)),
+          onPressed: () => Navigator.of(context).pushNamed(AppRoutes.table),
+          icon: const Icon(Icons.restaurant_menu),
+          label: const Text('Sou cliente'),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(56)),
+          onPressed: () => Navigator.of(context).pushNamed(AppRoutes.restaurant),
+          icon: const Icon(Icons.storefront_outlined),
+          label: const Text('Restaurante'),
+        ),
+      ],
+    );
   }
 }
 
