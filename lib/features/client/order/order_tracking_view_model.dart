@@ -102,8 +102,15 @@ class OrderTrackingViewModel extends ChangeNotifier {
       }
       final signal = Completer<void>();
       _signal = signal;
-      await Future.any([_waitInterval(), signal.future]);
-      _signal = null;
+      try {
+        await Future.any([_waitInterval(), signal.future]);
+      } finally {
+        // A espera pode acabar pelo resume() ou pelo dispose() antes do
+        // intervalo. O Timer desta espera não sobrevive a ela.
+        _timer?.cancel();
+        _timer = null;
+        if (identical(_signal, signal)) _signal = null;
+      }
     }
   }
 

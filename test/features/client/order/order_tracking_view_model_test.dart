@@ -222,4 +222,51 @@ void main() {
     expect(repository.findCalls, 1);
     expect(delay.durations, [OrderTrackingViewModel.defaultPollInterval]);
   });
+
+  test(
+    'retomar antes do intervalo cancela o Timer anterior e o dispose não deixa Timer ativo',
+    () async {
+      // Intercepta só os Timers do intervalo, sem esperar os cinco segundos.
+      final timers = <Timer>[];
+      final repository = repositoryWith(
+        (id) async => OrderLookup.ready(sampleOrder(id: id, status: OrderStatus.received)),
+      );
+      final viewModel = runZoned(
+        () => OrderTrackingViewModel(repository, orderId: 'o1')..resume(),
+        zoneSpecification: ZoneSpecification(
+          createTimer: (self, parent, zone, duration, callback) {
+            final timer = parent.createTimer(zone, duration, callback);
+            if (duration == OrderTrackingViewModel.defaultPollInterval) timers.add(timer);
+            return timer;
+          },
+        ),
+      );
+      var disposed = false;
+      addTearDown(() {
+        if (!disposed) viewModel.dispose();
+      });
+
+      await flushAsync();
+      expect(repository.findCalls, 1);
+      expect(timers, hasLength(1));
+      expect(timers.single.isActive, isTrue);
+
+      viewModel.pause();
+      viewModel.resume();
+      await flushAsync();
+
+      expect(timers.first.isActive, isFalse);
+      expect(repository.findCalls, 2);
+      expect(viewModel.order?.status, OrderStatus.received);
+      expect(timers, hasLength(2));
+      expect(timers.last.isActive, isTrue);
+
+      viewModel.dispose();
+      disposed = true;
+      await flushAsync();
+
+      expect(timers.where((timer) => timer.isActive), isEmpty);
+      expect(repository.findCalls, 2);
+    },
+  );
 }
