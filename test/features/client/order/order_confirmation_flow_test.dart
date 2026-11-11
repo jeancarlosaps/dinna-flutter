@@ -13,6 +13,7 @@ import 'package:dinna/features/client/cart/cart_view.dart';
 import 'package:dinna/features/client/cart/cart_view_model.dart';
 import 'package:dinna/features/client/order/order_confirmation_view.dart';
 import 'package:dinna/features/client/order/order_intent_store.dart';
+import 'package:dinna/features/client/order/order_status_tracker.dart';
 import 'package:dinna/features/client/order/order_submission_view_model.dart';
 import 'package:dinna/features/client/order/order_tracking_view.dart';
 import 'package:dinna/features/home/api_status_repository.dart';
@@ -148,7 +149,9 @@ void main() {
     );
     expect(find.text('Pedido #0005'), findsWidgets);
     expect(find.textContaining('order-real'), findsNothing);
-    expect(find.text('Status ao vivo indisponível'), findsOneWidget);
+    expect(find.text('Status ao vivo indisponível'), findsNothing);
+    expect(find.byType(OrderStatusTracker), findsOneWidget);
+    expect(orders.lastFoundId, 'order-real');
 
     Navigator.of(tester.element(find.byType(OrderTrackingView))).pop();
     await tester.pumpAndSettle();
