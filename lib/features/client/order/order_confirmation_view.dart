@@ -15,8 +15,9 @@ import 'order_submission_view_model.dart';
 /// Lê [OrderConfirmationArgs]. O [Order] é a fotografia gravada no envio:
 /// mesa, itens, quantidades, total e horário vêm dele. O número visível é
 /// `Pedido #0005` quando `orderNumber` existe; sem ele, "Pedido confirmado".
-/// O UUID não aparece. [OrderItem] não traz nome nem preço individual; a tela
-/// mostra o `productId` e não consulta o cardápio. Sem o argumento certo,
+/// O UUID não aparece. Cada item mostra o `name` que a API devolveu no pedido;
+/// pedido antigo sem `name` mostra o `productId`. A tela não consulta o
+/// cardápio nem a API para resolver o nome. Sem o argumento certo,
 /// explica a ausência, usa o título "Pedido" e não chama a API. Com o pedido,
 /// o título é "Pedido recebido".
 ///
@@ -357,10 +358,11 @@ class _ItemCard extends StatelessWidget {
     final theme = Theme.of(context);
     final note = item.note;
     final units = item.quantity == 1 ? '1 unidade' : '${item.quantity} unidades';
+    final label = item.name ?? item.productId;
     return Semantics(
       container: true,
       excludeSemantics: true,
-      label: '$units do produto ${item.productId}${note == null ? '' : ', $note'}',
+      label: '$units do produto $label${note == null ? '' : ', $note'}',
       child: Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -372,7 +374,7 @@ class _ItemCard extends StatelessWidget {
                 children: [
                   Text('${item.quantity}×', style: theme.textTheme.titleMedium),
                   const SizedBox(width: 12),
-                  Expanded(child: Text(item.productId, style: theme.textTheme.bodyLarge)),
+                  Expanded(child: Text(label, style: theme.textTheme.bodyLarge)),
                 ],
               ),
               if (note != null) ...[

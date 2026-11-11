@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:dinna/app/app.dart';
 import 'package:dinna/app/router/app_router.dart';
+import 'package:dinna/core/domain/order_item.dart';
 import 'package:dinna/core/domain/product.dart';
 import 'package:dinna/core/storage/dinna_database.dart';
 import 'package:dinna/features/client/cart/cart_session.dart';
@@ -47,7 +48,14 @@ void main() {
   });
 
   testWidgets('reinício restaura o último pedido pelo mesmo SQLite', (tester) async {
-    final order = sampleOrder(id: 'restart-order', table: '4');
+    // O nome do item vem da resposta da API e fica gravado com o pedido.
+    // É diferente do cardápio para provar que a tela não consulta o catálogo.
+    final order = sampleOrder(
+      id: 'restart-order',
+      table: '4',
+      items: [OrderItem(productId: 'p1', quantity: 2, note: null, name: 'Burger Clássico')],
+      totalCents: 9780,
+    );
     final intentFile = File(path.join(directory.path, 'order-intent.json'));
     final firstDatabase = DinnaDatabase(factory: factory);
     var nextLine = 0;
@@ -139,6 +147,8 @@ void main() {
     await _until(tester, find.text('Mesa 4 · Pedido confirmado'));
     expect(secondOrders.createCalls, 0);
 
+    // A Home pode consultar a API; a confirmação restaurada não.
+    final findsBeforeConfirmation = secondOrders.findCalls;
     await tester.ensureVisible(find.text('Ver último pedido'));
     await tester.tap(find.text('Ver último pedido'));
     await _until(tester, find.byType(OrderConfirmationView));
@@ -146,7 +156,12 @@ void main() {
     expect(find.text('Mesa 4'), findsOneWidget);
     expect(find.text('Pedido confirmado'), findsOneWidget);
     expect(find.textContaining('restart-order'), findsNothing);
+    expect(find.text('2×'), findsOneWidget);
+    expect(find.text('Burger Clássico'), findsOneWidget);
+    expect(find.text('p1'), findsNothing);
+    expect(find.text('Moqueca de Peixe'), findsNothing);
     expect(secondOrders.createCalls, 0);
+    expect(secondOrders.findCalls, findsBeforeConfirmation);
     expect(firstOrders.createCalls, 1);
     final confirmation = ModalRoute.of(tester.element(find.byType(OrderConfirmationView)))!;
     expect(confirmation.settings.name, AppRoutes.order);

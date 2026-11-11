@@ -38,7 +38,14 @@ void main() {
       items:
           items ??
           [
-            OrderItem(productId: 'p1', quantity: 2, note: 'sem cebola'),
+            OrderItem(
+              productId: 'p1',
+              quantity: 2,
+              note: 'sem cebola',
+              name: 'Burger Clássico',
+              unitPriceCents: 1945,
+              lineTotalCents: 3890,
+            ),
             OrderItem(productId: 'p9', quantity: 1, note: null),
           ],
     );
@@ -98,7 +105,8 @@ void main() {
     expect(find.text('order-1'), findsNothing);
     expect(find.text('2×'), findsOneWidget);
     expect(find.text('1×'), findsOneWidget);
-    expect(find.text('p1'), findsOneWidget);
+    expect(find.text('Burger Clássico'), findsOneWidget);
+    expect(find.text('p1'), findsNothing);
     expect(find.text('p9'), findsOneWidget);
     expect(find.text('sem cebola'), findsOneWidget);
     final total = find.text(formatOrderTotal(4890));
@@ -109,6 +117,31 @@ void main() {
     final action = find.text('Acompanhar pedido');
     await tester.scrollUntilVisible(action, 80);
     expect(action, findsOneWidget);
+  });
+
+  testWidgets('item mostra o nome do pedido e, sem nome, o productId', (tester) async {
+    final handle = tester.ensureSemantics();
+    final order = confirmed(
+      items: [
+        OrderItem(productId: 'p1', quantity: 3, note: null, name: 'Burger Clássico'),
+        OrderItem(productId: 'p-antigo', quantity: 1, note: 'sem gelo'),
+      ],
+      totalCents: 9870,
+    );
+    await pumpConfirmation(tester, arguments: OrderConfirmationArgs(order: order));
+
+    expect(find.text('3×'), findsOneWidget);
+    expect(find.text('Burger Clássico'), findsOneWidget);
+    expect(find.text('p1'), findsNothing);
+    expect(find.text('1×'), findsOneWidget);
+    expect(find.text('p-antigo'), findsOneWidget);
+    expect(find.text('sem gelo'), findsOneWidget);
+    expect(find.bySemanticsLabel('3 unidades do produto Burger Clássico'), findsOneWidget);
+    expect(find.bySemanticsLabel('1 unidade do produto p-antigo, sem gelo'), findsOneWidget);
+    final total = find.text(formatOrderTotal(9870));
+    await tester.scrollUntilVisible(total, 80);
+    expect(total, findsOneWidget);
+    handle.dispose();
   });
 
   testWidgets('o status exibido é o do pedido confirmado', (tester) async {
@@ -277,6 +310,8 @@ void main() {
 
     final action = find.widgetWithText(FilledButton, 'Acompanhar pedido');
     await tester.scrollUntilVisible(action, 80);
+    await tester.ensureVisible(action);
+    await tester.pumpAndSettle();
     await tester.tap(action);
     await tester.pumpAndSettle();
 
