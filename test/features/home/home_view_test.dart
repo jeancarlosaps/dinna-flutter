@@ -4,8 +4,6 @@ import 'package:dinna/features/client/order/last_order_store.dart';
 import 'package:dinna/features/client/order/order_confirmation_view.dart';
 import 'package:dinna/features/client/table/table_view.dart';
 import 'package:dinna/features/home/api_status_repository.dart';
-import 'package:dinna/features/home/temporary_flow_access.dart';
-import 'package:dinna/features/menu/menu_view.dart';
 import 'package:dinna/features/menu/product_repository.dart';
 import 'package:dinna/features/restaurant/order_details_view.dart';
 import 'package:dinna/features/restaurant/order_repository.dart';
@@ -19,23 +17,49 @@ import '../restaurant/sample_order.dart';
 import 'fake_api_status_repository.dart';
 
 void main() {
-  testWidgets('a home mantém a identidade e mostra o acesso temporário', (tester) async {
+  testWidgets('a home mostra a marca, as entradas e o card da API', (tester) async {
     await _pumpApp(tester);
 
     expect(find.text('dinna'), findsOneWidget);
     expect(find.text('Pedido à mesa, do seu jeito.'), findsOneWidget);
-    expect(find.text('Verificar conexão com a API'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Sou cliente'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Restaurante'), findsOneWidget);
     expect(find.text('API não verificada'), findsOneWidget);
-    expect(find.byType(TemporaryFlowAccess), findsOneWidget);
-    expect(find.text('Acesso temporário'), findsOneWidget);
-    expect(find.text('Remover antes da entrega.'), findsOneWidget);
-    expect(find.text('Mesa'), findsOneWidget);
-    expect(find.text('Cardápio'), findsOneWidget);
-    expect(find.text('Detalhe do produto'), findsOneWidget);
-    expect(find.text('Carrinho'), findsOneWidget);
-    expect(find.text('Fila de pedidos'), findsOneWidget);
-    expect(find.text('pendente'), findsOneWidget);
-    expect(find.text('O detalhe do pedido abre ao tocar um item da fila.'), findsOneWidget);
+    expect(find.text('Verificar conexão com a API'), findsOneWidget);
+  });
+
+  testWidgets('a home não mostra atalhos temporários', (tester) async {
+    await _pumpApp(tester);
+
+    expect(find.text('Acesso temporário'), findsNothing);
+    expect(find.text('Remover antes da entrega.'), findsNothing);
+    expect(find.text('pendente'), findsNothing);
+    expect(find.text('Cardápio'), findsNothing);
+    expect(find.text('Carrinho'), findsNothing);
+    expect(find.text('Detalhe do produto'), findsNothing);
+    expect(find.text('Fila de pedidos'), findsNothing);
+  });
+
+  testWidgets('as entradas cabem com texto a 200% numa tela pequena', (tester) async {
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    final store = MemoryLastOrderStore();
+    await store.save(sampleOrder(id: 'o-history', table: '7'));
+    await _pumpApp(tester, lastOrders: store);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    for (final label in ['Sou cliente', 'Restaurante', 'Ver último pedido']) {
+      final target = find.text(label);
+      await tester.ensureVisible(target);
+      await tester.pumpAndSettle();
+      expect(target.hitTestable(), findsOneWidget);
+    }
+    expect(find.text('Verificar conexão com a API').hitTestable(), findsOneWidget);
   });
 
   testWidgets('a home abre a confirmação do último pedido restaurado', (tester) async {
@@ -118,9 +142,9 @@ void main() {
     expect(orders.findCalls, 1);
   });
 
-  testWidgets('abre a mesa e volta para a home', (tester) async {
+  testWidgets('Sou cliente abre a identificação da mesa e volta para a home', (tester) async {
     await _pumpApp(tester);
-    await _open(tester, 'Mesa');
+    await _open(tester, 'Sou cliente');
 
     expect(find.byType(TableView), findsOneWidget);
     expect(find.text('Qual é a sua mesa?'), findsOneWidget);
@@ -132,54 +156,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('dinna'), findsOneWidget);
-    expect(find.byType(TemporaryFlowAccess), findsOneWidget);
+    expect(find.text('Sou cliente'), findsOneWidget);
   });
 
-  testWidgets('o cardápio abre a tela real e o detalhe de produto segue no placeholder', (
-    tester,
-  ) async {
-    final products = FakeProductRepository(() async => ProductList.ready(const []));
-    await _pumpApp(tester, products: products);
-
-    await _open(tester, 'Cardápio');
-    expect(find.byType(MenuView), findsOneWidget);
-    expect(find.text('Cardápio vazio'), findsOneWidget);
-    expect(find.text('Tela ainda não implementada.'), findsNothing);
-    expect(products.calls, 1);
-    expect(products.findCalls, 0);
-
-    // O header do cardápio não tem seta (Figma): volta pelo botão do sistema.
-    await tester.binding.handlePopRoute();
-    await tester.pumpAndSettle();
-
-    await _open(tester, 'Detalhe do produto');
-    expect(find.text(AppRoutes.product), findsOneWidget);
-    expect(find.text('Tela ainda não implementada.'), findsOneWidget);
-    expect(find.text('Página não encontrada'), findsNothing);
-    expect(products.calls, 1);
-    expect(products.findCalls, 0);
-
-    final context = tester.element(find.text('Tela ainda não implementada.'));
-    expect(ModalRoute.of(context)!.settings.name, AppRoutes.product);
-  });
-
-  testWidgets('o carrinho abre o estado vazio e segue para o cardápio', (tester) async {
-    await _pumpApp(tester);
-    await _open(tester, 'Carrinho');
-
-    expect(find.text('Seu carrinho está vazio'), findsOneWidget);
-    expect(find.text('Tela ainda não implementada.'), findsNothing);
-    final cartContext = tester.element(find.text('Seu carrinho está vazio'));
-    expect(ModalRoute.of(cartContext)!.settings.name, AppRoutes.cart);
-
-    await tester.tap(find.text('Ver cardápio'));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(MenuView), findsOneWidget);
-    expect(find.text('Tela ainda não implementada.'), findsNothing);
-  });
-
-  testWidgets('a fila abre o detalhe de um pedido já existente', (tester) async {
+  testWidgets('Restaurante abre a fila e o detalhe de um pedido existente', (tester) async {
     final order = sampleOrder(id: 'o1', table: '12');
     final orders = FakeOrderRepository(() async => OrderList.ready([order]));
     final products = FakeProductRepository(
@@ -187,7 +167,7 @@ void main() {
     );
 
     await _pumpApp(tester, orders: orders, products: products);
-    await _open(tester, 'Fila de pedidos');
+    await _open(tester, 'Restaurante');
 
     expect(find.byType(OrdersQueueView), findsOneWidget);
     expect(find.text('Mesa 12'), findsOneWidget);
@@ -224,7 +204,7 @@ void main() {
     );
 
     await _pumpApp(tester, orders: orders);
-    await _open(tester, 'Fila de pedidos');
+    await _open(tester, 'Restaurante');
 
     expect(find.byType(OrdersQueueView), findsOneWidget);
     expect(find.text('Não foi possível carregar a fila'), findsOneWidget);

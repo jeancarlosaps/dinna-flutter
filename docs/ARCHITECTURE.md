@@ -86,7 +86,7 @@ Os nomes são correspondência exata: sem barra no fim e sem parâmetro no camin
 
 | Fluxo | Constante | Nome | Argumento | Tela na `dev` |
 |---|---|---|---|---|
-| Fundação | `home` | `/` | — | `HomeView`, com `GET /health`. Rota inicial |
+| Fundação | `home` | `/` | — | `HomeView`, com `GET /health`, o último pedido e as entradas "Sou cliente" (`/table`) e "Restaurante" (`/restaurant`). Rota inicial |
 | Cliente | `table` | `/table` | — | `TableView`. Valida a mesa e abre `/menu` com ela (SCRUM-29) |
 | Cliente | `menu` | `/menu` | mesa (`String`) | `MenuView`. Produtos por categoria, via `MenuViewModel` (SCRUM-30) |
 | Cliente | `product` | `/product` | `AppRouteId` | Placeholder. O detalhe abre como bottom sheet a partir do cardápio (SCRUM-36), sem trocar de rota |
