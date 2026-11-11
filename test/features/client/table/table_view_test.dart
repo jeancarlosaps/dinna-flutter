@@ -40,6 +40,16 @@ void main() {
     expect(pushed?.arguments, '12');
   });
 
+  testWidgets('tela da mesa não oferece acesso ao painel do restaurante', (tester) async {
+    await pumpTable(tester);
+
+    expect(find.text('Acessar o painel'), findsNothing);
+    expect(find.text('Trabalha no restaurante?'), findsNothing);
+    expect(find.byType(TextButton), findsNothing);
+    expect(find.text('Qual é a sua mesa?'), findsOneWidget);
+    expect(find.text('Ver cardápio'), findsOneWidget);
+  });
+
   testWidgets('campo aceita no máximo 3 dígitos', (tester) async {
     await pumpTable(tester);
 

@@ -128,21 +128,6 @@ class _TableViewState extends State<TableView> {
                             ),
                           ),
                           const Spacer(),
-                          Center(
-                            child: Wrap(
-                              alignment: WrapAlignment.center,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                Text(
-                                  'Trabalha no restaurante?',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                                TextButton(onPressed: () {}, child: const Text('Acessar o painel')),
-                              ],
-                            ),
-                          ),
                           const SizedBox(height: 16),
                         ],
                       ),
