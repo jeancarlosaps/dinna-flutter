@@ -48,4 +48,52 @@ class HttpProductRepository implements ProductRepository {
       return const ProductDetail.unavailable(unexpectedResponseMessage);
     }
   }
+
+  @override
+  Future<ProductSave> create(ProductInput input) async {
+    try {
+      final body = await _apiClient.createJson('/products', input.toJson());
+      return ProductSave.saved(Product.fromJson(body));
+    } on ApiException catch (error) {
+      return ProductSave.failed(error.message, failure: error.failure, detail: error.detail);
+    } on FormatException {
+      return const ProductSave.failed(unexpectedResponseMessage);
+    }
+  }
+
+  @override
+  Future<ProductSave> update({required String id, required ProductInput input}) async {
+    if (id.isEmpty) {
+      return const ProductSave.failed(
+        'Identificador do produto inválido',
+        failure: DataFailure.validation,
+      );
+    }
+
+    try {
+      final body = await _apiClient.putJson('/products/${Uri.encodeComponent(id)}', input.toJson());
+      return ProductSave.saved(Product.fromJson(body));
+    } on ApiException catch (error) {
+      return ProductSave.failed(error.message, failure: error.failure, detail: error.detail);
+    } on FormatException {
+      return const ProductSave.failed(unexpectedResponseMessage);
+    }
+  }
+
+  @override
+  Future<ProductSave> deactivate(String id) async {
+    if (id.isEmpty) {
+      return const ProductSave.failed(
+        'Identificador do produto inválido',
+        failure: DataFailure.validation,
+      );
+    }
+
+    try {
+      await _apiClient.delete('/products/${Uri.encodeComponent(id)}');
+      return const ProductSave.removed();
+    } on ApiException catch (error) {
+      return ProductSave.failed(error.message, failure: error.failure, detail: error.detail);
+    }
+  }
 }

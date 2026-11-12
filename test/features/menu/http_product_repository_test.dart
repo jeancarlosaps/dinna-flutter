@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:dinna/core/domain/data_failure.dart';
+import 'package:dinna/core/domain/product.dart';
 import 'package:dinna/core/network/api_client.dart';
 import 'package:dinna/features/menu/http_product_repository.dart';
 import 'package:dinna/features/menu/product_repository.dart';
@@ -350,4 +351,114 @@ void main() {
     expect(result.failure, DataFailure.unavailable);
     expect(result.detail, 'Connection refused');
   });
+
+  test('cria produto em POST /products e devolve o id gerado', () async {
+    late http.Request requested;
+    final repository = HttpProductRepository(
+      ApiClient(
+        baseUrl: baseUrl,
+        httpClient: MockClient((request) async {
+          requested = request;
+          final body = jsonDecode(request.body) as Map<String, Object?>;
+          return http.Response(
+            jsonEncode({...body, 'id': 'p_novo'}),
+            201,
+            headers: const {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      ),
+    );
+    final input = _milkshake;
+
+    final result = await repository.create(input);
+
+    expect(requested.method, 'POST');
+    expect(requested.url.toString(), 'http://localhost:3333/products');
+    expect(requested.headers['content-type'], contains('application/json'));
+    expect(jsonDecode(requested.body), input.toJson());
+    expect(result.product?.id, 'p_novo');
+    expect(result.product?.name, 'Milkshake');
+    expect(result.failure, isNull);
+  });
+
+  test('atualiza produto em PUT /products/:id', () async {
+    late http.Request requested;
+    final repository = HttpProductRepository(
+      ApiClient(
+        baseUrl: baseUrl,
+        httpClient: MockClient((request) async {
+          requested = request;
+          final body = jsonDecode(request.body) as Map<String, Object?>;
+          return http.Response(
+            jsonEncode({...body, 'id': 'p1'}),
+            200,
+            headers: const {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      ),
+    );
+
+    final result = await repository.update(id: 'p1', input: _milkshake);
+
+    expect(requested.method, 'PUT');
+    expect(requested.url.toString(), 'http://localhost:3333/products/p1');
+    expect(result.product?.priceCents, 1890);
+    expect(result.product?.ingredients, isEmpty);
+  });
+
+  test('desativa produto em DELETE /products/:id sem corpo', () async {
+    late http.Request requested;
+    final repository = HttpProductRepository(
+      ApiClient(
+        baseUrl: baseUrl,
+        httpClient: MockClient((request) async {
+          requested = request;
+          return http.Response('', 204);
+        }),
+      ),
+    );
+
+    final result = await repository.deactivate('p1');
+
+    expect(requested.method, 'DELETE');
+    expect(requested.url.toString(), 'http://localhost:3333/products/p1');
+    expect(requested.body, isEmpty);
+    expect(result.removed, isTrue);
+    expect(result.product, isNull);
+  });
+
+  test('traduz 400 do cadastro sem chamar de novo', () async {
+    var calls = 0;
+    final repository = HttpProductRepository(
+      ApiClient(
+        baseUrl: baseUrl,
+        httpClient: MockClient((_) async {
+          calls++;
+          return http.Response(
+            jsonEncode({
+              'error': {'code': 'VALIDATION_ERROR', 'message': 'Nome inválido', 'details': []},
+            }),
+            400,
+            headers: const {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      ),
+    );
+
+    final result = await repository.create(_milkshake);
+
+    expect(calls, 1);
+    expect(result.product, isNull);
+    expect(result.message, 'Nome inválido');
+    expect(result.failure, DataFailure.validation);
+  });
 }
+
+final _milkshake = ProductInput(
+  name: 'Milkshake',
+  description: 'Creme de baunilha',
+  category: 'bebidas',
+  priceCents: 1890,
+  imageUrl: null,
+  available: true,
+);

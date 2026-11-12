@@ -28,8 +28,10 @@ import '../../features/recommendation/recommendation_view_model.dart';
 import '../../features/restaurant/order_details_view.dart';
 import '../../features/restaurant/order_details_view_model.dart';
 import '../../features/restaurant/order_repository.dart';
-import '../../features/restaurant/orders_queue_view.dart';
 import '../../features/restaurant/orders_queue_view_model.dart';
+import '../../features/restaurant/product_catalog_view_model.dart';
+import '../../features/restaurant/restaurant_rail.dart';
+import '../../features/restaurant/restaurant_shell.dart';
 import 'app_route_args.dart';
 import 'route_placeholder.dart';
 
@@ -44,7 +46,8 @@ export 'app_route_args.dart';
 /// do pedido (`/restaurant/order`) têm tela. [recommendation] abre a partir
 /// do cardápio e fica fora de [clientFlow], para o placeholder continuar
 /// só nas rotas da jornada que ainda não têm tela. O acompanhamento não
-/// consulta status. O restante ainda usa [RoutePlaceholder].
+/// consulta status. O cardápio do restaurante tem tela de cadastro. O
+/// detalhe de produto do cliente ainda usa [RoutePlaceholder].
 ///
 /// A entrada do cliente é [table] (`/table`), o mesmo nome da `TableView`
 /// na branch `feature/client-ui`. A integração coloca essa tela num case
@@ -200,14 +203,41 @@ class AppRouter {
         createViewModel: (orderId) => OrderTrackingViewModel(orderRepository, orderId: orderId),
         routeObserver: routeObserver,
       ),
-      AppRoutes.restaurant => OrdersQueueView(
-        createViewModel: () => OrdersQueueViewModel(orderRepository, delay: pollDelay),
+      AppRoutes.restaurant => RestaurantShell(
+        initialSection: RestaurantSection.orders,
+        createQueue: () => OrdersQueueViewModel(orderRepository, delay: pollDelay),
+        createCatalog: () => ProductCatalogViewModel(productRepository),
         routeObserver: routeObserver,
         onOrderSelected: _openOrder,
+        onLeave: (context) => Navigator.of(context).maybePop(),
+        buildOrderPane: (context, order, onChanged) => OrderDetailsView(
+          key: ValueKey(order.id),
+          embedded: true,
+          order: order,
+          onChanged: onChanged,
+          createViewModel: (current) =>
+              OrderDetailsViewModel(productRepository, orderRepository, order: current),
+        ),
       ),
       AppRoutes.restaurantOrder => OrderDetailsView(
         createViewModel: (order) =>
             OrderDetailsViewModel(productRepository, orderRepository, order: order),
+      ),
+      AppRoutes.restaurantMenu => RestaurantShell(
+        initialSection: RestaurantSection.products,
+        createQueue: () => OrdersQueueViewModel(orderRepository, delay: pollDelay),
+        createCatalog: () => ProductCatalogViewModel(productRepository),
+        routeObserver: routeObserver,
+        onOrderSelected: _openOrder,
+        onLeave: (context) => Navigator.of(context).maybePop(),
+        buildOrderPane: (context, order, onChanged) => OrderDetailsView(
+          key: ValueKey(order.id),
+          embedded: true,
+          order: order,
+          onChanged: onChanged,
+          createViewModel: (current) =>
+              OrderDetailsViewModel(productRepository, orderRepository, order: current),
+        ),
       ),
       _ when name != null && _isFlowRoute(name) => RoutePlaceholder(routeName: name),
       _ => UnknownRouteView(routeName: name),

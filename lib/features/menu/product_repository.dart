@@ -61,6 +61,8 @@ class ProductDetail {
 /// Fonte dos produtos do cardápio.
 ///
 /// [list] traduz `GET /products`. [findById] traduz `GET /products/:id`.
+/// [create] traduz `POST /products` e [update] traduz `PUT /products/:id`.
+/// [deactivate] traduz `DELETE /products/:id`, que só marca `available: false`.
 /// O ViewModel depende deste contrato e não vê HTTP.
 ///
 /// A API também aceita `category`, `q` e `available` na query de [list].
@@ -73,4 +75,49 @@ abstract interface class ProductRepository {
   /// `available: false` ainda é sucesso: o produto existe e a tela decide o
   /// que mostrar. Id inexistente chega como [DataFailure.notFound].
   Future<ProductDetail> findById(String id);
+
+  /// Cria o produto. O `id` vem na resposta `201`.
+  Future<ProductSave> create(ProductInput input);
+
+  /// Substitui os campos editáveis. `id` vazio não chama a API.
+  Future<ProductSave> update({required String id, required ProductInput input});
+
+  /// Soft-delete. Sucesso não traz corpo; repetir a chamada continua sucesso.
+  Future<ProductSave> deactivate(String id);
+}
+
+/// Produto gravado, desativado, ou a falha já traduzida.
+final class ProductSave {
+  ProductSave.saved(Product product) : this._(product: product);
+
+  const ProductSave.removed() : this._(removed: true);
+
+  const ProductSave.failed(
+    String message, {
+    DataFailure failure = DataFailure.unavailable,
+    String? detail,
+  }) : this._(message: message, failure: failure, detail: detail);
+
+  const ProductSave._({
+    this.product,
+    this.removed = false,
+    this.message,
+    this.failure,
+    this.detail,
+  });
+
+  /// Preenchido só quando a criação ou a edição confirmou o produto.
+  final Product? product;
+
+  /// Verdadeiro só no soft-delete confirmado.
+  final bool removed;
+
+  /// Preenchida só quando a operação falha.
+  final String? message;
+
+  /// Nula quando a operação confirmou.
+  final DataFailure? failure;
+
+  /// Causa técnica. A tela usa [message].
+  final String? detail;
 }

@@ -337,7 +337,7 @@ void main() {
 
     expect(find.byType(OrdersQueueView), findsOneWidget);
     expect(orders.calls, 1);
-    expect(products.calls, 0);
+    expect(products.calls, 1);
 
     await tester.tap(find.text('Mesa 12'));
     await tester.pumpAndSettle();
@@ -347,7 +347,7 @@ void main() {
     expect(find.text('2×'), findsOneWidget);
     expect(find.text('sem cebola'), findsOneWidget);
     expect(orders.calls, 1);
-    expect(products.calls, 1);
+    expect(products.calls, 2);
 
     final context = tester.element(find.text('Burger Clássico'));
     final route = ModalRoute.of(context)!;
@@ -390,9 +390,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repository.calls, 1);
-    await tester.drag(find.byType(ListView), const Offset(0, -280));
+    final queueList = find.descendant(
+      of: find.byType(OrdersQueueView),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is Scrollable && widget.axis == Axis.vertical,
+      ),
+    );
+    await tester.drag(queueList, const Offset(0, -280));
     await tester.pumpAndSettle();
-    final offset = tester.state<ScrollableState>(find.byType(Scrollable)).position.pixels;
+    final offset = tester.state<ScrollableState>(queueList).position.pixels;
     expect(offset, greaterThan(0));
 
     final visibleTables = find.textContaining(RegExp(r'^Mesa \d+$')).hitTestable();
@@ -407,12 +413,12 @@ void main() {
     await tester.tap(find.byType(BackButton));
     await tester.pumpAndSettle();
 
-    expect(find.text('Fila de pedidos'), findsOneWidget);
+    expect(find.byType(OrdersQueueView), findsOneWidget);
     expect(find.text('Pedido'), findsNothing);
     expect(find.text(table).hitTestable(), findsOneWidget);
-    expect(tester.state<ScrollableState>(find.byType(Scrollable)).position.pixels, offset);
+    expect(tester.state<ScrollableState>(queueList).position.pixels, offset);
     expect(repository.calls, 2);
-    expect(products.calls, 1);
+    expect(products.calls, 2);
     expect(tester.takeException(), isNull);
   });
 }

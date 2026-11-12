@@ -73,6 +73,47 @@ class ApiClient {
     );
   }
 
+  /// `POST` JSON em que a resposta 2xx confirma o recurso. Timeout é falha.
+  ///
+  /// O envio de pedido continua em [postJson], que trata queda depois do body
+  /// como resultado incerto. Cadastro de produto não tem essa chave.
+  Future<Object?> createJson(String path, Map<String, Object?> body) {
+    return _send(
+      () => _httpClient.post(
+        baseUrl.resolve(path),
+        headers: _withAccessToken(const {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        }),
+        body: jsonEncode(body),
+      ),
+    );
+  }
+
+  /// `PUT` com corpo JSON. Usado por `PUT /products/:id`.
+  Future<Object?> putJson(String path, Map<String, Object?> body) {
+    return _send(
+      () => _httpClient.put(
+        baseUrl.resolve(path),
+        headers: _withAccessToken(const {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        }),
+        body: jsonEncode(body),
+      ),
+    );
+  }
+
+  /// `DELETE` sem corpo. `204` devolve `null`.
+  Future<Object?> delete(String path) {
+    return _send(
+      () => _httpClient.delete(
+        baseUrl.resolve(path),
+        headers: _withAccessToken(const {'Accept': 'application/json'}),
+      ),
+    );
+  }
+
   /// `PATCH` com corpo JSON. Usado por `PATCH /orders/:id/status`.
   Future<Object?> patchJson(String path, Map<String, Object?> body) {
     return _send(

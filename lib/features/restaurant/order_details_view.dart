@@ -15,9 +15,25 @@ import 'order_format.dart';
 /// Lê [RestaurantOrderArgs] da rota. Sem o pedido já carregado, explica a
 /// ausência e não consulta `GET /orders`. O avanço de status fica fixo no rodapé.
 class OrderDetailsView extends StatefulWidget {
-  const OrderDetailsView({super.key, required this.createViewModel});
+  const OrderDetailsView({
+    super.key,
+    required this.createViewModel,
+    this.order,
+    this.embedded = false,
+    this.onChanged,
+  });
 
   final OrderDetailsViewModel Function(Order order) createViewModel;
+
+  /// Pedido já em mãos. No tablet o painel passa o pedido da fila.
+  /// Na rota, o pedido continua vindo dos argumentos.
+  final Order? order;
+
+  /// Dentro da fila larga: não empurra outra rota e não intercepta o voltar.
+  final bool embedded;
+
+  /// A fila aplica o pedido quando o status muda no painel.
+  final ValueChanged<Order>? onChanged;
 
   @override
   State<OrderDetailsView> createState() => _OrderDetailsViewState();
@@ -39,12 +55,40 @@ class _OrderDetailsViewState extends State<OrderDetailsView> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _ensureViewModel();
+  }
+
+  @override
+  void didUpdateWidget(OrderDetailsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final next = widget.order;
+    final current = _viewModel;
+    if (next == null || current == null) return;
+    if (next.id != current.order.id) {
+      current.removeListener(_publish);
+      current.dispose();
+      _viewModel = null;
+      _ensureViewModel();
+      return;
+    }
+    current.adopt(next);
+  }
+
+  void _ensureViewModel() {
     if (_viewModel != null) return;
-    final order = _orderFromRoute();
+    final order = widget.order ?? _orderFromRoute();
     if (order == null) return;
     final viewModel = widget.createViewModel(order);
+    viewModel.addListener(_publish);
     _viewModel = viewModel;
     unawaited(viewModel.resolveProducts());
+  }
+
+  void _publish() {
+    if (!widget.embedded) return;
+    final order = _viewModel?.order;
+    if (order == null) return;
+    widget.onChanged?.call(order);
   }
 
   Order? _orderFromRoute() {
@@ -56,6 +100,7 @@ class _OrderDetailsViewState extends State<OrderDetailsView> {
 
   @override
   void dispose() {
+    _viewModel?.removeListener(_publish);
     _viewModel?.dispose();
     super.dispose();
   }
@@ -63,6 +108,16 @@ class _OrderDetailsViewState extends State<OrderDetailsView> {
   @override
   Widget build(BuildContext context) {
     final viewModel = _viewModel;
+    if (widget.embedded) {
+      return Scaffold(
+        body: viewModel == null
+            ? const _MissingOrder()
+            : ListenableBuilder(
+                listenable: viewModel,
+                builder: (context, _) => _DetailsScaffold(viewModel: viewModel),
+              ),
+      );
+    }
     return PopScope(
       canPop: _closing,
       onPopInvokedWithResult: (didPop, result) {

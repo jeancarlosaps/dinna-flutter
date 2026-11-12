@@ -149,6 +149,60 @@ final class Product {
   String toString() => 'Product(id: $id, priceCents: $priceCents, available: $available)';
 }
 
+/// Body de `POST /products` e `PUT /products/:id`. A API gera o `id`.
+///
+/// O JSON sempre inclui `imageUrl`, `available` e `ingredients`. No PUT, omitir
+/// `imageUrl` gravaria `null`, omitir `available` gravaria `true` e omitir
+/// `ingredients` manteria a lista anterior.
+final class ProductInput {
+  ProductInput({
+    required this.name,
+    required this.description,
+    required this.category,
+    required this.priceCents,
+    required this.imageUrl,
+    required this.available,
+    List<String> ingredients = const [],
+  }) : ingredients = List<String>.unmodifiable(ingredients) {
+    if (name.isEmpty || name.length > _nameMaxLength) {
+      throw ArgumentError.value(name, 'name', 'name deve ter de 1 a $_nameMaxLength caracteres');
+    }
+    if (description.length > _descriptionMaxLength) {
+      throw ArgumentError.value(
+        description,
+        'description',
+        'description deve ter no máximo $_descriptionMaxLength caracteres',
+      );
+    }
+    if (category.isEmpty) {
+      throw ArgumentError.value(category, 'category', 'category deve ter ao menos 1 caractere');
+    }
+    if (priceCents < 0) {
+      throw ArgumentError.value(priceCents, 'priceCents', 'priceCents deve ser >= 0');
+    }
+    _requireImageUri(imageUrl);
+    _requireIngredients(this.ingredients);
+  }
+
+  final String name;
+  final String description;
+  final String category;
+  final int priceCents;
+  final String? imageUrl;
+  final bool available;
+  final List<String> ingredients;
+
+  Map<String, Object?> toJson() => {
+    'name': name,
+    'description': description,
+    'category': category,
+    'priceCents': priceCents,
+    'imageUrl': imageUrl,
+    'available': available,
+    'ingredients': ingredients,
+  };
+}
+
 void _requireImageUri(String? imageUrl) {
   if (imageUrl == null) return;
   final uri = Uri.tryParse(imageUrl);

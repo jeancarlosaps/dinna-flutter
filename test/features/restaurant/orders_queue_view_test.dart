@@ -22,11 +22,19 @@ void main() {
     WidgetTester tester,
     OrdersQueueViewModel Function() create, {
     FutureOr<Object?> Function(BuildContext context, Order order)? onOrderSelected,
+    void Function(BuildContext context)? onOpenProducts,
+    Widget Function(BuildContext context, Order order, ValueChanged<Order> onChanged)?
+    buildOrderPane,
   }) {
     return tester.pumpWidget(
       MaterialApp(
         theme: DinnaTheme.light(),
-        home: OrdersQueueView(createViewModel: create, onOrderSelected: onOrderSelected),
+        home: OrdersQueueView(
+          createViewModel: create,
+          onOrderSelected: onOrderSelected,
+          onOpenProducts: onOpenProducts,
+          buildOrderPane: buildOrderPane,
+        ),
       ),
     );
   }
@@ -163,8 +171,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Iniciar preparo'), findsNothing);
-    expect(find.text('Ver detalhes'), findsOneWidget);
-    await tester.tap(find.text('Ver detalhes'));
+    await tester.tap(find.text('Mesa 4'));
     await tester.pumpAndSettle();
 
     expect(selected?.id, 'o1');
@@ -208,7 +215,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('1 pedido'), findsOneWidget);
+    expect(find.text('Hoje · 1 pedido'), findsOneWidget);
     expect(find.text('2×'), findsOneWidget);
     expect(find.text('Burger Clássico'), findsOneWidget);
     expect(find.text('sem cebola'), findsNothing);
@@ -243,7 +250,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('2 pedidos'), findsOneWidget);
+    expect(find.text('Hoje · 2 pedidos'), findsOneWidget);
     expect(find.text('Em preparo primeiro'), findsNothing);
     expect(find.text('Mesa 4'), findsOneWidget);
     expect(find.text('Preparando'), findsOneWidget);
@@ -320,9 +327,12 @@ void main() {
     expect(find.text('Mesa 0'), findsOneWidget);
     final narrowCard = tester.getSize(find.byType(Card).first).width;
     expect(narrowCard, lessThan(320));
-    final position = tester.state<ScrollableState>(find.byType(Scrollable)).position;
+    final vertical = find.byWidgetPredicate(
+      (widget) => widget is Scrollable && widget.axis == Axis.vertical,
+    );
+    final position = tester.state<ScrollableState>(vertical).position;
     expect(position.maxScrollExtent, greaterThan(0));
-    await tester.drag(find.byType(ListView), const Offset(0, -160));
+    await tester.drag(vertical, const Offset(0, -160));
     await tester.pump();
     expect(position.pixels, greaterThan(0));
     expect(tester.takeException(), isNull);
@@ -371,7 +381,7 @@ void main() {
     expect(repository.calls, 1);
     expect(find.text('Mesa 3'), findsOneWidget);
 
-    Navigator.of(tester.element(find.text('Fila de pedidos'))).pushNamed('/detalhe');
+    Navigator.of(tester.element(find.byType(OrdersQueueView))).pushNamed('/detalhe');
     await tester.pumpAndSettle();
     expect(find.text('detalhe'), findsOneWidget);
 
@@ -382,7 +392,7 @@ void main() {
     Navigator.of(tester.element(find.text('detalhe'))).pop();
     await tester.pumpAndSettle();
 
-    expect(find.text('Fila de pedidos'), findsOneWidget);
+    expect(find.byType(OrdersQueueView), findsOneWidget);
     expect(repository.calls, 2);
   });
 
@@ -425,7 +435,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Recebido'), findsOneWidget);
-    await tester.tap(find.text('Ver detalhes'));
+    await tester.tap(find.text('Mesa 12'));
     await tester.pump();
 
     expect(find.text('Preparando'), findsOneWidget);
@@ -465,6 +475,13 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Mesa 12'),
+      80,
+      scrollable: find.byWidgetPredicate(
+        (widget) => widget is Scrollable && widget.axis == Axis.vertical,
+      ),
+    );
 
     expect(find.text('Mesa 12'), findsOneWidget);
     expect(find.text('Pedido #0005'), findsOneWidget);
@@ -495,6 +512,58 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Nenhum pedido na fila'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('no tablet o detalhe fica ao lado da fila', (tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final first = sampleOrder(id: 'o1', table: '12', status: OrderStatus.received);
+    final second = sampleOrder(id: 'o2', table: '7', status: OrderStatus.preparing);
+
+    await pumpQueue(
+      tester,
+      () => OrdersQueueViewModel(
+        FakeOrderRepository(() async => OrderList.ready([first, second])),
+        delay: pendingPollDelay,
+      ),
+      onOrderSelected: (context, order) => order,
+      buildOrderPane: (context, order, onChanged) => Text('painel ${order.table}'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Mesa 12'), findsOneWidget);
+    expect(find.text('painel 7'), findsOneWidget);
+    expect(find.text('Todos · 2'), findsOneWidget);
+
+    await tester.tap(find.text('Mesa 12'));
+    await tester.pump();
+
+    expect(find.text('painel 12'), findsOneWidget);
+    expect(find.text('Mesa 7'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a barra de baixo abre produtos', (tester) async {
+    var opened = false;
+    await pumpQueue(
+      tester,
+      () => OrdersQueueViewModel(
+        FakeOrderRepository(() async => OrderList.ready(const [])),
+        delay: pendingPollDelay,
+      ),
+      onOpenProducts: (context) => opened = true,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(NavigationBar, 'Pedidos'), findsOneWidget);
+    expect(find.widgetWithText(NavigationBar, 'Produtos'), findsOneWidget);
+    await tester.tap(find.widgetWithText(NavigationBar, 'Produtos'));
+    await tester.pump();
+
+    expect(opened, isTrue);
     expect(tester.takeException(), isNull);
   });
 }
