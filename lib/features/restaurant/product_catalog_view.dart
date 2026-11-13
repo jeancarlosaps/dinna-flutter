@@ -552,7 +552,7 @@ class _ProductFormState extends State<_ProductForm> {
       text: product == null ? '' : formatPriceInput(product.priceCents),
     );
     _image = TextEditingController(text: product?.imageUrl ?? '');
-    _ingredients = TextEditingController(text: product?.ingredients.join(', ') ?? '');
+    _ingredients = TextEditingController(text: product?.ingredients.join('\n') ?? '');
     _imageFocus = FocusNode();
     _available = product?.available ?? true;
     _image.addListener(_refresh);
@@ -802,7 +802,7 @@ class _ProductFormState extends State<_ProductForm> {
         maxLines: 6,
         decoration: const InputDecoration(
           labelText: 'Ingredientes',
-          hintText: 'Um por linha ou separados por vírgula',
+          hintText: 'Um por linha',
           alignLabelWithHint: true,
         ),
       ),

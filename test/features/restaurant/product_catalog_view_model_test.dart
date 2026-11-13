@@ -134,4 +134,38 @@ void main() {
     expect(repository.deactivateCalls, 1);
     expect(viewModel.products.single.available, isFalse);
   });
+
+  test('ingrediente com vírgula continua um só ao salvar', () async {
+    final repository = FakeProductRepository(
+      () async => ProductList.ready(const []),
+      onUpdate: (id, input) async => ProductSave.saved(
+        Product(
+          id: id,
+          name: input.name,
+          description: input.description,
+          category: input.category,
+          priceCents: input.priceCents,
+          imageUrl: input.imageUrl,
+          available: input.available,
+          ingredients: input.ingredients,
+        ),
+      ),
+    );
+    final viewModel = ProductCatalogViewModel(repository);
+    addTearDown(viewModel.dispose);
+
+    final message = await viewModel.save(
+      id: 'p1',
+      name: 'Batata',
+      description: '',
+      category: 'porções',
+      priceText: '20',
+      imageText: '',
+      ingredientsText: 'Sal, pimenta\nBatata',
+      available: true,
+    );
+
+    expect(message, isNull);
+    expect(repository.lastInput?.ingredients, ['Sal, pimenta', 'Batata']);
+  });
 }

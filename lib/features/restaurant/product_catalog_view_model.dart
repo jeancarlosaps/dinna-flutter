@@ -154,7 +154,7 @@ class ProductCatalogViewModel extends ChangeNotifier {
     final image = imageText.trim();
     final imageUrl = image.isEmpty ? null : image;
     final ingredients = [
-      for (final part in ingredientsText.split(RegExp(r'[\n,]')))
+      for (final part in ingredientsText.split('\n'))
         if (part.trim().isNotEmpty) part.trim(),
     ];
     try {
