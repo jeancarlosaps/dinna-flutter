@@ -172,7 +172,7 @@ void main() {
     expect(find.byType(OrdersQueueView), findsOneWidget);
     expect(find.text('Mesa 12'), findsOneWidget);
     expect(orders.calls, 1);
-    expect(products.calls, 0);
+    expect(products.calls, 1);
 
     await tester.tap(find.text('Mesa 12'));
     await tester.pumpAndSettle();
@@ -181,7 +181,7 @@ void main() {
     expect(find.text('Pedido'), findsOneWidget);
     expect(find.text('Burger Clássico'), findsOneWidget);
     expect(orders.calls, 1);
-    expect(products.calls, 1);
+    expect(products.calls, 2);
 
     final context = tester.element(find.text('Burger Clássico'));
     final route = ModalRoute.of(context)!;
@@ -194,7 +194,7 @@ void main() {
 
     await tester.tap(find.byType(BackButton));
     await tester.pumpAndSettle();
-    expect(find.text('Fila de pedidos'), findsOneWidget);
+    expect(find.byType(OrdersQueueView), findsOneWidget);
     expect(find.byType(OrderDetailsView), findsNothing);
   });
 

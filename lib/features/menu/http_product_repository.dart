@@ -15,6 +15,11 @@ class HttpProductRepository implements ProductRepository {
   /// Mensagem estável para corpo JSON que não é o contrato do produto.
   static const unexpectedResponseMessage = 'Resposta inesperada da API';
 
+  /// POST sem confirmação: o produto pode ter sido gravado. Não há nova tentativa.
+  static const uncertainCreateMessage =
+      'Não foi possível confirmar o cadastro. O produto pode ter sido criado: '
+      'confira a lista antes de tentar de novo.';
+
   @override
   Future<ProductList> list() async {
     try {
@@ -46,6 +51,68 @@ class HttpProductRepository implements ProductRepository {
       return ProductDetail.unavailable(error.message, failure: error.failure, detail: error.detail);
     } on FormatException {
       return const ProductDetail.unavailable(unexpectedResponseMessage);
+    }
+  }
+
+  @override
+  Future<ProductSave> create(ProductInput input) async {
+    // `postJson` marca como incerta a queda depois do envio e o 2xx ilegível.
+    // `POST /products` não tem chave de idempotência: repetir pode duplicar.
+    try {
+      final body = await _apiClient.postJson('/products', input.toJson());
+      return ProductSave.saved(Product.fromJson(body));
+    } on ApiException catch (error) {
+      if (error.outcomeUncertain) {
+        return ProductSave.failed(
+          uncertainCreateMessage,
+          failure: DataFailure.uncertain,
+          detail: error.detail ?? error.message,
+        );
+      }
+      return ProductSave.failed(error.message, failure: error.failure, detail: error.detail);
+    } on FormatException {
+      // 201 chegou, mas fora do contrato: o produto existe.
+      return const ProductSave.failed(
+        uncertainCreateMessage,
+        failure: DataFailure.uncertain,
+        detail: unexpectedResponseMessage,
+      );
+    }
+  }
+
+  @override
+  Future<ProductSave> update({required String id, required ProductInput input}) async {
+    if (id.isEmpty) {
+      return const ProductSave.failed(
+        'Identificador do produto inválido',
+        failure: DataFailure.validation,
+      );
+    }
+
+    try {
+      final body = await _apiClient.putJson('/products/${Uri.encodeComponent(id)}', input.toJson());
+      return ProductSave.saved(Product.fromJson(body));
+    } on ApiException catch (error) {
+      return ProductSave.failed(error.message, failure: error.failure, detail: error.detail);
+    } on FormatException {
+      return const ProductSave.failed(unexpectedResponseMessage);
+    }
+  }
+
+  @override
+  Future<ProductSave> deactivate(String id) async {
+    if (id.isEmpty) {
+      return const ProductSave.failed(
+        'Identificador do produto inválido',
+        failure: DataFailure.validation,
+      );
+    }
+
+    try {
+      await _apiClient.delete('/products/${Uri.encodeComponent(id)}');
+      return const ProductSave.removed();
+    } on ApiException catch (error) {
+      return ProductSave.failed(error.message, failure: error.failure, detail: error.detail);
     }
   }
 }

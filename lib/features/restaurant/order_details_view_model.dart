@@ -69,6 +69,17 @@ class OrderDetailsViewModel extends ChangeNotifier {
 
   Order get order => _order;
 
+  /// A fila no tablet entrega um pedido mais novo sem recriar o detalhe.
+  ///
+  /// Ignora enquanto um PATCH está em voo, para não desfazer o toque.
+  void adopt(Order order) {
+    if (_disposed || _updating || order.id != _order.id) return;
+    final merged = order.preservingItemSnapshotsFrom(_order);
+    if (merged == _order) return;
+    _order = merged;
+    _notify();
+  }
+
   String get table => _order.table;
 
   int? get orderNumber => _order.orderNumber;

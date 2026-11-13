@@ -69,7 +69,7 @@ void main() {
     await _push(tester, AppRoutes.restaurant);
 
     expect(find.byType(OrdersQueueView), findsOneWidget);
-    expect(find.text('Fila de pedidos'), findsOneWidget);
+    expect(find.text('Pedidos'), findsWidgets);
     expect(find.text('Tela ainda não implementada.'), findsNothing);
     expect(find.text('Página não encontrada'), findsNothing);
 
@@ -127,7 +127,7 @@ void main() {
     await _pumpApp(tester);
     await _push(tester, AppRoutes.restaurant);
 
-    final queueContext = tester.element(find.text('Fila de pedidos'));
+    final queueContext = tester.element(find.byType(OrdersQueueView));
     final openedOrder = Navigator.of(queueContext)
         .pushNamed(AppRoutes.restaurantOrder, arguments: const AppRouteId('pedido-1'));
     await tester.pumpAndSettle();
@@ -140,7 +140,7 @@ void main() {
     Navigator.of(orderContext).pop('revisado');
     await tester.pumpAndSettle();
 
-    expect(find.text('Fila de pedidos'), findsOneWidget);
+    expect(find.byType(OrdersQueueView), findsOneWidget);
     expect(await openedOrder, 'revisado');
   });
 
@@ -187,7 +187,8 @@ void main() {
           route != AppRoutes.order &&
           route != AppRoutes.orderTracking &&
           route != AppRoutes.restaurant &&
-          route != AppRoutes.restaurantOrder,
+          route != AppRoutes.restaurantOrder &&
+          route != AppRoutes.restaurantMenu,
     );
 
     for (final route in routes) {
