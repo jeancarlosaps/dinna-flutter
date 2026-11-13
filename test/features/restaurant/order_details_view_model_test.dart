@@ -367,4 +367,17 @@ void main() {
     expect(viewModel.actionFailure, DataFailure.conflict);
     expect(viewModel.isUpdating, isFalse);
   });
+
+  test('adopt aplica o pedido novo mesmo com status e total iguais', () {
+    final viewModel = OrderDetailsViewModel(
+      FakeProductRepository(() async => ProductList.ready(const [])),
+      FakeOrderRepository(() async => OrderList.ready(const [])),
+      order: sampleOrder(id: 'o1'),
+    );
+    addTearDown(viewModel.dispose);
+
+    viewModel.adopt(sampleOrder(id: 'o1', orderNumber: 42));
+
+    expect(viewModel.orderNumber, 42);
+  });
 }

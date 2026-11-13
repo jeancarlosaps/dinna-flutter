@@ -1,6 +1,7 @@
 import 'package:dinna/app/app.dart';
 import 'package:dinna/app/router/app_router.dart';
 import 'package:dinna/app/theme/dinna_theme.dart';
+import 'package:dinna/core/domain/data_failure.dart';
 import 'package:dinna/core/domain/order.dart';
 import 'package:dinna/core/domain/order_item.dart';
 import 'package:dinna/core/domain/order_status.dart';
@@ -420,6 +421,53 @@ void main() {
     expect(repository.calls, 2);
     expect(products.calls, 2);
     expect(tester.takeException(), isNull);
+  });
+
+  Future<List<Order>> pumpEmbedded(WidgetTester tester, OrderRepository orders) async {
+    final published = <Order>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: DinnaTheme.light(),
+        home: OrderDetailsView(
+          embedded: true,
+          order: detailOrder(),
+          onChanged: published.add,
+          createViewModel: (order) =>
+              OrderDetailsViewModel(catalog(const []), orders, order: order),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    return published;
+  }
+
+  testWidgets('no painel, falha ao avançar não devolve o pedido antigo à fila', (tester) async {
+    final orders = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      updateStatus: (id, status) async =>
+          const OrderUpdate.unavailable('Status mudou', failure: DataFailure.conflict),
+    );
+    final published = await pumpEmbedded(tester, orders);
+
+    await tester.tap(find.text('Iniciar preparo'));
+    await tester.pumpAndSettle();
+
+    expect(orders.updateCalls, 1);
+    expect(published, isEmpty);
+  });
+
+  testWidgets('no painel, avanço confirmado vai uma vez para a fila', (tester) async {
+    final orders = FakeOrderRepository(
+      () async => OrderList.ready(const []),
+      updateStatus: (id, status) async =>
+          OrderUpdate.ready(detailOrder(status: OrderStatus.preparing)),
+    );
+    final published = await pumpEmbedded(tester, orders);
+
+    await tester.tap(find.text('Iniciar preparo'));
+    await tester.pumpAndSettle();
+
+    expect(published.map((order) => order.status), [OrderStatus.preparing]);
   });
 }
 

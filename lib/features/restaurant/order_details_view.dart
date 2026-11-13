@@ -41,6 +41,8 @@ class OrderDetailsView extends StatefulWidget {
 
 class _OrderDetailsViewState extends State<OrderDetailsView> {
   OrderDetailsViewModel? _viewModel;
+  Order? _published;
+  bool _adopting = false;
   var _closing = false;
 
   void _requestClose() {
@@ -71,7 +73,11 @@ class _OrderDetailsViewState extends State<OrderDetailsView> {
       _ensureViewModel();
       return;
     }
+    // A fila já tem este pedido: não devolver o snapshot durante o build dela.
+    _adopting = true;
     current.adopt(next);
+    _adopting = false;
+    _published = current.order;
   }
 
   void _ensureViewModel() {
@@ -81,13 +87,17 @@ class _OrderDetailsViewState extends State<OrderDetailsView> {
     final viewModel = widget.createViewModel(order);
     viewModel.addListener(_publish);
     _viewModel = viewModel;
+    _published = viewModel.order;
     unawaited(viewModel.resolveProducts());
   }
 
+  /// Só devolve à fila o pedido que mudou no painel, como o avanço confirmado.
+  /// Falha do PATCH ou consulta de produtos não reenviam um snapshot antigo.
   void _publish() {
-    if (!widget.embedded) return;
+    if (!widget.embedded || _adopting) return;
     final order = _viewModel?.order;
-    if (order == null) return;
+    if (order == null || order == _published) return;
+    _published = order;
     widget.onChanged?.call(order);
   }
 

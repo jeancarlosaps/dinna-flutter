@@ -74,8 +74,9 @@ class OrderDetailsViewModel extends ChangeNotifier {
   /// Ignora enquanto um PATCH está em voo, para não desfazer o toque.
   void adopt(Order order) {
     if (_disposed || _updating || order.id != _order.id) return;
-    if (order.status == _order.status && order.totalCents == _order.totalCents) return;
-    _order = order.preservingItemSnapshotsFrom(_order);
+    final merged = order.preservingItemSnapshotsFrom(_order);
+    if (merged == _order) return;
+    _order = merged;
     _notify();
   }
 
