@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../core/domain/data_failure.dart';
@@ -103,7 +105,11 @@ class ProductCatalogViewModel extends ChangeNotifier {
           : await _repository.update(id: id, input: input);
       if (_disposed) return null;
       final product = result.product;
-      if (product == null) return _visible(result.message, saveError);
+      if (product == null) {
+        // Cadastro incerto: recarrega para o restaurante conferir antes de repetir.
+        if (result.failure == DataFailure.uncertain) unawaited(load());
+        return _visible(result.message, saveError);
+      }
       _upsert(product);
       return null;
     } catch (_) {

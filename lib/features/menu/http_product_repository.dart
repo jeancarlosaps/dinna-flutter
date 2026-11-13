@@ -15,6 +15,11 @@ class HttpProductRepository implements ProductRepository {
   /// Mensagem estável para corpo JSON que não é o contrato do produto.
   static const unexpectedResponseMessage = 'Resposta inesperada da API';
 
+  /// POST sem confirmação: o produto pode ter sido gravado. Não há nova tentativa.
+  static const uncertainCreateMessage =
+      'Não foi possível confirmar o cadastro. O produto pode ter sido criado: '
+      'confira a lista antes de tentar de novo.';
+
   @override
   Future<ProductList> list() async {
     try {
@@ -51,13 +56,27 @@ class HttpProductRepository implements ProductRepository {
 
   @override
   Future<ProductSave> create(ProductInput input) async {
+    // `postJson` marca como incerta a queda depois do envio e o 2xx ilegível.
+    // `POST /products` não tem chave de idempotência: repetir pode duplicar.
     try {
-      final body = await _apiClient.createJson('/products', input.toJson());
+      final body = await _apiClient.postJson('/products', input.toJson());
       return ProductSave.saved(Product.fromJson(body));
     } on ApiException catch (error) {
+      if (error.outcomeUncertain) {
+        return ProductSave.failed(
+          uncertainCreateMessage,
+          failure: DataFailure.uncertain,
+          detail: error.detail ?? error.message,
+        );
+      }
       return ProductSave.failed(error.message, failure: error.failure, detail: error.detail);
     } on FormatException {
-      return const ProductSave.failed(unexpectedResponseMessage);
+      // 201 chegou, mas fora do contrato: o produto existe.
+      return const ProductSave.failed(
+        uncertainCreateMessage,
+        failure: DataFailure.uncertain,
+        detail: unexpectedResponseMessage,
+      );
     }
   }
 

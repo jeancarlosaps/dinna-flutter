@@ -452,6 +452,46 @@ void main() {
     expect(result.message, 'Nome inválido');
     expect(result.failure, DataFailure.validation);
   });
+
+  test('queda depois do envio do cadastro fica incerta e não repete o POST', () async {
+    var calls = 0;
+    final repository = HttpProductRepository(
+      ApiClient(
+        baseUrl: baseUrl,
+        httpClient: MockClient((_) async {
+          calls++;
+          throw http.ClientException('Connection reset');
+        }),
+      ),
+    );
+
+    final result = await repository.create(_milkshake);
+
+    expect(calls, 1);
+    expect(result.product, isNull);
+    expect(result.failure, DataFailure.uncertain);
+    expect(result.message, HttpProductRepository.uncertainCreateMessage);
+  });
+
+  test('201 fora do contrato no cadastro fica incerto', () async {
+    final repository = HttpProductRepository(
+      ApiClient(
+        baseUrl: baseUrl,
+        httpClient: MockClient(
+          (_) async => http.Response(
+            jsonEncode({'id': 'p_novo'}),
+            201,
+            headers: const {'content-type': 'application/json; charset=utf-8'},
+          ),
+        ),
+      ),
+    );
+
+    final result = await repository.create(_milkshake);
+
+    expect(result.failure, DataFailure.uncertain);
+    expect(result.message, HttpProductRepository.uncertainCreateMessage);
+  });
 }
 
 final _milkshake = ProductInput(

@@ -168,4 +168,33 @@ void main() {
     expect(message, isNull);
     expect(repository.lastInput?.ingredients, ['Sal, pimenta', 'Batata']);
   });
+
+  test('cadastro incerto avisa e recarrega a lista sem repetir o POST', () async {
+    final repository = FakeProductRepository(
+      () async => ProductList.ready([sampleProduct(id: 'p1', name: 'Burger')]),
+      onCreate: (input) async => const ProductSave.failed(
+        'O produto pode ter sido criado',
+        failure: DataFailure.uncertain,
+      ),
+    );
+    final viewModel = ProductCatalogViewModel(repository);
+    addTearDown(viewModel.dispose);
+    await viewModel.load();
+
+    final message = await viewModel.save(
+      name: 'Milkshake',
+      description: '',
+      category: 'bebidas',
+      priceText: '18,90',
+      imageText: '',
+      ingredientsText: '',
+      available: true,
+    );
+    await pumpEventQueue();
+
+    expect(message, 'O produto pode ter sido criado');
+    expect(repository.createCalls, 1);
+    expect(repository.calls, 2);
+    expect(viewModel.status, ProductCatalogStatus.ready);
+  });
 }
