@@ -175,4 +175,32 @@ void main() {
     expect(opened, isTrue);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('falha ao desativar pela lista mostra o motivo', (tester) async {
+    final repository = FakeProductRepository(
+      () async => ProductList.ready([
+        Product(
+          id: 'p1',
+          name: 'Burger Clássico',
+          description: 'Pão e blend',
+          category: 'burgers',
+          priceCents: 3290,
+          imageUrl: null,
+          available: true,
+          ingredients: const ['Pão'],
+        ),
+      ]),
+      onDeactivate: (id) async => const ProductSave.failed('Sem conexão com o servidor'),
+    );
+    await pumpCatalog(tester, repository);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(Switch).first);
+    await tester.pump();
+    await tester.pump();
+
+    expect(repository.deactivateCalls, 1);
+    expect(find.text('Sem conexão com o servidor'), findsOneWidget);
+    expect(tester.widget<Switch>(find.byType(Switch).first).value, isTrue);
+  });
 }

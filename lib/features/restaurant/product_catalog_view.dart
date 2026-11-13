@@ -74,20 +74,20 @@ class _ProductCatalogViewState extends State<ProductCatalogView> {
 
   Future<void> _setAvailable(Product product, bool available) async {
     if (available == product.available || _viewModel.isSaving) return;
-    if (!available) {
-      await _viewModel.deactivate(product.id);
-      return;
-    }
-    await _viewModel.save(
-      id: product.id,
-      name: product.name,
-      description: product.description,
-      category: product.category,
-      priceText: formatPriceInput(product.priceCents),
-      imageText: product.imageUrl ?? '',
-      ingredientsText: product.ingredients.join('\n'),
-      available: true,
-    );
+    final message = available
+        ? await _viewModel.save(
+            id: product.id,
+            name: product.name,
+            description: product.description,
+            category: product.category,
+            priceText: formatPriceInput(product.priceCents),
+            imageText: product.imageUrl ?? '',
+            ingredientsText: product.ingredients.join('\n'),
+            available: true,
+          )
+        : await _viewModel.deactivate(product.id);
+    if (message == null || !mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
