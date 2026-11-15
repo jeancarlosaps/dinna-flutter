@@ -17,9 +17,13 @@
 <p align="center">
   <a href="#comece-aqui"><strong>COMEÇAR →</strong></a>
   &nbsp;·&nbsp;
+  <a href="#conheca-o-dinna">CONHEÇA O DINNA</a>
+  &nbsp;·&nbsp;
   <a href="#arquitetura">ARQUITETURA</a>
   &nbsp;·&nbsp;
   <a href="#estado-atual">O QUE JÁ EXISTE</a>
+  &nbsp;·&nbsp;
+  <a href="#documentacao-do-projeto">DOCUMENTAÇÃO</a>
   &nbsp;·&nbsp;
   <a href="#roadmap">ROADMAP</a>
   &nbsp;·&nbsp;
@@ -33,7 +37,7 @@
   <img src="https://img.shields.io/badge/Flutter-3.47.7-B4532A?logo=flutter&amp;logoColor=white" alt="Flutter 3.47.7" />
   <img src="https://img.shields.io/badge/Dart-3.13.5-5E7355?logo=dart&amp;logoColor=white" alt="Dart 3.13.5" />
   <img src="https://img.shields.io/badge/Material-3-2A211C" alt="Material 3" />
-  <img src="https://img.shields.io/badge/status-R0%20%C2%B7%20funda%C3%A7%C3%A3o%20em%20andamento-A86B12" alt="Status: R0, fundação em andamento" />
+  <img src="https://img.shields.io/badge/status-MVP%20R1%20%2B%20R2%20%C2%B7%20entrega%20acad%C3%AAmica-5E7355" alt="Status: MVP com R1 e R2, entrega acadêmica" />
 </p>
 
 ---
@@ -45,7 +49,7 @@ O Dinna é formado por dois repositórios que trabalham juntos:
 | Repositório | Papel | Stack |
 |---|---|---|
 | **dinna-flutter** (este) | App único com dois perfis: **cliente** (mesa, cardápio, carrinho, pedido) e **restaurante** (fila, status, cardápio) | Flutter · Dart · Material 3 |
-| [**dinna-api**](https://github.com/jeancarlosaps/dinna-api) | Backend REST do Dinna: produtos, pedidos, status e, depois, recomendações | Node.js · TypeScript · Fastify |
+| [**dinna-api**](https://github.com/jeancarlosaps/dinna-api) | Backend REST do Dinna: produtos, pedidos, status e recomendação de pratos | Node.js · TypeScript · Fastify |
 
 ```mermaid
 flowchart LR
@@ -61,7 +65,54 @@ flowchart LR
   class API api
 ```
 
-Hoje o único endpoint integrado entre os dois é `GET /health`. Os models do app já seguem o [contrato inicial da API](https://github.com/jeancarlosaps/dinna-api/blob/main/docs/api-contract.md). A SCRUM-24, que define esse contrato, está concluída no Jira. Os demais endpoints ainda não são chamados pelo app.
+O app consome todos os endpoints do [contrato REST](https://github.com/jeancarlosaps/dinna-api/blob/dev/docs/api-contract.md): `/health`, `/products`, `/orders`, `/orders/:id/status` e `/ai/recommendation`. A tabela completa está em [Integração com o backend](#integracao-backend).
+
+<a id="conheca-o-dinna"></a>
+
+## Conheça o Dinna
+
+Capturas reais do app no iOS Simulator (iPhone 17), rodando a `dev` contra a API local com o cardápio de demonstração. Mesa, pedido e produtos são dados de teste.
+
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <img src="docs/assets/screenshots/01-inicial.png" alt="Tela inicial do Dinna com o último pedido da mesa, os botões Sou cliente e Restaurante e o status da API online." width="240" /><br />
+      <sub><strong>Tela inicial</strong><br />Entrada do cliente e do restaurante, com o último pedido salvo no aparelho</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/assets/screenshots/02-cardapio.png" alt="Cardápio da mesa 12 com o botão Me ajuda a escolher, busca pelo nome, filtros por categoria, produtos e a barra Ver carrinho com 2 itens." width="240" /><br />
+      <sub><strong>Cardápio</strong><br />Categorias, busca pelo nome e acesso ao carrinho</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/assets/screenshots/03-me-ajuda-a-escolher.png" alt="Formulário Me ajuda a escolher com o aviso de alergia e as perguntas de orçamento, fome e proteína." width="240" /><br />
+      <sub><strong>“Me ajuda a escolher”</strong><br />Preferências salvas no aparelho e aviso de alergia</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="33%">
+      <img src="docs/assets/screenshots/04-sugestoes.png" alt="Sugestão de prato com o aviso A Dinna não respondeu agora, indicando o fallback do cardápio, e o Burger Cheddar Duplo com o motivo Carne, R$ 36–60, Salgado." width="240" /><br />
+      <sub><strong>Sugestões de pratos</strong><br />Seleção pelo cardápio real; aqui, o fallback sem Gemini</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/assets/screenshots/05-carrinho.png" alt="Carrinho com 2 unidades do Burger Cheddar Duplo, total estimado de R$ 85,80 e o botão Enviar pedido." width="240" /><br />
+      <sub><strong>Carrinho</strong><br />Quantidade, remoção, total estimado e envio</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/assets/screenshots/06-painel-restaurante.png" alt="Painel do restaurante com a fila de pedidos, filtros por status, o pedido #0001 da mesa 15 como Recebido e a navegação entre Pedidos e Produtos." width="240" /><br />
+      <sub><strong>Painel do restaurante</strong><br />Fila com filtros por status e gestão de produtos</sub>
+    </td>
+  </tr>
+</table>
+
+> A tela de sugestões mostra o caminho sem chave do Gemini: a API escolhe os pratos por regras determinísticas e o app avisa que “A Dinna não respondeu agora”. Não é texto gerado por IA. Com `GEMINI_API_KEY` configurada no backend, a mesma tela mostra a escolha do modelo, sempre limitada aos pratos do cardápio.
+
+<a id="documentacao-do-projeto"></a>
+
+## Documentação do projeto
+
+A gestão do Dinna está no Confluence: **[Documentação de Gestão do Projeto](https://jeancarlosaps.atlassian.net/wiki/spaces/DD/pages/9142274)**.
+
+O espaço reúne o planejamento, o backlog, os story maps, o roadmap, a matriz de riscos, o acompanhamento das sprints com burndowns, as reviews, as retrospectivas e as lições aprendidas. Este README cobre o código; o Confluence cobre o processo.
 
 ---
 
@@ -75,7 +126,7 @@ O Dinna encurta esse intervalo **sem substituir o atendimento humano**:
 
 - o cliente identifica a mesa, explora o cardápio, monta o carrinho, envia o pedido e acompanha o status;
 - o restaurante recebe os pedidos em fila, atualiza o preparo e mantém o cardápio em dia;
-- na release R2, o recurso **“Me ajuda a escolher”** vai sugerir pratos com base nas preferências do cliente e no cardápio real.
+- o recurso **“Me ajuda a escolher”** (R2) sugere pratos com base nas preferências do cliente e no cardápio real, com Gemini opcional e fallback determinístico no backend.
 
 > As personas e o problema vêm da Atividade 1 de Gestão de Projetos: Marina (cliente) e Ricardo (restaurante). As hipóteses ainda não foram validadas com usuários reais.
 
@@ -83,35 +134,39 @@ O Dinna encurta esse intervalo **sem substituir o atendimento humano**:
 
 ## 02 · Estado atual
 
-Fundação (R0) **em andamento**. MVVM, models, cliente HTTP e o mapa de rotas da SCRUM-23 já estão na `dev`. A home em `/` continua o fluxo `GET /health`. A `TableView` em `/table` valida a mesa e abre o cardápio em `/menu`, que lista os produtos por categoria. Tocar um produto abre o detalhe em bottom sheet, com descrição, ingredientes e a escolha da quantidade. O carrinho em `/cart` revisa quantidade, remoção e o total estimado, envia o pedido e mostra o erro ou a orientação para conferir antes de tentar de novo. A intenção desse envio permanece no dispositivo depois que o processo fecha. Com o sucesso gravado, `/order` mostra a confirmação e `/order/tracking` só identifica o pedido. `/product` e `/restaurant/menu` seguem como `RoutePlaceholder`. `/restaurant` abre a fila e `/restaurant/order` o detalhe do pedido.
+MVP da entrega acadêmica integrado na `dev`: fundação (R0), jornada operacional do cliente e do restaurante (R1) e “Me ajuda a escolher” (R2). A home em `/` separa as entradas **Sou cliente** e **Restaurante**, mostra o último pedido salvo e mantém a verificação de `GET /health`. O cliente valida a mesa, navega pelo cardápio, vê o detalhe do produto, monta o carrinho, envia o pedido e acompanha o status, que se atualiza sozinho. O restaurante acompanha a fila, avança o status dos pedidos e gerencia o cardápio. As evoluções da R3, como QR Code da mesa, seguem planejadas.
 
 | Item | Situação | Onde |
 |---|---|---|
 | Projeto Flutter (Android + iOS) | ✅ Executa no **Android Emulator** (API 36) e no **iOS Simulator** (iPhone 17) | `android/`, `ios/` |
-| MVVM com fluxo de referência | ✅ View → ViewModel → Repository → Service (`ApiClient`) → `GET /health` | `lib/features/home/`, [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
-| Tema Dinna (Material 3) | ✅ Paleta, tipografia (Inter e Source Serif 4) e botões e raios do Figma | `lib/app/theme/`, `assets/fonts/` |
-| URL e token da API | ✅ `API_BASE_URL` com padrão por plataforma; `API_TOKEN` opcional | `lib/core/config/` |
-| Cliente HTTP + erro uniforme | ✅ `ApiClient` + `ApiException` | `lib/core/network/` |
-| Testes, lint, format, CI | ✅ 550 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
-| Models (`Product`, `CartItem`, `Order`, `OrderItem`, `OrderStatus`, `Preference`) | ✅ Implementados em `lib/core/domain/` (SCRUM-22, PR #5 na `dev`) | [`lib/core/domain/`](lib/core/domain/) |
-| Rotas do cliente e do restaurante | ✅ SCRUM-23 concluída e mergeada pelo PR #6. Mapa em `AppRoutes`. Rota inicial `/`. `/table` abre `TableView`, `/menu` abre `MenuView`, `/order` abre a confirmação, `/order/tracking` identifica o pedido, `/restaurant` abre a fila e `/restaurant/order` o detalhe. `/product` e `/restaurant/menu` são placeholder | [`lib/app/router/`](lib/app/router/), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
-| Mesa (`/table`) | SCRUM-29. `TableViewModel` valida a mesa de 1 a 999; o campo aceita até 3 dígitos (vazia, zero, acima de 999 ou não numérica mostra erro abaixo do campo). “Ver cardápio” abre `AppRoutes.menu` com a mesa como `String` em `arguments`. “Acessar o painel” ainda usa `onPressed` vazio | [`lib/features/client/table/table_view.dart`](lib/features/client/table/table_view.dart) |
-| Cardápio (`/menu`) | SCRUM-30. `MenuViewModel` carrega `GET /products` e agrupa por categoria. Chips filtram a categoria e a busca filtra pelo nome, sem diferenciar maiúsculas nem acentos (SCRUM-33); sem resultado, a tela orienta e oferece “Limpar busca”. Produto indisponível aparece em cinza com o selo “Esgotado”. O header mostra a mesa recebida da navegação. Estados de carregando, erro com “Tentar de novo” e cardápio vazio | [`lib/features/menu/menu_view.dart`](lib/features/menu/menu_view.dart) |
-| Detalhe do produto | SCRUM-36. Bottom sheet sobre o cardápio, como no Figma: foto ou degradê, nome, descrição e a caixa “Ingredientes” na ordem da API. Sem ingredientes, a caixa orienta a consultar o restaurante. Seletor de quantidade de 1 a 99 e botão “Adicionar · R$ total” (SCRUM-37); o botão fica desabilitado até a inclusão no carrinho (SCRUM-39). Produto esgotado mostra aviso e desabilita quantidade e botão. Erro de rede com “Tentar de novo”; produto inexistente com “Voltar ao cardápio”. A mesa continua no cardápio; `/product` segue placeholder | [`lib/features/menu/product_detail_view.dart`](lib/features/menu/product_detail_view.dart) |
-| Dependências base (SCRUM-18) | Em andamento. HTTP pronto (`http` 1.6.0 e `ApiClient`); `sqflite` persiste carrinho e último pedido confirmado no banco local versionado; `path_provider` localiza o arquivo da intenção | `pubspec.yaml`, [`lib/core/network/`](lib/core/network/) |
-| Persistência local | SCRUM-70 implementa o repositório SQLite do carrinho; SCRUM-90 persiste a intenção do pedido em arquivo; SCRUM-72 guarda o último pedido confirmado em SQLite, no mesmo banco local versionado | [`lib/features/client/cart/`](lib/features/client/cart/), [`lib/features/client/order/`](lib/features/client/order/) |
-| Componentes visuais reutilizáveis | ✅ `DinnaLogo`, `DinnaBanner` e `DinnaEmptyState` (SCRUM-28) | `lib/shared/widgets/` |
-| Telas de R1, R2 e R3 | ⬜ Jornada planejada. Na `dev`, mesa, cardápio, carrinho, confirmação, fila e detalhe do pedido têm View. `/product` e `/restaurant/menu` seguem placeholder | — |
+| MVVM | ✅ View → ViewModel → Repository → Service (`ApiClient`) em todas as features | `lib/features/`, [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
+| Tema Dinna (Material 3) | ✅ Paleta, tipografia (Inter e Source Serif 4), botões e raios do Figma; `DinnaLogo`, `DinnaBanner` e `DinnaEmptyState` (SCRUM-28) | `lib/app/theme/`, `lib/shared/widgets/` |
+| URL e token da API | ✅ `API_BASE_URL` com padrão por plataforma; `API_TOKEN` opcional (SCRUM-92) | `lib/core/config/` |
+| Cliente HTTP + erro uniforme | ✅ `ApiClient` + `ApiException`; HTTP 401 tratado como recusa do envio (SCRUM-95) | `lib/core/network/` |
+| Testes, lint, format, CI | ✅ 657 testes · `flutter analyze --fatal-infos` · GitHub Actions | `test/`, `.github/` |
+| Home | ✅ Entradas do cliente e do restaurante e último pedido confirmado (SCRUM-98, SCRUM-72) | [`lib/features/home/`](lib/features/home/) |
+| Mesa (`/table`) | ✅ Valida a mesa de 1 a 999 e abre o cardápio com ela (SCRUM-29) | [`lib/features/client/table/`](lib/features/client/table/) |
+| Cardápio (`/menu`) | ✅ `GET /products` agrupado por categoria, chips de filtro, busca pelo nome sem diferenciar maiúsculas nem acentos, selo “Esgotado” e acesso ao carrinho (SCRUM-30, SCRUM-33, SCRUM-39) | [`lib/features/menu/`](lib/features/menu/) |
+| Detalhe do produto | ✅ Bottom sheet com descrição, ingredientes na ordem da API e quantidade de 1 a 99 (SCRUM-36, SCRUM-37, SCRUM-38) | [`lib/features/menu/product_detail_view.dart`](lib/features/menu/product_detail_view.dart) |
+| Carrinho (`/cart`) | ✅ Quantidade, remoção, total estimado e sessão persistida em SQLite (SCRUM-40, SCRUM-69, SCRUM-70) | [`lib/features/client/cart/`](lib/features/client/cart/) |
+| Envio do pedido | ✅ `POST /orders` com `Idempotency-Key`, intenção salva antes do envio, erro com nova tentativa e fluxo encerrado após a confirmação (SCRUM-41, SCRUM-43, SCRUM-90, SCRUM-93) | [`lib/features/client/order/`](lib/features/client/order/) |
+| Confirmação e acompanhamento | ✅ `/order` mostra o número público do pedido (SCRUM-44, SCRUM-94). `/order/tracking` consulta o status a cada 5 s e pausa em segundo plano (SCRUM-46) | [`lib/features/client/order/`](lib/features/client/order/) |
+| “Me ajuda a escolher” (`/recommendation`) | ✅ Formulário, sugestões com dados do cardápio, “Adicionar ao carrinho”, “Pedir outra sugestão” e preferências salvas no aparelho (SCRUM-61, SCRUM-64, SCRUM-65, SCRUM-66, SCRUM-68) | [`lib/features/recommendation/`](lib/features/recommendation/) |
+| Fila do restaurante (`/restaurant`) | ✅ Pedidos por status, atualização a cada 10 s, detalhe e avanço Recebido → Preparando → Pronto → Finalizado (SCRUM-48, SCRUM-49, SCRUM-50) | [`lib/features/restaurant/`](lib/features/restaurant/) |
+| Cardápio do restaurante (`/restaurant/menu`) | ✅ Lista, cadastro, edição e desativação (soft-delete) de produtos (SCRUM-55) | [`lib/features/restaurant/product_catalog_view.dart`](lib/features/restaurant/product_catalog_view.dart) |
+| Persistência local | ✅ SQLite versionado para carrinho e último pedido; intenção do pedido e preferências da recomendação em arquivo (SCRUM-70, SCRUM-72, SCRUM-90, SCRUM-68) | [`lib/core/storage/`](lib/core/storage/) |
+| Rota `/product` | ⬜ Segue como `RoutePlaceholder`: o detalhe do produto abre como bottom sheet sobre o cardápio | [`lib/app/router/`](lib/app/router/) |
+| R3 (QR Code da mesa e evoluções) | ⬜ Planejado | — |
 
 ---
 
-## 03 · Experiência planejada
+## 03 · Jornada do produto
 
 <p align="center">
-  <img src="docs/assets/readme/flow.svg" alt="Jornada planejada para R1. Cliente: mesa, cardápio, produto, carrinho, pedido e acompanhamento. O pedido vai para a fila do restaurante, que vê detalhes, atualiza o preparo e finaliza; o status volta para o cliente. O restaurante também mantém o cardápio." width="1600" loading="lazy" />
+  <img src="docs/assets/readme/flow.svg" alt="Jornada da R1. Cliente: mesa, cardápio, produto, carrinho, pedido e acompanhamento. O pedido vai para a fila do restaurante, que vê detalhes, atualiza o preparo e finaliza; o status volta para o cliente. O restaurante também mantém o cardápio." width="1600" loading="lazy" />
 </p>
 
-A jornada abaixo é a **R1 planejada**. Na `dev`, a etapa Mesa (`/table`, SCRUM-29) valida a mesa e abre o cardápio (`/menu`, SCRUM-30) com ela. O carrinho tem View em `/cart`. `/order` confirma o pedido gravado. `/order/tracking` não atualiza o status. O detalhe do produto abre como bottom sheet sobre o cardápio (SCRUM-36), com a quantidade (SCRUM-37). `/product` e `/restaurant/menu` ainda não têm View: o router mostra `RoutePlaceholder`. `/restaurant` mostra a fila e `/restaurant/order` o detalhe. Os nomes de rota já estão no mapa da SCRUM-23, mergeado pelo PR #6.
+A jornada da **R1** está implementada na `dev`, nas duas pontas. A única etapa que segue como planejada é a leitura da mesa por QR Code, prevista para a R3; hoje a mesa é digitada. O detalhe do produto abre como bottom sheet sobre o cardápio, por isso a rota `/product` continua como placeholder. O “Me ajuda a escolher” (R2) abre a partir do cardápio.
 
 **Cliente (Marina)**
 
@@ -147,7 +202,7 @@ A jornada abaixo é a **R1 planejada**. Na `dev`, a etapa Mesa (`/table`, SCRUM-
 | Navegação | `onGenerateRoute` nativo | A SCRUM-23, concluída no PR #6, manteve o `Navigator` do Flutter. O mapa está em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Lint | `flutter_lints` 6.0.0 + regras em `analysis_options.yaml` | Análise estrita (`strict-casts`, `strict-raw-types`) |
 
-Dependências diretas: `http` 1.6.0, `sqflite` 2.4.5, `path` 1.9.1, `path_provider` 2.1.6 e `cupertino_icons`, que veio no template do Flutter. `sqflite` persiste as linhas do carrinho e o último pedido confirmado; `path_provider` localiza o arquivo da intenção de pedido. Nenhuma biblioteca de estado ou injeção de dependência foi adicionada. A SCRUM-18 segue em andamento enquanto as demais necessidades de armazenamento local são integradas.
+Dependências diretas: `http` 1.6.0, `sqflite` 2.4.5, `path` 1.9.1, `path_provider` 2.1.6 e `cupertino_icons`, que veio no template do Flutter. `sqflite` persiste as linhas do carrinho e o último pedido confirmado; `path_provider` localiza os arquivos da intenção de pedido e das preferências da recomendação. Nenhuma biblioteca de estado ou injeção de dependência foi adicionada.
 
 <a id="arquitetura"></a>
 
@@ -192,32 +247,30 @@ lib/
 │   ├── router/
 │   │   ├── app_router.dart           # nomes de rota e onGenerateRoute
 │   │   └── route_placeholder.dart    # página mínima até a View da story
-│   └── theme/
-│       ├── dinna_colors.dart         # paleta Dinna
-│       └── dinna_theme.dart          # ThemeData Material 3
+│   └── theme/                        # paleta, layout e ThemeData Material 3
 ├── core/
 │   ├── config/app_config.dart        # API_BASE_URL e API_TOKEN por ambiente
-│   ├── domain/                       # models da SCRUM-22
-│   └── network/
-│       ├── api_client.dart           # Service HTTP
-│       └── api_exception.dart        # erro uniforme
+│   ├── domain/                       # models compartilhados (SCRUM-22)
+│   ├── network/                      # ApiClient (Service HTTP) e ApiException
+│   └── storage/dinna_database.dart   # banco SQLite local versionado
 ├── features/
+│   ├── home/                         # entradas do app e GET /health
 │   ├── client/
-│   │   └── table/
-│   │       └── table_view.dart       # layout da mesa em /table; botões sem navegação
-│   └── home/                         # fluxo de referência (tela provisória)
-│       ├── api_status_repository.dart
-│       ├── http_api_status_repository.dart
-│       ├── home_view.dart
-│       └── home_view_model.dart
+│   │   ├── table/                    # mesa
+│   │   ├── cart/                     # carrinho e sessão persistida
+│   │   └── order/                    # envio, confirmação e acompanhamento
+│   ├── menu/                         # cardápio e detalhe do produto
+│   ├── recommendation/               # "Me ajuda a escolher"
+│   └── restaurant/                   # fila, detalhe do pedido e cardápio do restaurante
 └── shared/
     └── widgets/                      # DinnaLogo, DinnaBanner, DinnaEmptyState
-test/                                 # espelha lib/ (550 testes)
+test/                                 # espelha lib/ (657 testes)
 docs/ARCHITECTURE.md                  # contrato das camadas MVVM
 docs/assets/readme/                   # ilustrações deste README
+docs/assets/screenshots/              # capturas do app usadas neste README
 ```
 
-A pasta `table` tem a mesa, `menu` o cardápio e `cart` a revisão. `product` e o painel do restaurante ainda não têm View. Os models compartilhados ficam em `lib/core/domain/`. Os widgets usados por mais de uma feature ficam em `lib/shared/widgets/`.
+Cada feature segue a mesma divisão em View, ViewModel e Repository. Os models compartilhados ficam em `lib/core/domain/`. Os widgets usados por mais de uma feature ficam em `lib/shared/widgets/`.
 
 O PR #3 também versionou dois PDFs em `lib/`: `Dinna · App Cliente Marina.pdf` (5,5 MB) e `Dinna · App Restaurante Ricardo.pdf` (8,6 MB). Eles não estão declarados como asset no `pubspec` e não são código da feature. Ficam no clone, ao lado dos fontes, e aumentam o repositório. A retirada fica para outro PR.
 
@@ -284,7 +337,7 @@ flutter run \
   --dart-define=API_TOKEN="<token-do-ambiente>"
 ```
 
-O `ApiClient` acrescenta `X-Dinna-Api-Token` em GET e POST somente se `API_TOKEN` tiver valor. `Content-Type`, `Idempotency-Key` e os demais headers do repositório permanecem. Não há login, JWT nem sessão de usuário.
+O `ApiClient` acrescenta `X-Dinna-Api-Token` em todas as chamadas (GET, POST, PUT, PATCH e DELETE) somente se `API_TOKEN` tiver valor. `Content-Type`, `Idempotency-Key` e os demais headers do repositório permanecem. Não há login, JWT nem sessão de usuário.
 
 `GET /health` segue sem autenticação no servidor. Se essa rota responde e uma rota de negócio volta **401** com `error.code` `UNAUTHORIZED`, o host está no ar e o token enviado não confere com o do servidor, ou o define não entrou na execução. Confira a presença dos dois defines sem imprimir o valor. A mensagem da API pode ir para a tela; o token não entra em log, relatório de erro nem interface. Não há nova tentativa automática. Carrinho, intenção de pedido e preferências da recomendação ficam no aparelho.
 
@@ -330,7 +383,7 @@ Na tela inicial, toque em **“Verificar conexão com a API”**: com a API no a
 | `dart format .` | Formata o código (largura 100) |
 | `dart format --output=none --set-exit-if-changed .` | Só verifica a formatação, como na CI |
 
-O que os 550 testes cobrem hoje (`flutter test` nesta branch):
+A `dev` tem 657 testes, todos verdes na CI do último merge (SCRUM-55). Principais áreas cobertas:
 
 | Arquivo | Cobre |
 |---|---|
@@ -345,7 +398,10 @@ O que os 550 testes cobrem hoje (`flutter test` nesta branch):
 | `test/features/client/table/` | Validação da mesa (vazia, zero, letras, normalização) e navegação para `/menu` com a mesa |
 | `test/features/menu/menu_view_model_test.dart`, `menu_view_test.dart` | Categorias sem repetir, filtro por categoria, busca pelo nome sem maiúsculas nem acentos (mantida ao recarregar), categoria que some ao recarregar volta para “Todos”, `load` depois do `dispose` sem efeito, falha e cardápio vazio; a tela mostra a mesa recebida, os produtos, o selo “Esgotado”, filtra pelo chip e pela busca, com aviso sem resultado, “Limpar busca” e busca dentro da categoria escolhida; o aviso cabe a 200% numa tela pequena. Erro e vazio cabem em 360×220. Chips a 200% e o nome a 300% não são cortados. A marca, a mesa curta e a mesa longa cabem no header a 300%. O recorte lateral não cobre os chips. Uma carga antiga não substitui a mais nova |
 | `test/features/menu/product_detail_view_test.dart` | Detalhe com ingredientes na ordem da API e sem ingredientes (aviso para consultar o restaurante), produto esgotado, erro com nova tentativa, produto inexistente (volta ao cardápio, sem nova tentativa), quantidade entre 1 e 99 com o total no botão, quantidade mantida após nova tentativa, botão desabilitado sem `onAdd` ou com produto esgotado, texto a 200% sem corte, leitura conjunta dos ingredientes e da quantidade no leitor de tela, abertura do bottom sheet pelo card do cardápio e conteúdo acima da barra de navegação do sistema |
-| `test/features/client/cart/sqflite_cart_repository_test.dart` | Esquema do carrinho, `lineId`, reabertura, `removeConfirmed` e falha de SQLite sem tratar o carrinho como vazio |
+| `test/features/client/cart/` | Esquema do carrinho, `lineId`, reabertura, `removeConfirmed`, falha de SQLite sem tratar o carrinho como vazio, quantidade, remoção e total |
+| `test/features/client/order/` | Envio com `Idempotency-Key`, intenção persistida, erro e nova tentativa, confirmação com número público, último pedido e acompanhamento periódico do status |
+| `test/features/recommendation/` | Contrato de `/ai/recommendation`, fallback, preferências salvas, “Adicionar ao carrinho” e “Pedir outra sugestão” |
+| `test/features/restaurant/` | Fila com atualização periódica, filtros por status, detalhe e avanço do pedido, cadastro, edição e desativação de produtos |
 | `test/shared/widgets/` | `DinnaBanner` com e sem título; `DinnaEmptyState` com e sem ação |
 
 ### `flutter analyze` em pastas com acento
@@ -374,42 +430,41 @@ Não há deploy, assinatura nem publicação em loja, e a CI não compila Androi
 
 ---
 
+<a id="integracao-backend"></a>
+
 ## 09 · Integração com o backend
 
 | Contrato | Situação | Usado por |
 |---|---|---|
-| `GET /health` → `{ "status": "ok" }` | **Implementado** nos dois lados | `ApiStatusRepository` |
-| Formato de erro `{ "error": { "code", "message" } }` | **Implementado** nos dois lados | `ApiClient` |
-| `/products`, `/orders`, `/orders/:id/status` | **Planejado no app** (R1). O contrato inicial está concluído no Jira (SCRUM-24); o app ainda não chama esses endpoints | — |
-| `/ai/recommendation` | **Planejado** (R2) | — |
+| `GET /health` → `{ "status": "ok" }` | **Integrado** | `ApiStatusRepository` |
+| Formato de erro `{ "error": { "code", "message" } }` | **Integrado** | `ApiClient` |
+| `GET /products`, `GET /products/:id` | **Integrado** (R1) | `HttpProductRepository` (cardápio e detalhe) |
+| `POST /products`, `PUT /products/:id`, `DELETE /products/:id` | **Integrado** (R1) | `HttpProductRepository` (cardápio do restaurante) |
+| `POST /orders` com `Idempotency-Key` | **Integrado** (R1) | `HttpOrderRepository` (envio do pedido) |
+| `GET /orders`, `GET /orders/:id` | **Integrado** (R1) | `HttpOrderRepository` (fila, detalhe e acompanhamento) |
+| `PATCH /orders/:id/status` | **Integrado** (R1) | `HttpOrderRepository` (avanço do status) |
+| `POST /ai/recommendation` | **Integrado** (R2) | `HttpRecommendationRepository` |
 
-Fonte do contrato: [`dinna-api/docs/api-contract.md`](https://github.com/jeancarlosaps/dinna-api/blob/main/docs/api-contract.md). A SCRUM-24 está concluída no Jira.
+Fonte do contrato: [`dinna-api/docs/api-contract.md`](https://github.com/jeancarlosaps/dinna-api/blob/dev/docs/api-contract.md), aceito na SCRUM-24.
+
+A recomendação respeita o campo `provider` da resposta. Com `answered`, a lista veio do Gemini, sempre validada contra o cardápio. Com `unavailable`, a API usou o fallback determinístico e o app mostra o aviso “A Dinna não respondeu agora”, sem apresentar a lista como resposta de IA.
 
 <a id="roadmap"></a>
 
 ## 10 · Roadmap
 
 <p align="center">
-  <img src="docs/assets/readme/roadmap.svg" alt="Roadmap ilustrado da R0 à R3. A figura ainda marca models, rotas e contrato como pendentes; a tabela abaixo é o estado em 25/10/2026. R1, R2 e R3 seguem planejados." width="1600" loading="lazy" />
+  <img src="docs/assets/readme/roadmap.svg" alt="Roadmap ilustrado da R0 à R3, no desenho inicial do projeto. A situação atual de cada release está na tabela logo abaixo." width="1600" loading="lazy" />
 </p>
 
-A ilustração acima é o desenho inicial da fundação e ainda mostra models, rotas e contrato em aberto. O arquivo SVG não foi alterado. A tabela abaixo é o estado consultado em 25/10/2026 na `dev` (`79b8156`).
+A ilustração é o desenho inicial do roadmap e não acompanha o andamento. A situação abaixo reflete o código na `dev`. O acompanhamento por sprint, com burndowns e reviews, está no [Confluence](#documentacao-do-projeto).
 
-Situação das tasks R0 que tocam este repositório. A coluna **Jira** é o status no board em 25/10/2026; a coluna **Código** é o que existe nesta branch.
-
-| Issue | Task | Jira | Código |
-|---|---|---|---|
-| SCRUM-16 | Criar e configurar o projeto Flutter | Concluído | Executa no Android e no iOS; estrutura de pastas definida |
-| SCRUM-18 | Configurar dependências base (HTTP e armazenamento local) | Em andamento | HTTP pronto: `http` 1.6.0 e `ApiClient`; `sqflite` e `path` adicionados para persistência local do carrinho |
-| SCRUM-19 | Estruturar a arquitetura MVVM | Concluído | Implementada. Contrato em `docs/ARCHITECTURE.md`; `GET /health` é o fluxo de referência |
-| SCRUM-22 | Definir os models principais | Concluído | Implementados em `lib/core/domain/` e mergeados na `dev` pelo PR #5 |
-| SCRUM-23 | Configurar a navegação base | Concluído | Mergeada na `dev` pelo PR #6. Mapa em `AppRoutes`. Rota inicial `/`. Hoje mesa, cardápio, carrinho, confirmação, acompanhamento, fila e detalhe têm View. `/product` e `/restaurant/menu` seguem placeholder |
-| SCRUM-24 | Definir o contrato inicial da API REST | Concluído | Contrato aceito. O app consome `GET /health`. Os outros endpoints do contrato ainda não são chamados daqui |
-| SCRUM-26 | Configurar o cliente HTTP | Concluído | `ApiClient` centralizado com erro uniforme, revisado e concluído |
-| SCRUM-27 | Definir a persistência local | Em andamento | Decisão registrada no Jira: SQLite local via `sqflite`; implementação do carrinho está na SCRUM-70 |
-| SCRUM-28 | Estrutura visual base | Em análise | Tema pronto na `dev`. Componentes reutilizáveis ainda sem merge, na branch `feature/SCRUM-28-tipografia-componentes` |
-
-A entrega acadêmica é 14/11/2026. As releases R1, R2 e R3 seguem sem data própria no Jira. A SCRUM-23 está concluída no Jira e na `dev`. A SCRUM-18 está em andamento: HTTP pronto e persistência do carrinho em implementação na SCRUM-70. A situação histórica das tasks R0 abaixo registra o Jira em 25/10/2026.
+| Release | Escopo | Situação no código |
+|---|---|---|
+| **R0 · Fundação** | Projeto Flutter, MVVM, models, rotas, contrato REST, cliente HTTP, tema e persistência local | ✅ Concluída |
+| **R1 · MVP operacional** | Mesa, cardápio, detalhe, carrinho, envio e acompanhamento do pedido; fila, status e cardápio do restaurante | ✅ Implementada |
+| **R2 · “Me ajuda a escolher”** | Formulário de preferências, sugestões do cardápio real, adicionar ao carrinho, outra sugestão e preferências salvas | ✅ Implementada, com Gemini opcional e fallback determinístico no backend |
+| **R3 · Evoluções** | QR Code da mesa e demais melhorias | ⬜ Planejada |
 
 ---
 
@@ -435,15 +490,15 @@ Os focos vêm da distribuição de issues no backlog (Atividade 2) e não são c
 
 ## 13 · Próximos passos
 
-1. **SCRUM-18:** o HTTP e o `sqflite` do carrinho já estão no `pubspec`. Preferências locais continuam fora deste escopo.
-2. **SCRUM-39:** concluir o acesso ao carrinho a partir do cardápio. A inclusão pelo detalhe já usa a `CartSession` persistida.
-3. **SCRUM-28:** componentes Dinna reutilizáveis, em análise na branch `feature/SCRUM-28-tipografia-componentes`. O tema já está na `dev`.
-4. **Cliente:** “Acessar o painel” da `TableView` ainda não navega. Se a rota inicial passar a ser `/table`, os testes que esperam a home em `/` precisam ser adaptados.
-5. **PDFs em `lib/`:** o PR #3 versionou `Dinna · App Cliente Marina.pdf` (5,5 MB) e `Dinna · App Restaurante Ricardo.pdf` (8,6 MB) ao lado do código. Não são asset do app. A organização fica para outro PR.
-6. **Ambiente:** instalar `cmdline-tools` para o `flutter doctor` ficar verde. O debug Android já executa sem esse componente.
+1. **R3:** leitura da mesa por QR Code e as demais evoluções planejadas.
+2. **Recomendação com Gemini:** configurar `GEMINI_API_KEY` no backend do ambiente de apresentação. Sem a chave, a sugestão segue pelo fallback determinístico.
+3. **API hospedada:** o deploy no Railway está documentado na API, mas a URL pública ainda não foi confirmada neste README.
+4. **PDFs em `lib/`:** o PR #3 versionou `Dinna · App Cliente Marina.pdf` (5,5 MB) e `Dinna · App Restaurante Ricardo.pdf` (8,6 MB) ao lado do código. Não são asset do app. A organização fica para outro PR.
+5. **Ambiente:** instalar `cmdline-tools` para o `flutter doctor` ficar verde. O debug Android já executa sem esse componente.
 
 ## 14 · Links
 
+- Documentação de Gestão do Projeto (Confluence): <https://jeancarlosaps.atlassian.net/wiki/spaces/DD/pages/9142274>
 - Jira (SCRUM): <https://jeancarlosaps.atlassian.net/jira/software/projects/SCRUM/boards/1>
 - Figma: <https://www.figma.com/design/xYeeN6UBmj3lF458GF9qwA/Dinna-%C2%B7-App-Cliente?node-id=0-1>
 - Backend REST do Dinna: <https://github.com/jeancarlosaps/dinna-api>
