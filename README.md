@@ -136,7 +136,7 @@ Legenda: ✅ implementado e coberto por testes automatizados · ⬜ planejado.
 | Envio do pedido | ✅ Envio idempotente (`Idempotency-Key`), nova tentativa em caso de erro e confirmação com número público | [`lib/features/client/order/`](lib/features/client/order/) |
 | Acompanhamento do pedido | ✅ Status atualizado a cada 5 s enquanto a tela está visível | [`lib/features/client/order/`](lib/features/client/order/) |
 | “Me ajuda a escolher” | ✅ Formulário, sugestões do cardápio, adicionar ao carrinho, pedir outra sugestão e preferências salvas | [`lib/features/recommendation/`](lib/features/recommendation/) |
-| Sugestão pelo Gemini | ✅ Validada com o provedor real pelo endpoint e pelo app. Opcional: depende de `GEMINI_API_KEY` no backend; sem chave, com timeout ou falha do provedor, a API usa o fallback determinístico | [dinna-api](https://github.com/jeancarlosaps/dinna-api#recomendacao-de-pratos) |
+| Sugestão pelo Gemini | ✅ Validada com o provedor real pelo endpoint e pelo app. Opcional: depende de `GEMINI_API_KEY` no backend; sem chave, com timeout ou falha do provedor, a API usa o fallback determinístico | [dinna-api](https://github.com/jeancarlosaps/dinna-api/blob/dev/README.md#recomenda%C3%A7%C3%A3o-de-pratos) |
 | Fila do restaurante | ✅ Pedidos por status, atualização a cada 10 s, detalhe e avanço Recebido → Preparando → Pronto → Finalizado | [`lib/features/restaurant/`](lib/features/restaurant/) |
 | Cardápio do restaurante | ✅ Cadastro, edição e desativação de produtos | [`lib/features/restaurant/`](lib/features/restaurant/) |
 | Token de acesso à API | ✅ Header `X-Dinna-Api-Token` opcional, definido na compilação | [`lib/core/config/`](lib/core/config/) |
@@ -290,15 +290,17 @@ flutter doctor
 
 ### 3. Clone e instale as dependências
 
+A versão integrada está na `dev`. Enquanto a `main` não recebe essa versão, clone selecionando a `dev`:
+
 ```bash
-git clone https://github.com/jeancarlosaps/dinna-flutter.git
+git clone --branch dev https://github.com/jeancarlosaps/dinna-flutter.git
 cd dinna-flutter
 flutter pub get
 ```
 
 ### 4. Suba a API
 
-O app conversa com o [dinna-api](https://github.com/jeancarlosaps/dinna-api) na porta `3333`. Siga o README da API e deixe `npm run dev` rodando.
+O app conversa com o [dinna-api](https://github.com/jeancarlosaps/dinna-api/tree/dev) na porta `3333`. Clone a API também na `dev` (`git clone --branch dev https://github.com/jeancarlosaps/dinna-api.git`), siga o README dela e deixe `npm run dev` rodando.
 
 ### 5. Configure a URL da API
 
