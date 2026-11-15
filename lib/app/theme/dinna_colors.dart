@@ -14,4 +14,15 @@ abstract final class DinnaColors {
   static const line = Color(0xFFE6DAD0);
   static const error = Color(0xFFA63A2B);
   static const white = Color(0xFFFFFFFF);
+
+  /// Degradês do Figma para produto sem foto, do tom claro ao escuro.
+  static const productPlaceholders = <(Color, Color)>[
+    (Color(0xFFE07A45), Color(0xFFB4532A)),
+    (Color(0xFFD8B27E), Color(0xFFA9844F)),
+    (Color(0xFF6B5D55), Color(0xFF3F332D)),
+    (Color(0xFFEC9A84), Color(0xFFCB644E)),
+    (Color(0xFFE2655A), Color(0xFFAE3A31)),
+    (Color(0xFFF0CD74), Color(0xFFD6A13E)),
+    (Color(0xFF94B07F), Color(0xFF5E7355)),
+  ];
 }

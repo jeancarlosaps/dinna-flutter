@@ -25,4 +25,19 @@ void main() {
       expect(url.toString(), 'http://192.168.0.10:3333');
     });
   });
+
+  group('AppConfig.resolveApiToken', () {
+    test('define ausente ou em branco não autentica', () {
+      expect(AppConfig.resolveApiToken(''), isNull);
+      expect(AppConfig.resolveApiToken('   '), isNull);
+    });
+
+    test('define preenchido devolve o token sem espaço nas pontas', () {
+      expect(AppConfig.resolveApiToken('  token-de-teste  '), 'token-de-teste');
+    });
+
+    test('execução sem API_TOKEN deixa o token nulo', () {
+      expect(AppConfig.fromEnvironment().apiToken, isNull);
+    });
+  });
 }
