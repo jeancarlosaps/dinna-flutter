@@ -31,7 +31,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/jeancarlosaps/dinna-flutter/actions/workflows/ci.yml"><img src="https://github.com/jeancarlosaps/dinna-flutter/actions/workflows/ci.yml/badge.svg?branch=main" alt="Status da CI na branch main" /></a>
+  <a href="https://github.com/jeancarlosaps/dinna-flutter/actions/workflows/ci.yml"><img src="https://github.com/jeancarlosaps/dinna-flutter/actions/workflows/ci.yml/badge.svg?event=pull_request" alt="Status da CI nos pull requests" /></a>
   <img src="https://img.shields.io/badge/Flutter-3.47.7-B4532A?logo=flutter&amp;logoColor=white" alt="Flutter 3.47.7" />
   <img src="https://img.shields.io/badge/Dart-3.13.5-5E7355?logo=dart&amp;logoColor=white" alt="Dart 3.13.5" />
   <img src="https://img.shields.io/badge/Material-3-2A211C" alt="Material 3" />
@@ -102,7 +102,7 @@ Capturas reais do app no iOS Simulator, conectado à API local com o cardápio d
   </tr>
 </table>
 
-> A tela de sugestões foi capturada sem chave do Gemini no backend. Nesse caso, a API escolhe os pratos por regras determinísticas e o app avisa que “A Dinna não respondeu agora”: a lista **não** é gerada por IA. Com `GEMINI_API_KEY` configurada, o modelo escolhe entre os pratos elegíveis do cardápio.
+> A tela de sugestões foi capturada sem chave do Gemini no backend. Nesse caso, a API escolhe os pratos por regras determinísticas e o app avisa que “A Dinna não respondeu agora”: a lista **não** é gerada por IA. Com `GEMINI_API_KEY` válida e o provedor disponível, o backend pode usar o Gemini para escolher entre os pratos elegíveis do cardápio; o campo `provider` da resposta diz qual caminho foi usado.
 
 ---
 
@@ -136,7 +136,7 @@ Legenda: ✅ implementado e coberto por testes automatizados · 🟡 implementad
 | Envio do pedido | ✅ Envio idempotente (`Idempotency-Key`), nova tentativa em caso de erro e confirmação com número público | [`lib/features/client/order/`](lib/features/client/order/) |
 | Acompanhamento do pedido | ✅ Status atualizado a cada 5 s enquanto a tela está visível | [`lib/features/client/order/`](lib/features/client/order/) |
 | “Me ajuda a escolher” | ✅ Formulário, sugestões do cardápio, adicionar ao carrinho, pedir outra sugestão e preferências salvas | [`lib/features/recommendation/`](lib/features/recommendation/) |
-| Sugestão pelo Gemini | 🟡 Depende de `GEMINI_API_KEY` no backend. O caminho é testado com provedor simulado; sem chave, a API responde pelo fallback determinístico | [dinna-api](https://github.com/jeancarlosaps/dinna-api#recomendacao-de-pratos) |
+| Sugestão pelo Gemini | 🟡 Opcional, depende de `GEMINI_API_KEY` no backend. Coberto por testes com provedor simulado; uma resposta real com chave válida ainda não foi validada. Sem chave, com timeout ou falha do provedor, a API usa o fallback determinístico | [dinna-api](https://github.com/jeancarlosaps/dinna-api#recomendacao-de-pratos) |
 | Fila do restaurante | ✅ Pedidos por status, atualização a cada 10 s, detalhe e avanço Recebido → Preparando → Pronto → Finalizado | [`lib/features/restaurant/`](lib/features/restaurant/) |
 | Cardápio do restaurante | ✅ Cadastro, edição e desativação de produtos | [`lib/features/restaurant/`](lib/features/restaurant/) |
 | Token de acesso à API | ✅ Header `X-Dinna-Api-Token` opcional, definido na compilação | [`lib/core/config/`](lib/core/config/) |
@@ -421,23 +421,22 @@ A recomendação respeita o campo `provider` da resposta. Com `answered`, a list
 ## 10 · Roadmap
 
 <p align="center">
-  <img src="docs/assets/readme/roadmap.svg" alt="Roadmap ilustrado da R0 à R3, no desenho inicial do projeto. A situação atual de cada release está na tabela logo abaixo." width="1600" loading="lazy" />
+  <img src="docs/assets/readme/roadmap.svg" alt="Roadmap do Dinna. R0 Fundação entregue. R1 MVP Operacional funcional, com a rota /product provisória. R2 Dinna implementada com ressalva: Me ajuda a escolher, preferências e fallback prontos; o Gemini depende de chave. R3 Evoluções planejada." width="1600" loading="lazy" />
 </p>
 
-A ilustração mostra o planejamento inicial. A situação atual:
+A ilustração e a tabela mostram a situação atual:
 
 | Release | Escopo | Situação |
 |---|---|---|
 | **R0 · Fundação** | Projeto Flutter, MVVM, models, rotas, contrato REST, cliente HTTP, tema e persistência local | ✅ Implementada |
-| **R1 · MVP operacional** | Mesa, cardápio, detalhe, carrinho, envio e acompanhamento do pedido; fila, status e cardápio do restaurante | ✅ Implementada |
-| **R2 · “Me ajuda a escolher”** | Preferências, sugestões do cardápio real, adicionar ao carrinho, outra sugestão e preferências salvas | 🟡 Implementada; sugestão pelo Gemini depende de chave no backend |
+| **R1 · MVP operacional** | Mesa, cardápio, detalhe, carrinho, envio e acompanhamento do pedido; fila, status e cardápio do restaurante | ✅ MVP funcional, com pendências abaixo |
+| **R2 · “Me ajuda a escolher”** | Preferências, sugestões do cardápio real, adicionar ao carrinho, outra sugestão e preferências salvas | 🟡 Implementada com fallback determinístico; a escolha pelo Gemini depende de chave e ainda não foi validada com o provedor real |
 | **R3 · Evoluções** | Leitura da mesa por QR Code e demais melhorias | ⬜ Planejada |
 
 Pendências técnicas conhecidas:
 
 - a rota `/product` ainda usa a página provisória; o detalhe funciona como bottom sheet;
-- os PDFs de protótipo em `lib/` (`Dinna · App Cliente Marina.pdf` e `Dinna · App Restaurante Ricardo.pdf`) não são assets do app e devem sair da pasta de código;
-- a ilustração `roadmap.svg` ainda mostra o planejamento inicial.
+- os PDFs de protótipo em `lib/` (`Dinna · App Cliente Marina.pdf` e `Dinna · App Restaurante Ricardo.pdf`) não são assets do app e devem sair da pasta de código.
 
 ---
 
@@ -455,15 +454,18 @@ O fluxo completo está em [CONTRIBUTING.md](CONTRIBUTING.md). Em resumo:
 2. Crie a branch a partir da `dev`: `feature/SCRUM-<n>-descricao`, `fix/SCRUM-<n>-descricao`, `chore/SCRUM-<n>-descricao` ou `docs/<descricao>`.
 3. Valide antes do PR: `dart format . && flutter analyze --fatal-infos && flutter test`.
 4. Abra o PR para a `dev` usando o [template](.github/pull_request_template.md), com a CI verde e a revisão de outro integrante.
+5. A `dev` é promovida para a `main` por PR depois de validada.
 
 ## 12 · Equipe
 
-| Integrante | Foco no projeto |
+| Integrante | Responsabilidades |
 |---|---|
-| Jean Carlos | Arquitetura e fundação do app, QA de arquitetura |
-| Felipe Souza | Contrato REST, cliente HTTP, backend e fluxo do restaurante |
-| Gabriel Abreu | Experiência do cliente e estrutura visual |
-| João Victor | Persistência local e evoluções |
+| Jean Carlos | Arquitetura, coordenação técnica e integração |
+| Gabriel Abreu | Fluxos do cliente, recomendação e QA |
+| Felipe Souza | Operação do restaurante, produtos e integração REST |
+| João Victor Dias Ramos | Carrinho e persistência |
+
+O trabalho é colaborativo: as responsabilidades indicam o foco de cada integrante, não cargos formais.
 
 <a id="documentacao-do-projeto"></a>
 
