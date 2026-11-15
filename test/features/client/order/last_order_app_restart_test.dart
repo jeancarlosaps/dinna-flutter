@@ -235,13 +235,27 @@ Future<void> _flushIo(WidgetTester tester) async {
   await tester.pump();
 }
 
-Future<void> _until(WidgetTester tester, Finder finder) async {
-  for (var attempt = 0; attempt < 50; attempt++) {
+/// Espera o [finder] aparecer alternando `pump` e `runAsync`.
+///
+/// O I/O real (SQLite e arquivo de intenção) só conclui dentro de `runAsync`,
+/// e a continuação de cada `await` só roda no `pump` seguinte. O envio do
+/// pedido encadeia cerca de 30 desses passos, um por volta. Em runner lento um
+/// passo pode precisar de várias voltas, então o limite é tempo real, não um
+/// número fixo de voltas. Quando o widget aparece cedo, a espera termina cedo.
+Future<void> _until(
+  WidgetTester tester,
+  Finder finder, {
+  Duration timeout = const Duration(seconds: 15),
+}) async {
+  final elapsed = Stopwatch()..start();
+  while (true) {
     await tester.pump(const Duration(milliseconds: 50));
     if (finder.evaluate().isNotEmpty) return;
+    if (elapsed.elapsed > timeout) {
+      fail('Não apareceu em ${timeout.inSeconds} s: $finder');
+    }
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
   }
-  fail('Não apareceu: $finder');
 }
 
 Widget _app({
