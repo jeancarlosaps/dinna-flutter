@@ -88,8 +88,8 @@ Capturas reais do app no iOS Simulator, conectado à API local com o cardápio d
   </tr>
   <tr>
     <td align="center" width="33%">
-      <img src="docs/assets/screenshots/04-sugestoes.png" alt="Sugestão de prato com o aviso A Dinna não respondeu agora, indicando o fallback do cardápio, e o Burger Cheddar Duplo com o motivo Carne, R$ 36–60, Salgado." width="240" /><br />
-      <sub><strong>Sugestões de pratos</strong><br />Fallback determinístico</sub>
+      <img src="docs/assets/screenshots/04-sugestoes.png" alt="Sugestão de prato escolhida pelo Gemini: Burger Smoke, R$ 38,90, com o motivo Carne, R$ 36–60, Salgado, sem cebola na lista cadastrada, e os botões Adicionar ao carrinho, Pedir outra sugestão e Ver cardápio completo." width="240" /><br />
+      <sub><strong>Sugestões de pratos</strong><br />Escolha pelo Gemini</sub>
     </td>
     <td align="center" width="33%">
       <img src="docs/assets/screenshots/05-carrinho.png" alt="Carrinho com 2 unidades do Burger Cheddar Duplo, total estimado de R$ 85,80 e o botão Enviar pedido." width="240" /><br />
@@ -102,7 +102,7 @@ Capturas reais do app no iOS Simulator, conectado à API local com o cardápio d
   </tr>
 </table>
 
-> A tela de sugestões foi capturada sem chave do Gemini no backend. Nesse caso, a API escolhe os pratos por regras determinísticas e o app avisa que “A Dinna não respondeu agora”: a lista **não** é gerada por IA. Com `GEMINI_API_KEY` válida e o provedor disponível, o backend pode usar o Gemini para escolher entre os pratos elegíveis do cardápio; o campo `provider` da resposta diz qual caminho foi usado.
+> A tela de sugestões mostra uma escolha real do Gemini (`provider: "answered"`), sempre limitada aos pratos elegíveis do cardápio. A chave é opcional: sem `GEMINI_API_KEY`, com timeout ou falha do provedor, a API escolhe os pratos por regras determinísticas e o app avisa que “A Dinna não respondeu agora”. Nesse caso a lista **não** é gerada por IA.
 
 ---
 
@@ -124,7 +124,7 @@ O Dinna encurta esse intervalo **sem substituir o atendimento humano**:
 
 ## 02 · Funcionalidades
 
-Legenda: ✅ implementado e coberto por testes automatizados · 🟡 implementado com ressalva · ⬜ planejado.
+Legenda: ✅ implementado e coberto por testes automatizados · ⬜ planejado.
 
 | Funcionalidade | Situação | Onde |
 |---|---|---|
@@ -136,7 +136,7 @@ Legenda: ✅ implementado e coberto por testes automatizados · 🟡 implementad
 | Envio do pedido | ✅ Envio idempotente (`Idempotency-Key`), nova tentativa em caso de erro e confirmação com número público | [`lib/features/client/order/`](lib/features/client/order/) |
 | Acompanhamento do pedido | ✅ Status atualizado a cada 5 s enquanto a tela está visível | [`lib/features/client/order/`](lib/features/client/order/) |
 | “Me ajuda a escolher” | ✅ Formulário, sugestões do cardápio, adicionar ao carrinho, pedir outra sugestão e preferências salvas | [`lib/features/recommendation/`](lib/features/recommendation/) |
-| Sugestão pelo Gemini | 🟡 Opcional, depende de `GEMINI_API_KEY` no backend. Coberto por testes com provedor simulado; uma resposta real com chave válida ainda não foi validada. Sem chave, com timeout ou falha do provedor, a API usa o fallback determinístico | [dinna-api](https://github.com/jeancarlosaps/dinna-api#recomendacao-de-pratos) |
+| Sugestão pelo Gemini | ✅ Validada com o provedor real pelo endpoint e pelo app. Opcional: depende de `GEMINI_API_KEY` no backend; sem chave, com timeout ou falha do provedor, a API usa o fallback determinístico | [dinna-api](https://github.com/jeancarlosaps/dinna-api#recomendacao-de-pratos) |
 | Fila do restaurante | ✅ Pedidos por status, atualização a cada 10 s, detalhe e avanço Recebido → Preparando → Pronto → Finalizado | [`lib/features/restaurant/`](lib/features/restaurant/) |
 | Cardápio do restaurante | ✅ Cadastro, edição e desativação de produtos | [`lib/features/restaurant/`](lib/features/restaurant/) |
 | Token de acesso à API | ✅ Header `X-Dinna-Api-Token` opcional, definido na compilação | [`lib/core/config/`](lib/core/config/) |
@@ -421,7 +421,7 @@ A recomendação respeita o campo `provider` da resposta. Com `answered`, a list
 ## 10 · Roadmap
 
 <p align="center">
-  <img src="docs/assets/readme/roadmap.svg" alt="Roadmap do Dinna. R0 Fundação entregue. R1 MVP Operacional funcional, com a rota /product provisória. R2 Dinna implementada com ressalva: Me ajuda a escolher, preferências e fallback prontos; o Gemini depende de chave. R3 Evoluções planejada." width="1600" loading="lazy" />
+  <img src="docs/assets/readme/roadmap.svg" alt="Roadmap do Dinna. R0 Fundação entregue. R1 MVP Operacional funcional, com a rota /product provisória. R2 Dinna implementada: Me ajuda a escolher, preferências salvas, escolha pelo Gemini com chave opcional e fallback determinístico. R3 Evoluções planejada." width="1600" loading="lazy" />
 </p>
 
 A ilustração e a tabela mostram a situação atual:
@@ -430,7 +430,7 @@ A ilustração e a tabela mostram a situação atual:
 |---|---|---|
 | **R0 · Fundação** | Projeto Flutter, MVVM, models, rotas, contrato REST, cliente HTTP, tema e persistência local | ✅ Implementada |
 | **R1 · MVP operacional** | Mesa, cardápio, detalhe, carrinho, envio e acompanhamento do pedido; fila, status e cardápio do restaurante | ✅ MVP funcional, com pendências abaixo |
-| **R2 · “Me ajuda a escolher”** | Preferências, sugestões do cardápio real, adicionar ao carrinho, outra sugestão e preferências salvas | 🟡 Implementada com fallback determinístico; a escolha pelo Gemini depende de chave e ainda não foi validada com o provedor real |
+| **R2 · “Me ajuda a escolher”** | Preferências, sugestões do cardápio real, adicionar ao carrinho, outra sugestão e preferências salvas | ✅ Implementada; escolha pelo Gemini validada com o provedor real e fallback determinístico |
 | **R3 · Evoluções** | Leitura da mesa por QR Code e demais melhorias | ⬜ Planejada |
 
 Pendências técnicas conhecidas:
