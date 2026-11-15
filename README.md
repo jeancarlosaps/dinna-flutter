@@ -31,7 +31,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/jeancarlosaps/dinna-flutter/actions/workflows/ci.yml"><img src="https://github.com/jeancarlosaps/dinna-flutter/actions/workflows/ci.yml/badge.svg?event=pull_request" alt="Status da CI nos pull requests" /></a>
+  <a href="https://github.com/jeancarlosaps/dinna-flutter/actions/workflows/ci.yml"><img src="https://github.com/jeancarlosaps/dinna-flutter/actions/workflows/ci.yml/badge.svg?branch=main" alt="Status da CI na branch main" /></a>
   <img src="https://img.shields.io/badge/Flutter-3.47.7-B4532A?logo=flutter&amp;logoColor=white" alt="Flutter 3.47.7" />
   <img src="https://img.shields.io/badge/Dart-3.13.5-5E7355?logo=dart&amp;logoColor=white" alt="Dart 3.13.5" />
   <img src="https://img.shields.io/badge/Material-3-2A211C" alt="Material 3" />
@@ -63,7 +63,7 @@ flowchart LR
   class API api
 ```
 
-O app consome todos os endpoints do [contrato REST](https://github.com/jeancarlosaps/dinna-api/blob/dev/docs/api-contract.md). A relação completa está em [Integração com o backend](#integracao-backend).
+O app consome todos os endpoints do [contrato REST](https://github.com/jeancarlosaps/dinna-api/blob/main/docs/api-contract.md). A relação completa está em [Integração com o backend](#integracao-backend).
 
 <a id="conheca-o-dinna"></a>
 
@@ -136,7 +136,7 @@ Legenda: ✅ implementado e coberto por testes automatizados · ⬜ planejado.
 | Envio do pedido | ✅ Envio idempotente (`Idempotency-Key`), nova tentativa em caso de erro e confirmação com número público | [`lib/features/client/order/`](lib/features/client/order/) |
 | Acompanhamento do pedido | ✅ Status atualizado a cada 5 s enquanto a tela está visível | [`lib/features/client/order/`](lib/features/client/order/) |
 | “Me ajuda a escolher” | ✅ Formulário, sugestões do cardápio, adicionar ao carrinho, pedir outra sugestão e preferências salvas | [`lib/features/recommendation/`](lib/features/recommendation/) |
-| Sugestão pelo Gemini | ✅ Validada com o provedor real pelo endpoint e pelo app. Opcional: depende de `GEMINI_API_KEY` no backend; sem chave, com timeout ou falha do provedor, a API usa o fallback determinístico | [dinna-api](https://github.com/jeancarlosaps/dinna-api/blob/dev/README.md#recomenda%C3%A7%C3%A3o-de-pratos) |
+| Sugestão pelo Gemini | ✅ Validada com o provedor real pelo endpoint e pelo app. Opcional: depende de `GEMINI_API_KEY` no backend; sem chave, com timeout ou falha do provedor, a API usa o fallback determinístico | [dinna-api](https://github.com/jeancarlosaps/dinna-api/blob/main/README.md#recomenda%C3%A7%C3%A3o-de-pratos) |
 | Fila do restaurante | ✅ Pedidos por status, atualização a cada 10 s, detalhe e avanço Recebido → Preparando → Pronto → Finalizado | [`lib/features/restaurant/`](lib/features/restaurant/) |
 | Cardápio do restaurante | ✅ Cadastro, edição e desativação de produtos | [`lib/features/restaurant/`](lib/features/restaurant/) |
 | Token de acesso à API | ✅ Header `X-Dinna-Api-Token` opcional, definido na compilação | [`lib/core/config/`](lib/core/config/) |
@@ -290,17 +290,15 @@ flutter doctor
 
 ### 3. Clone e instale as dependências
 
-A versão integrada está na `dev`. Enquanto a `main` não recebe essa versão, clone selecionando a `dev`:
-
 ```bash
-git clone --branch dev https://github.com/jeancarlosaps/dinna-flutter.git
+git clone https://github.com/jeancarlosaps/dinna-flutter.git
 cd dinna-flutter
 flutter pub get
 ```
 
 ### 4. Suba a API
 
-O app conversa com o [dinna-api](https://github.com/jeancarlosaps/dinna-api/tree/dev) na porta `3333`. Clone a API também na `dev` (`git clone --branch dev https://github.com/jeancarlosaps/dinna-api.git`), siga o README dela e deixe `npm run dev` rodando.
+O app conversa com o [dinna-api](https://github.com/jeancarlosaps/dinna-api) na porta `3333`. Siga o README da API e deixe `npm run dev` rodando.
 
 ### 5. Configure a URL da API
 
@@ -340,7 +338,7 @@ Na tela inicial, toque em **“Verificar conexão com a API”**: com a API no a
 
 ### API protegida por token
 
-A API local não pede token. Uma API hospedada pode exigir o header `X-Dinna-Api-Token` (veja [`docs/deploy.md`](https://github.com/jeancarlosaps/dinna-api/blob/dev/docs/deploy.md) na API). Nesse caso, informe a URL e o token na compilação:
+A API local não pede token. Uma API hospedada pode exigir o header `X-Dinna-Api-Token` (veja [`docs/deploy.md`](https://github.com/jeancarlosaps/dinna-api/blob/main/docs/deploy.md) na API). Nesse caso, informe a URL e o token na compilação:
 
 ```bash
 flutter run \
@@ -414,7 +412,7 @@ Não há deploy, assinatura nem publicação em loja, e a CI não compila Androi
 | `PATCH /orders/:id/status` | `HttpOrderRepository` (avanço do status) |
 | `POST /ai/recommendation` | `HttpRecommendationRepository` (“Me ajuda a escolher”) |
 
-Fonte do contrato: [`dinna-api/docs/api-contract.md`](https://github.com/jeancarlosaps/dinna-api/blob/dev/docs/api-contract.md).
+Fonte do contrato: [`dinna-api/docs/api-contract.md`](https://github.com/jeancarlosaps/dinna-api/blob/main/docs/api-contract.md).
 
 A recomendação respeita o campo `provider` da resposta. Com `answered`, a lista veio do Gemini, validada contra o cardápio. Com `unavailable`, a API usou o fallback determinístico e o app mostra o aviso “A Dinna não respondeu agora”, sem apresentar a lista como resposta de IA.
 
@@ -476,7 +474,7 @@ O trabalho é colaborativo: as responsabilidades indicam o foco de cada integran
 | Documento | Conteúdo | Acesso |
 |---|---|---|
 | [Arquitetura MVVM](docs/ARCHITECTURE.md) | Contrato das camadas e como criar uma feature | Público |
-| [Contrato REST](https://github.com/jeancarlosaps/dinna-api/blob/dev/docs/api-contract.md) | Endpoints, payloads e erros | Público |
+| [Contrato REST](https://github.com/jeancarlosaps/dinna-api/blob/main/docs/api-contract.md) | Endpoints, payloads e erros | Público |
 | [Documentação de Gestão do Projeto](https://jeancarlosaps.atlassian.net/wiki/spaces/DD/pages/9142274) (Confluence) | Planejamento, backlog, story maps, roadmap, matriz de riscos, sprints com burndowns, reviews, retrospectivas e lições aprendidas | Mediante autorização |
 | [Jira (SCRUM)](https://jeancarlosaps.atlassian.net/jira/software/projects/SCRUM/boards/1) | Backlog e acompanhamento das issues | Mediante autorização |
 
